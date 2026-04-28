@@ -1,0 +1,23 @@
+{
+  "name": "@ai-novel/ui",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "peerDependencies": {
+    "vue": "catalog:frontend"
+  },
+  "devDependencies": {
+    "typescript": "catalog:dev",
+    "vue": "catalog:frontend",
+    "vue-tsc": "catalog:dev"
+  }
+}

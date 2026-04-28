@@ -1,0 +1,93 @@
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Diagnostic reports (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Dependency directories
+node_modules/
+**/node_modules/
+
+# TypeScript v1 declaration files
+typings/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Tooling caches
+.cache/
+.eslintcache
+.stylelintcache
+.turbo/
+.vite/
+.wxt/
+.next/
+.nuxt/
+.vercel/
+.npm
+.pnp
+.pnp.js
+
+# Build results
+dist/
+build/
+out/
+.output/
+**/.output/
+**/dist/
+**/build/
+
+# IDE / Editor
+.idea/
+.vscode/
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+
+# Project-specific AI tools
+# 建议提交 .claude 文件夹以保持 AI 规则同步，但忽略本地个人配置
+.claude/*.local.*
+
+# Local environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Local databases and runtime files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.pid
+local.db
+
+# Workspace specific
+packages/*/dist
+apps/*/dist
+apps/*/.next
+apps/*/.output
+
+# AI & Knowledge Base Artifacts
+docs/temp/
+**/__pycache__/
+.python-version
+venv/
+.venv/
+
+# Testing
+/coverage
+/test-results
+**/playwright-report/
+**/test-results/

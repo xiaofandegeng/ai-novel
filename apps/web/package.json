@@ -1,0 +1,30 @@
+{
+  "name": "@ai-novel/web",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-novel/shared": "workspace:*",
+    "@ai-novel/ui": "workspace:*",
+    "@vueuse/core": "catalog:frontend",
+    "lucide-vue-next": "catalog:frontend",
+    "pinia": "catalog:frontend",
+    "vue": "catalog:frontend",
+    "vue-router": "catalog:frontend"
+  },
+  "devDependencies": {
+    "@iconify-json/lucide": "catalog:frontend",
+    "@unocss/preset-icons": "catalog:frontend",
+    "@unocss/preset-wind": "catalog:frontend",
+    "@vitejs/plugin-vue": "catalog:frontend",
+    "typescript": "catalog:dev",
+    "unocss": "catalog:frontend",
+    "vite": "catalog:frontend",
+    "vue-tsc": "catalog:dev"
+  }
+}

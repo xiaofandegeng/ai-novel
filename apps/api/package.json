@@ -1,0 +1,27 @@
+{
+  "name": "@ai-novel/api",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "tsx src/scripts/seed.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "catalog:backend",
+    "better-sqlite3": "catalog:backend",
+    "drizzle-orm": "catalog:backend",
+    "hono": "catalog:backend",
+    "openai": "catalog:backend"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "catalog:backend",
+    "drizzle-kit": "catalog:backend",
+    "tsx": "catalog:backend",
+    "typescript": "catalog:dev"
+  }
+}

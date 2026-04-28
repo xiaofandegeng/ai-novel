@@ -1,0 +1,322 @@
+<script setup lang="ts">
+import {
+  NAppLayout,
+  NButton,
+  NConfirmDialog,
+  NLoadingState,
+  NTag,
+  NTextArea,
+  useToast,
+} from '@ai-novel/ui'
+import {
+  ArrowLeft,
+  ChevronLeft,
+  Heart,
+  Info,
+  Plus,
+  Share2,
+  Sword,
+  Trash2,
+  UserCircle2,
+  Users,
+} from 'lucide-vue-next'
+import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import AppSidebar from '../components/AppSidebar.vue'
+import {
+  useCharacterStore,
+  useProjectStore,
+  useRelationshipStore,
+} from '../stores/projects'
+
+const route = useRoute()
+const router = useRouter()
+const projectId = route.params.id as string
+const toast = useToast()
+
+const projectStore = useProjectStore()
+const characterStore = useCharacterStore()
+const relationshipStore = useRelationshipStore()
+
+const loading = ref(true)
+const saving = ref(false)
+const selectedRelId = ref<string | null>(null)
+
+// Form state
+const relForm = ref({
+  characterAId: '',
+  characterBId: '',
+  type: 'ally',
+  strength: 5,
+  description: '',
+  status: '',
+})
+
+onMounted(async () => {
+  try {
+    await Promise.all([
+      projectStore.fetchProject(projectId),
+      characterStore.fetchCharacters(projectId),
+      relationshipStore.fetchRelationships(projectId),
+    ])
+
+    if (relationshipStore.relationships.length > 0) {
+      selectRelationship(relationshipStore.relationships[0].id)
+    }
+  }
+  catch {
+    toast.add('Failed to load relationships', 'error')
+  }
+  finally {
+    loading.value = false
+  }
+})
+
+function selectRelationship(id: string) {
+  selectedRelId.value = id
+  const rel = relationshipStore.relationships.find((r: any) => r.id === id)
+  if (rel) {
+    relForm.value = { ...rel }
+  }
+}
+
+async function handleAdd() {
+  if (characterStore.characters.length < 2) {
+    toast.add('You need at least 2 characters to create a relationship', 'warning')
+    return
+  }
+
+  try {
+    const newRel = await relationshipStore.createRelationship(projectId, {
+      characterAId: characterStore.characters[0].id,
+      characterBId: characterStore.characters[1].id,
+      type: 'ally',
+      strength: 5,
+      description: 'New Relationship',
+    })
+    toast.add('Relationship added', 'success')
+    selectRelationship(newRel.id)
+  }
+  catch {
+    toast.add('Failed to add relationship', 'error')
+  }
+}
+
+async function handleSave() {
+  if (!selectedRelId.value)
+    return
+  saving.value = true
+  try {
+    await relationshipStore.updateRelationship(projectId, selectedRelId.value, relForm.value)
+    toast.add('Relationship saved', 'success')
+  }
+  catch {
+    toast.add('Failed to save', 'error')
+  }
+  finally {
+    saving.value = false
+  }
+}
+
+const showDeleteConfirm = ref(false)
+
+function confirmDelete() {
+  if (!selectedRelId.value)
+    return
+  showDeleteConfirm.value = true
+}
+
+async function handleConfirmDelete() {
+  if (!selectedRelId.value)
+    return
+  try {
+    await relationshipStore.deleteRelationship(projectId, selectedRelId.value)
+    toast.add('Relationship deleted', 'success')
+    selectedRelId.value = null
+  }
+  catch {
+    toast.add('Failed to delete', 'error')
+  }
+  finally {
+    showDeleteConfirm.value = false
+  }
+}
+
+const getCharName = (id: string) => characterStore.characters.find((c: any) => c.id === id)?.name || 'Unknown'
+
+const relationshipTypes = [
+  { value: 'ally', label: '盟友 / 朋友', icon: Users },
+  { value: 'enemy', label: '敌人 / 仇敌', icon: Sword },
+  { value: 'lover', label: '恋人 / 情侣', icon: Heart },
+  { value: 'family', label: '家族 / 血缘', icon: Info },
+  { value: 'mentor', label: '导师 / 徒弟', icon: Info },
+  { value: 'rival', label: '竞争对手', icon: Sword },
+]
+</script>
+
+<template>
+  <NAppLayout :project-name="projectStore.currentProject?.title || 'Loading...'" :project-id="projectId">
+    <template #topbar-left>
+      <div class="flex items-center gap-4">
+        <router-link
+          to="/"
+          class="flex items-center gap-2 text-text-muted transition-colors hover:text-primary"
+          title="返回书库"
+        >
+          <ArrowLeft :size="20" />
+        </router-link>
+
+        <div class="h-6 w-px bg-border-light" />
+
+        <router-link
+          :to="`/project/${projectId}`"
+          class="text-base text-text-primary font-semibold transition-colors hover:text-primary"
+        >
+          {{ projectStore.currentProject?.title || 'Loading...' }}
+        </router-link>
+      </div>
+    </template>
+<template #nav>
+      <AppSidebar :project-id="projectId" />
+    </template>
+
+    <div class="h-full flex overflow-hidden bg-bg-page">
+      <!-- Left: Relationship List -->
+      <aside class="w-80 flex shrink-0 flex-col border-r border-border-light bg-bg-surface">
+        <div class="flex items-center justify-between border-b border-border-light p-4">
+          <h2 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
+            <NButton variant="ghost" size="sm" class="-ml-2 h-8 w-8 p-0" @click="router.back()">
+              <ChevronLeft :size="18" />
+            </NButton>
+            <Share2 :size="16" /> 角色关系网
+          
+          </h2>
+          <NButton variant="ghost" size="sm" @click="handleAdd">
+            <Plus :size="16" />
+          </NButton>
+        </div>
+        <div class="flex-1 overflow-y-auto p-2 space-y-1">
+          <button
+            v-for="rel in relationshipStore.relationships"
+            :key="rel.id"
+            class="w-full border rounded-xl px-4 py-3 text-left transition-all"
+            :class="selectedRelId === rel.id
+              ? 'bg-primary/5 border-primary/20 ring-1 ring-primary/10'
+              : 'border-transparent hover:bg-bg-subtle text-text-secondary'"
+            @click="selectRelationship(rel.id)"
+          >
+            <div class="mb-1 flex items-center gap-2">
+              <span class="text-xs text-text-primary font-bold">{{ getCharName(rel.characterAId) }}</span>
+              <span class="rounded bg-bg-muted px-1.5 py-0.5 text-[10px] text-text-muted">↔</span>
+              <span class="text-xs text-text-primary font-bold">{{ getCharName(rel.characterBId) }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <NTag size="sm" :variant="rel.type === 'enemy' || rel.type === 'rival' ? 'error' : 'info'">
+                {{ rel.type }}
+              </NTag>
+              <span class="text-[10px] text-text-muted">亲密度: {{ rel.strength }}/10</span>
+            </div>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Center: Details -->
+      <main class="flex-1 overflow-y-auto bg-bg-page p-8">
+        <div v-if="loading" class="h-64 flex items-center justify-center">
+          <NLoadingState />
+        </div>
+
+        <div v-else-if="!selectedRelId" class="h-full flex flex-col items-center justify-center text-text-muted opacity-50">
+          <Share2 :size="64" stroke-width="1" class="mb-4" />
+          <p>选择一段人物羁绊进行管理</p>
+        </div>
+
+        <div v-else class="animate-in fade-in slide-in-from-bottom-2 mx-auto max-w-2xl duration-300 space-y-8">
+          <header class="flex items-center justify-between">
+            <div>
+              <h1 class="text-2xl text-text-primary font-bold">
+                人物关系档案
+              </h1>
+              <p class="text-sm text-text-muted">
+                {{ getCharName(relForm.characterAId) }} 与 {{ getCharName(relForm.characterBId) }} 之间的互动关系
+              </p>
+            </div>
+            <div class="flex gap-2">
+              <NButton variant="ghost" size="sm" class="text-semantic-error" @click="confirmDelete">
+                <Trash2 :size="16" />
+              </NButton>
+              <NButton variant="primary" size="sm" :loading="saving" @click="handleSave">
+                保存更改
+              </NButton>
+            </div>
+          </header>
+
+          <div class="grid items-center gap-8 border border-border-light rounded-2xl bg-bg-surface p-6 py-6 shadow-sm md:grid-cols-2">
+            <div class="flex flex-col items-center gap-3">
+              <UserCircle2 :size="48" class="text-text-muted" />
+              <span class="text-sm text-text-primary font-bold">{{ getCharName(relForm.characterAId) }}</span>
+            </div>
+            <div class="relative flex flex-col items-center gap-1">
+              <div class="absolute top-1/2 h-0.5 w-full bg-border-strong -z-10 -translate-y-1/2" />
+              <div class="rounded-full bg-primary px-3 py-1 text-xs text-white font-bold uppercase shadow-sm">
+                {{ relForm.type }}
+              </div>
+            </div>
+            <div class="flex flex-col items-center gap-3">
+              <UserCircle2 :size="48" class="text-text-muted" />
+              <span class="text-sm text-text-primary font-bold">{{ getCharName(relForm.characterBId) }}</span>
+            </div>
+          </div>
+
+          <div class="space-y-6">
+            <div class="grid gap-6 md:grid-cols-2">
+              <div class="space-y-2">
+                <label class="text-xs text-text-muted font-bold tracking-wider uppercase">羁绊类型</label>
+                <select v-model="relForm.type" class="w-full border border-border-light rounded-lg bg-bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
+                  <option v-for="type in relationshipTypes" :key="type.value" :value="type.value">
+                    {{ type.label }}
+                  </option>
+                </select>
+              </div>
+              <div class="space-y-2">
+                <label class="text-xs text-text-muted font-bold tracking-wider uppercase">情感强度 (1-10)</label>
+                <div class="flex items-center gap-4">
+                  <input v-model.number="relForm.strength" type="range" min="1" max="10" class="flex-1 accent-primary">
+                  <span class="w-8 text-center text-primary font-bold">{{ relForm.strength }}</span>
+                </div>
+              </div>
+            </div>
+
+            <NTextArea v-model="relForm.status" label="当前互动状态" placeholder="例：背叛发生后的冷战僵持期..." :rows="2" />
+            <NTextArea v-model="relForm.description" label="历史与演变" placeholder="这段关系是如何开始的？经历了哪些关键转折？" :rows="6" />
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <NConfirmDialog
+      v-model="showDeleteConfirm"
+      title="删除人物关系"
+      description="你确定要删除这段人物联结吗？此操作不可撤销。"
+      confirm-text="确定删除"
+      variant="danger"
+      @confirm="handleConfirmDelete"
+    />
+  </NAppLayout>
+</template>
+
+<style scoped>
+.animate-in {
+  animation: animate-in 0.3s ease-out;
+}
+@keyframes animate-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+</style>

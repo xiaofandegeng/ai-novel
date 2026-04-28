@@ -1,0 +1,35 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+catalogs:
+  backend:
+    '@hono/node-server': ^1.14.1
+    '@types/better-sqlite3': ^7.6.13
+    better-sqlite3: ^11.9.1
+    drizzle-kit: ^0.31.1
+    drizzle-orm: ^0.44.2
+    hono: ^4.7.10
+    openai: ^4.104.0
+    tsx: ^4.19.4
+  dev:
+    '@antfu/eslint-config': ^4.14.1
+    '@unocss/eslint-plugin': ^66.1.2
+    eslint: ^9.26.0
+    eslint-plugin-format: ^1.1.0
+    lint-staged: ^15.5.2
+    simple-git-hooks: ^2.13.0
+    typescript: ^5.8.3
+    vitest: ^3.1.2
+    vue-tsc: ^2.1.10
+  frontend:
+    '@iconify-json/lucide': ^1.2.36
+    '@unocss/preset-icons': ^66.1.2
+    '@unocss/preset-wind': ^66.1.2
+    '@vitejs/plugin-vue': ^5.2.4
+    '@vueuse/core': ^13.2.0
+    lucide-vue-next: ^0.511.0
+    pinia: ^3.0.2
+    unocss: ^66.1.2
+    vite: ^6.3.5
+    vue: ^3.5.14
+    vue-router: ^4.5.1
