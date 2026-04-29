@@ -6,8 +6,8 @@ import {
   useToast,
 } from '@ai-novel/ui'
 import {
-  BookOpen,
   ArrowLeft,
+  BookOpen,
   ChevronLeft,
   ChevronRight,
   Filter,
@@ -211,7 +211,7 @@ function navigateTo(entry: any) {
         </router-link>
       </div>
     </template>
-<template #nav>
+    <template #nav>
       <AppSidebar :project-id="projectId" />
     </template>
 
@@ -221,7 +221,7 @@ function navigateTo(entry: any) {
         <div class="mx-auto max-w-4xl space-y-6">
           <div class="flex items-center justify-between">
             <h1 class="flex items-center gap-3 text-2xl text-text-primary font-bold">
-              <NButton variant="ghost" size="sm" class="-ml-2 h-8 w-8 p-0" @click="useRouterInstance.back()">
+              <NButton variant="ghost" size="sm" class="h-8 w-8 p-0 -ml-2" @click="useRouterInstance.back()">
                 <ChevronLeft :size="24" />
               </NButton>
               <Search :size="28" class="text-primary" /> 全局知识库

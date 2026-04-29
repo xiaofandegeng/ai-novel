@@ -10,8 +10,8 @@ import {
 } from '@ai-novel/ui'
 import {
   AlertCircle,
-  CheckCircle2,
   ArrowLeft,
+  CheckCircle2,
   ChevronLeft,
   Flame,
   HelpCircle,
@@ -193,7 +193,7 @@ const types = [
         </router-link>
       </div>
     </template>
-<template #nav>
+    <template #nav>
       <AppSidebar :project-id="projectId" />
     </template>
 
@@ -202,7 +202,7 @@ const types = [
       <aside class="w-80 flex shrink-0 flex-col border-r border-border-light bg-bg-surface">
         <div class="flex items-center justify-between border-b border-border-light p-4 text-sm text-text-primary font-bold tracking-wider uppercase">
           <div class="flex items-center gap-2">
-            <NButton variant="ghost" size="sm" class="-ml-2 h-8 w-8 p-0" @click="router.back()">
+            <NButton variant="ghost" size="sm" class="h-8 w-8 p-0 -ml-2" @click="router.back()">
               <ChevronLeft :size="18" />
             </NButton>
             <Zap :size="16" /> 矛盾矩阵

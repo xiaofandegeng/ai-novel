@@ -7,8 +7,8 @@ import {
   useToast,
 } from '@ai-novel/ui'
 import {
-  Calendar,
   ArrowLeft,
+  Calendar,
   ChevronLeft,
   Globe,
   Info,
@@ -119,7 +119,7 @@ async function handleSave() {
         </router-link>
       </div>
     </template>
-<template #nav>
+    <template #nav>
       <AppSidebar :project-id="projectId" />
     </template>
 
@@ -139,7 +139,7 @@ async function handleSave() {
       <aside class="w-full shrink-0 overflow-y-auto border-r border-border-light bg-bg-surface md:w-64">
         <div class="border-b border-border-light p-4">
           <h2 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
-            <NButton variant="ghost" size="sm" class="-ml-2 h-8 w-8 p-0" @click="router.back()">
+            <NButton variant="ghost" size="sm" class="h-8 w-8 p-0 -ml-2" @click="router.back()">
               <ChevronLeft :size="18" />
             </NButton>
             <Layout :size="16" /> 设定板块

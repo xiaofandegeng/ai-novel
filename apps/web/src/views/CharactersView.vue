@@ -10,6 +10,8 @@ import {
   useToast,
 } from '@ai-novel/ui'
 import {
+  ArrowLeft,
+  ChevronLeft,
   ChevronRight,
   Info,
   Save,
@@ -18,8 +20,6 @@ import {
   Trash2,
   UserCircle,
   UserPlus,
-  ArrowLeft,
-  ChevronLeft,
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -228,7 +228,7 @@ const activeTab = ref('profile')
         <div class="border-b border-border-light p-4 space-y-4">
           <div class="flex items-center justify-between">
             <h2 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
-              <NButton variant="ghost" size="sm" class="-ml-2 h-8 w-8 p-0" @click="router.back()">
+              <NButton variant="ghost" size="sm" class="h-8 w-8 p-0 -ml-2" @click="router.back()">
                 <ChevronLeft :size="18" />
               </NButton>
               角色列表

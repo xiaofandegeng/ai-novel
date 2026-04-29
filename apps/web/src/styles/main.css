@@ -1,36 +1,34 @@
-
-
 :root {
-  --color-bg-page: #f6f5f1;
+  --color-bg-page: #f7f8fa;
   --color-bg-surface: #ffffff;
-  --color-bg-subtle: #f0efea;
-  --color-bg-muted: #e8e5dd;
-  --color-text-primary: #23211d;
-  --color-text-secondary: #5f5a50;
-  --color-text-muted: #8a8377;
+  --color-bg-subtle: #f1f5f4;
+  --color-bg-muted: #e6eceb;
+  --color-text-primary: #1f2933;
+  --color-text-secondary: #52616b;
+  --color-text-muted: #7b8794;
   --color-text-inverse: #ffffff;
-  --color-border-light: #e2ded6;
-  --color-border-default: #d3cdc2;
-  --color-border-strong: #b8b0a2;
-  --color-primary: #24556f;
-  --color-primary-hover: #1d465b;
-  --color-primary-active: #17384a;
-  --color-primary-soft: #e5eef2;
-  --color-accent: #b8822f;
-  --color-accent-soft: #f3e8d2;
-  --color-success: #2f6b4f;
-  --color-warning: #9a6a16;
-  --color-error: #b33a32;
-  --color-info: #2f5f89;
-  --color-ai: #5b4a8b;
-  --color-ai-soft: #eae6f5;
+  --color-border-light: #dde5e8;
+  --color-border-default: #c9d5da;
+  --color-border-strong: #99aab2;
+  --color-primary: #1f6f78;
+  --color-primary-hover: #195c64;
+  --color-primary-active: #124951;
+  --color-primary-soft: #e3f1f2;
+  --color-accent: #9b6a2f;
+  --color-accent-soft: #f2e8d7;
+  --color-success: #2f7d5f;
+  --color-warning: #a76d18;
+  --color-error: #ba3f3a;
+  --color-info: #2d6f9f;
+  --color-ai: #6b4fa3;
+  --color-ai-soft: #eee9f8;
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 12px;
-  --shadow-sm: 0 1px 2px rgba(35, 33, 29, 0.06);
-  --shadow-md: 0 8px 24px rgba(35, 33, 29, 0.08);
-  --shadow-lg: 0 20px 48px rgba(35, 33, 29, 0.14);
+  --shadow-sm: 0 1px 2px rgba(31, 41, 51, 0.06);
+  --shadow-md: 0 10px 30px rgba(31, 41, 51, 0.08);
+  --shadow-lg: 0 24px 60px rgba(31, 41, 51, 0.14);
 }
 
 *,
@@ -54,6 +52,11 @@ body {
   line-height: 1.5;
 }
 
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
 button,
 input,
 textarea,
@@ -66,7 +69,7 @@ button {
 }
 
 :focus-visible {
-  outline: 3px solid rgba(36, 85, 111, 0.35);
+  outline: 3px solid rgba(31, 111, 120, 0.28);
   outline-offset: 2px;
 }
 

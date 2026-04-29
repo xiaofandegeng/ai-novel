@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import {
+  BarChart3,
   BookOpen,
   History,
   LayoutDashboard,
   ListTree,
   PenLine,
   Search,
-  Settings,
   Share2,
   Users,
   Zap,
@@ -77,17 +77,8 @@ const menuItems = [
   {
     name: '质量评估',
     path: `/project/${props.projectId}/quality`,
-    icon: Zap,
+    icon: BarChart3,
     activeMatch: /quality/,
-  },
-]
-
-const adminItems = [
-  {
-    name: '项目设置',
-    path: `/project/${props.projectId}/settings`,
-    icon: Settings,
-    activeMatch: /settings/,
   },
 ]
 
@@ -98,54 +89,54 @@ function isActive(item: typeof menuItems[0]) {
 
 <template>
   <div class="h-full flex flex-col border-r border-border-light bg-bg-surface">
-    <!-- Project Selector / Brand Area at top of sidebar if needed -->
-    <div class="border-b border-border-light bg-bg-page/50 p-4">
-      <router-link to="/" class="flex items-center gap-2 text-text-primary transition-colors hover:text-primary">
-        <BookOpen :size="20" />
-        <span class="text-sm font-bold">书库</span>
+    <div class="border-b border-border-light p-4">
+      <router-link to="/" class="group flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-bg-subtle">
+        <span class="h-9 w-9 flex items-center justify-center rounded-lg bg-primary-soft text-primary">
+          <BookOpen :size="19" />
+        </span>
+        <span>
+          <span class="block text-sm text-text-primary font-bold">创作书库</span>
+          <span class="block text-[11px] text-text-muted">Novel Workspace</span>
+        </span>
       </router-link>
     </div>
 
-    <!-- Main Navigation -->
-    <nav class="flex-1 p-2 space-y-1">
+    <nav class="flex-1 overflow-y-auto p-3 space-y-1">
+      <div class="px-3 pb-2 pt-1 text-[11px] text-text-muted font-semibold tracking-widest uppercase">
+        工作台
+      </div>
       <router-link
         v-for="item in menuItems"
         :key="item.path"
         :to="item.path"
-        class="group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors"
+        class="group relative min-h-10 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
         :class="isActive(item)
-          ? 'bg-primary/10 text-primary'
+          ? 'bg-primary-soft text-primary shadow-sm'
           : 'text-text-secondary hover:bg-bg-subtle hover:text-text-primary'"
       >
+        <span
+          v-if="isActive(item)"
+          class="absolute bottom-2 left-0 top-2 w-1 rounded-r-full bg-primary"
+        />
         <component
           :is="item.icon"
           :size="18"
           :stroke-width="isActive(item) ? 2.25 : 1.75"
           :class="isActive(item) ? 'text-primary' : 'text-text-muted group-hover:text-text-secondary'"
         />
-        {{ item.name }}
+        <span class="truncate">{{ item.name }}</span>
       </router-link>
     </nav>
 
-    <!-- Bottom Actions -->
-    <div class="border-t border-border-light p-2">
-      <router-link
-        v-for="item in adminItems"
-        :key="item.path"
-        :to="item.path"
-        class="group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors"
-        :class="isActive(item)
-          ? 'bg-primary/10 text-primary'
-          : 'text-text-secondary hover:bg-bg-subtle hover:text-text-primary'"
-      >
-        <component
-          :is="item.icon"
-          :size="18"
-          :stroke-width="isActive(item) ? 2.25 : 1.75"
-          :class="isActive(item) ? 'text-primary' : 'text-text-muted group-hover:text-text-secondary'"
-        />
-        {{ item.name }}
-      </router-link>
+    <div class="border-t border-border-light p-4">
+      <div class="border border-ai/10 rounded-lg bg-ai-soft/60 p-3">
+        <div class="mb-1 text-xs text-ai font-bold">
+          AI 协作守则
+        </div>
+        <p class="text-[11px] text-text-secondary leading-relaxed">
+          AI 结果先进入确认区，再由作者决定插入、替换或丢弃。
+        </p>
+      </div>
     </div>
   </div>
 </template>

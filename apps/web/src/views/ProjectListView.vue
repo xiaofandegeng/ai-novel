@@ -56,6 +56,10 @@ const filteredProjects = computed(() => {
   )
 })
 
+const totalTargetWords = computed(() =>
+  projectStore.projects.reduce((sum: number, project: any) => sum + (project.targetWords || 0), 0),
+)
+
 function openCreateModal() {
   form.value = { title: '', genre: '', theme: '', targetWords: '' }
   createError.value = ''
@@ -121,29 +125,36 @@ function formatDate(dateStr: string) {
 <template>
   <div class="min-h-screen flex flex-col bg-bg-page">
     <!-- Top Header -->
-    <header class="h-16 flex shrink-0 items-center justify-between border-b border-border-light bg-bg-surface px-8">
-      <div class="flex items-center gap-3">
-        <div class="h-8 w-8 flex items-center justify-center rounded-lg bg-primary text-white font-bold">
-          <BookOpen :size="20" />
+    <header class="shrink-0 border-b border-border-light bg-bg-surface">
+      <div class="mx-auto max-w-7xl flex flex-col gap-4 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
+        <div class="flex items-center gap-3">
+          <div class="h-10 w-10 flex items-center justify-center rounded-lg bg-primary text-white font-bold shadow-sm">
+            <BookOpen :size="20" />
+          </div>
+          <div>
+            <h1 class="text-xl text-text-primary font-bold tracking-tight">
+              AI 小说创作工坊
+            </h1>
+            <p class="text-xs text-text-muted">
+              管理项目、设定与长篇写作工作流
+            </p>
+          </div>
         </div>
-        <h1 class="text-xl text-text-primary font-bold tracking-tight">
-          AI 小说创作工坊
-        </h1>
-      </div>
 
-      <div class="flex items-center gap-4">
-        <div class="relative w-64">
-          <Search class="absolute left-3 top-1/2 text-text-muted -translate-y-1/2" :size="16" />
-          <input
-            v-model="searchQuery"
-            type="text"
-            placeholder="搜索项目..."
-            class="w-full border border-border-light rounded-md bg-bg-subtle py-1.5 pl-9 pr-3 text-sm transition-colors focus:border-primary focus:outline-none"
-          >
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div class="relative min-w-0 sm:w-72">
+            <Search class="absolute left-3 top-1/2 text-text-muted -translate-y-1/2" :size="16" />
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="搜索项目..."
+              class="h-10 w-full border border-border-light rounded-md bg-bg-subtle pl-9 pr-3 text-sm transition-colors focus:border-primary focus:bg-bg-surface focus:outline-none"
+            >
+          </div>
+          <NButton variant="primary" @click="openCreateModal">
+            <Plus :size="18" class="mr-1" /> 创建新项目
+          </NButton>
         </div>
-        <NButton variant="primary" @click="openCreateModal">
-          <Plus :size="18" class="mr-1" /> 创建新项目
-        </NButton>
       </div>
     </header>
 
@@ -166,16 +177,46 @@ function formatDate(dateStr: string) {
         </template>
       </NEmptyState>
 
-      <div v-else class="mx-auto max-w-7xl">
-        <h2 class="mb-6 text-sm text-text-muted font-semibold tracking-wider uppercase">
-          最近创作项目
-        </h2>
+      <div v-else class="mx-auto max-w-7xl space-y-6">
+        <div class="grid gap-4 md:grid-cols-3">
+          <div class="border border-border-light rounded-lg bg-bg-surface p-4 shadow-sm">
+            <div class="text-xs text-text-muted font-semibold tracking-widest uppercase">
+              项目数
+            </div>
+            <div class="mt-1 text-2xl text-text-primary font-bold">
+              {{ projectStore.projects.length }}
+            </div>
+          </div>
+          <div class="border border-border-light rounded-lg bg-bg-surface p-4 shadow-sm">
+            <div class="text-xs text-text-muted font-semibold tracking-widest uppercase">
+              目标总字数
+            </div>
+            <div class="mt-1 text-2xl text-text-primary font-bold">
+              {{ totalTargetWords.toLocaleString() }}
+            </div>
+          </div>
+          <div class="border border-border-light rounded-lg bg-bg-surface p-4 shadow-sm">
+            <div class="text-xs text-text-muted font-semibold tracking-widest uppercase">
+              当前筛选
+            </div>
+            <div class="mt-1 text-2xl text-text-primary font-bold">
+              {{ filteredProjects.length }}
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm text-text-muted font-semibold tracking-wider uppercase">
+            最近创作项目
+          </h2>
+          <span class="text-xs text-text-muted">按最近更新排序</span>
+        </div>
 
         <div class="grid gap-6 lg:grid-cols-3 md:grid-cols-2 xl:grid-cols-4">
           <div
             v-for="project in filteredProjects"
             :key="project.id"
-            class="group relative cursor-pointer border border-border-light rounded-xl bg-bg-surface p-6 shadow-sm transition-all hover:border-primary/30 hover:shadow-md"
+            class="group relative cursor-pointer border border-border-light rounded-xl bg-bg-surface p-6 shadow-sm transition-all hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5"
             @click="router.push(`/project/${project.id}`)"
           >
             <!-- Card Header -->

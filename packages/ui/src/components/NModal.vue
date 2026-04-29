@@ -72,11 +72,11 @@ onUnmounted(() => {
         <Transition name="modal-dialog" appear>
           <div
             v-if="modelValue"
-            class="relative overflow-hidden rounded-lg bg-bg-surface shadow-lg"
+            class="relative overflow-hidden border border-border-light rounded-xl bg-bg-surface shadow-lg"
             :style="{ width: dialogWidth, maxWidth: '90vw' }"
             @click.stop
           >
-            <div class="flex items-center justify-between border-b border-border-light p-4">
+            <div class="flex items-center justify-between border-b border-border-light bg-bg-subtle/50 p-5">
               <h3 class="text-base text-text-primary font-semibold">
                 {{ title }}
               </h3>
@@ -99,12 +99,12 @@ onUnmounted(() => {
                 </svg>
               </button>
             </div>
-            <div class="max-h-[70vh] overflow-y-auto p-4">
+            <div class="max-h-[70vh] overflow-y-auto p-5">
               <slot />
             </div>
             <div
               v-if="$slots.footer"
-              class="border-t border-border-light p-4"
+              class="border-t border-border-light bg-bg-subtle/40 p-5"
             >
               <slot name="footer" />
             </div>

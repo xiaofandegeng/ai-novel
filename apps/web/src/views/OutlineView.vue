@@ -7,9 +7,9 @@ import {
   useToast,
 } from '@ai-novel/ui'
 import {
+  ArrowLeft,
   BookText,
   ChevronDown,
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Info,
@@ -269,7 +269,7 @@ function discardAISuggestion() {
         </router-link>
       </div>
     </template>
-<template #nav>
+    <template #nav>
       <AppSidebar :project-id="projectId" />
     </template>
 
@@ -289,7 +289,7 @@ function discardAISuggestion() {
       <aside class="w-72 flex shrink-0 flex-col border-r border-border-light bg-bg-surface">
         <div class="flex items-center justify-between border-b border-border-light p-4">
           <h2 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
-            <NButton variant="ghost" size="sm" class="-ml-2 h-8 w-8 p-0" @click="router.back()">
+            <NButton variant="ghost" size="sm" class="h-8 w-8 p-0 -ml-2" @click="router.back()">
               <ChevronLeft :size="18" />
             </NButton>
             <Layers :size="16" /> 故事结构
@@ -371,7 +371,7 @@ function discardAISuggestion() {
                 <input
                   v-model="outlineForm.title"
                   class="w-full border-none bg-transparent p-0 text-3xl text-text-primary font-bold focus:outline-none focus:ring-0"
-                  <placeholder="章节标题"
+                  placeholder="章节标题"
                 >
               </div>
               <div class="flex items-center gap-4">
@@ -485,11 +485,10 @@ function discardAISuggestion() {
       <aside class="hidden w-80 shrink-0 flex-col border-l border-border-light bg-bg-surface xl:flex">
         <div class="border-b border-border-light bg-bg-page/50 p-4">
           <h2 class="flex items-center gap-2 text-sm text-ai font-bold tracking-wider uppercase">
-            <NButton variant="ghost" size="sm" class="-ml-2 h-8 w-8 p-0" @click="router.back()">
+            <NButton variant="ghost" size="sm" class="h-8 w-8 p-0 -ml-2" @click="router.back()">
               <ChevronLeft :size="18" />
             </NButton>
             <Sparkles :size="16" /> 大纲助手
-          
           </h2>
         </div>
         <div class="overflow-y-auto p-6 space-y-6">

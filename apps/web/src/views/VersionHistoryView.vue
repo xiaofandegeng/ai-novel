@@ -3,6 +3,7 @@ import {
   NAppLayout,
   NButton,
   NConfirmDialog,
+  NTag,
   useToast,
 } from '@ai-novel/ui'
 import {
@@ -27,7 +28,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const projectId = route.params.id as string
-const chapterId = route.query.chapter as string
+const chapterId = ref((route.query.chapter as string) || '')
 const toast = useToast()
 
 const projectStore = useProjectStore()
@@ -39,20 +40,23 @@ const selectedVersionId = ref<string | null>(null)
 const compareMode = ref(false)
 const compareWithId = ref<string | null>(null)
 
-const currentChapter = computed(() => chapterStore.chapters.find((c: any) => c.id === chapterId))
+const currentChapter = computed(() => chapterStore.chapters.find((c: any) => c.id === chapterId.value))
 
 onMounted(async () => {
-  if (!chapterId) {
-    router.push(`/project/${projectId}/outline`)
-    return
-  }
-
   try {
     await Promise.all([
       projectStore.fetchProject(projectId),
       chapterStore.fetchChapters(projectId),
-      versionStore.fetchVersions(projectId, chapterId),
     ])
+
+    if (!chapterId.value) {
+      chapterId.value = chapterStore.chapters[0]?.id || ''
+      if (chapterId.value)
+        router.replace({ path: `/project/${projectId}/versions`, query: { chapter: chapterId.value } })
+    }
+
+    if (chapterId.value)
+      await versionStore.fetchVersions(projectId, chapterId.value)
   }
   catch {
     toast.add('Failed to load version history', 'error')
@@ -79,9 +83,9 @@ async function handleConfirmRestore() {
   try {
     if (!selectedVersion.value)
       return
-    await chapterStore.updateChapter(projectId, chapterId, { draft: selectedVersion.value.content })
+    await chapterStore.updateChapter(projectId, chapterId.value, { draft: selectedVersion.value.content })
     toast.add('Version restored successfully', 'success')
-    router.push({ path: `/project/${projectId}/write`, query: { chapter: chapterId } })
+    router.push({ path: `/project/${projectId}/write`, query: { chapter: chapterId.value } })
   }
   catch {
     toast.add('Failed to restore version', 'error')

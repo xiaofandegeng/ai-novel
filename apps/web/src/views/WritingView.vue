@@ -8,7 +8,6 @@ import {
 } from '@ai-novel/ui'
 import {
   BookOpen,
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -278,7 +277,7 @@ function confirmAIResult(action: 'insert' | 'replace' | 'backup' | 'discard') {
       <!-- Mini Chapter Tree in Nav Slot -->
       <div class="h-full flex flex-col border-r border-border-light bg-bg-surface">
         <div class="flex items-center justify-between border-b border-border-light p-4">
-          <NButton variant="ghost" size="sm" class="-ml-2 h-8 w-8 p-0" @click="router.back()">
+          <NButton variant="ghost" size="sm" class="h-8 w-8 p-0 -ml-2" @click="router.back()">
             <ChevronLeft :size="20" />
           </NButton>
           <h3 class="text-xs text-text-muted font-bold tracking-widest uppercase">

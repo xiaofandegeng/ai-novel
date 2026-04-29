@@ -16,12 +16,12 @@ withDefaults(defineProps<Props>(), {
 
 <template>
   <div
-    class="rounded-lg bg-bg-surface"
+    class="rounded-lg bg-bg-surface shadow-sm"
     :class="bordered ? 'border border-border-light' : ''"
   >
     <div
       v-if="title || $slots.header"
-      class="flex items-center justify-between p-4 pb-2"
+      class="flex items-start justify-between gap-4 border-b border-border-light/70 p-4"
     >
       <div>
         <slot name="header">

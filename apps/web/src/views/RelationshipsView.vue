@@ -176,7 +176,7 @@ const relationshipTypes = [
         </router-link>
       </div>
     </template>
-<template #nav>
+    <template #nav>
       <AppSidebar :project-id="projectId" />
     </template>
 
@@ -185,11 +185,10 @@ const relationshipTypes = [
       <aside class="w-80 flex shrink-0 flex-col border-r border-border-light bg-bg-surface">
         <div class="flex items-center justify-between border-b border-border-light p-4">
           <h2 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
-            <NButton variant="ghost" size="sm" class="-ml-2 h-8 w-8 p-0" @click="router.back()">
+            <NButton variant="ghost" size="sm" class="h-8 w-8 p-0 -ml-2" @click="router.back()">
               <ChevronLeft :size="18" />
             </NButton>
             <Share2 :size="16" /> 角色关系网
-          
           </h2>
           <NButton variant="ghost" size="sm" @click="handleAdd">
             <Plus :size="16" />
