@@ -11,13 +11,14 @@
 | 图标     | Lucide Icons                       |
 | 后端     | Hono + TypeScript                  |
 | ORM      | Drizzle ORM                        |
-| 数据库   | SQLite (better-sqlite3)            |
+| 数据库   | PostgreSQL + Drizzle ORM           |
 | 代码规范 | @antfu/eslint-config               |
 
 ## 前置要求
 
 - Node.js >= 22
 - pnpm >= 10
+- PostgreSQL >= 15
 
 ## 快速开始
 
@@ -31,6 +32,9 @@ pnpm install
 # 生成并应用数据库迁移
 pnpm db:generate
 pnpm db:migrate
+
+# 如需迁移旧 SQLite 本地数据
+pnpm --filter @ai-novel/api db:migrate:sqlite
 
 # 启动开发服务器
 pnpm dev
@@ -57,17 +61,18 @@ ai-novel/
 
 ## 开发命令
 
-| 命令               | 说明                |
-| ------------------ | ------------------- |
-| `pnpm dev`         | 同时启动前后端      |
-| `pnpm dev:web`     | 仅启动前端          |
-| `pnpm dev:api`     | 仅启动后端          |
-| `pnpm build`       | 构建所有包          |
-| `pnpm lint`        | 检查代码规范        |
-| `pnpm lint:fix`    | 自动修复代码规范    |
-| `pnpm db:generate` | 生成数据库迁移文件  |
-| `pnpm db:migrate`  | 应用数据库迁移      |
-| `pnpm db:studio`   | 打开 Drizzle Studio |
+| 命令                                            | 说明                                |
+| ----------------------------------------------- | ----------------------------------- |
+| `pnpm dev`                                      | 同时启动前后端                      |
+| `pnpm dev:web`                                  | 仅启动前端                          |
+| `pnpm dev:api`                                  | 仅启动后端                          |
+| `pnpm build`                                    | 构建所有包                          |
+| `pnpm lint`                                     | 检查代码规范                        |
+| `pnpm lint:fix`                                 | 自动修复代码规范                    |
+| `pnpm db:generate`                              | 生成数据库迁移文件                  |
+| `pnpm db:migrate`                               | 应用数据库迁移                      |
+| `pnpm db:studio`                                | 打开 Drizzle Studio                 |
+| `pnpm --filter @ai-novel/api db:migrate:sqlite` | 从旧 SQLite 数据库迁移到 PostgreSQL |
 
 ## 代码规范
 
@@ -78,3 +83,5 @@ ai-novel/
 - [产品设计文档](docs/product/ai-novel-workbench-product-design.md)
 - [UI 设计规格](docs/design/ai-novel-workbench-ui-design-spec.md)
 - [开发顺序](docs/development/ai-agent-development-sequence.md)
+- [本地 PostgreSQL 与 AI 配置说明](docs/development/local-postgresql-and-ai-config.md)
+- [功能完整度审计记录](docs/development/feature-completeness-audit-2026-04-29.md)

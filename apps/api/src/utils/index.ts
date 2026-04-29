@@ -1,7 +1,3 @@
-import type { SQLiteTableWithColumns } from 'drizzle-orm/sqlite-core'
-import { eq } from 'drizzle-orm'
-import { db } from '../db'
-
 export function generateId(): string {
   return crypto.randomUUID()
 }
@@ -16,14 +12,6 @@ export function success<T>(data: T, message?: string) {
 
 export function fail(error: string) {
   return { success: false as const, error }
-}
-
-export async function findById<T extends SQLiteTableWithColumns<any>>(
-  table: T,
-  id: string,
-) {
-  const rows = await db.select().from(table).where(eq(table.id, id))
-  return rows[0] ?? null
 }
 
 export function updatedFields(fields: Record<string, unknown>) {

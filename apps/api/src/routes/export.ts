@@ -9,13 +9,13 @@ export function registerExportRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
 
     // 1. Get Project
-    const project = db.select().from(novelProjects).where(eq(novelProjects.id, projectId)).get()
+    const [project] = await db.select().from(novelProjects).where(eq(novelProjects.id, projectId))
     if (!project)
       return c.json(fail('Project not found'), 404)
 
     // 2. Get Volumes and Chapters
-    const vols = db.select().from(volumes).where(eq(volumes.projectId, projectId)).orderBy(asc(volumes.orderIndex)).all()
-    const chs = db.select().from(chapters).where(eq(chapters.projectId, projectId)).orderBy(asc(chapters.chapterNumber)).all()
+    const vols = await db.select().from(volumes).where(eq(volumes.projectId, projectId)).orderBy(asc(volumes.orderIndex))
+    const chs = await db.select().from(chapters).where(eq(chapters.projectId, projectId)).orderBy(asc(chapters.chapterNumber))
 
     // 3. Aggregate into Markdown
     let md = `# ${project.title}\n\n`

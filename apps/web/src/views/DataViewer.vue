@@ -9,11 +9,14 @@ import {
   NLoadingState,
   NModal,
   NPanel,
+  NSelect,
   NTag,
+  NTextArea,
   useToast,
 } from '@ai-novel/ui'
 import { onMounted, ref } from 'vue'
 import { useChapterStore, useCharacterStore, useProjectStore, useStoryBibleStore, useVolumeStore } from '../stores/projects'
+import { getCharacterRoleLabel } from '../utils/character-labels'
 
 const toast = useToast()
 const projectStore = useProjectStore()
@@ -100,7 +103,7 @@ function openEditProjectModal() {
 
 async function handleCreate() {
   if (!formTitle.value.trim()) {
-    createError.value = 'Title is required'
+    createError.value = '请输入项目标题'
     return
   }
   try {
@@ -112,11 +115,11 @@ async function handleCreate() {
     }
     await projectStore.createProject(data)
     showCreateModal.value = false
-    toast.add('Project created', 'success')
+    toast.add('项目已创建', 'success')
   }
   catch (e: any) {
-    createError.value = e.message || 'Failed to create project'
-    toast.add('Failed to create project', 'error')
+    createError.value = e.message || '项目创建失败'
+    toast.add('项目创建失败', 'error')
   }
 }
 
@@ -132,11 +135,11 @@ async function handleUpdateProject() {
     }
     await projectStore.updateProject(selectedProjectId.value, data)
     showEditProjectModal.value = false
-    toast.add('Project updated', 'success')
+    toast.add('项目已更新', 'success')
   }
   catch (e: any) {
-    createError.value = e.message || 'Failed to update project'
-    toast.add('Failed to update project', 'error')
+    createError.value = e.message || '项目更新失败'
+    toast.add('项目更新失败', 'error')
   }
 }
 
@@ -152,8 +155,8 @@ function confirmDelete(id: string) {
   pendingDelete.value = {
     type: 'project',
     id,
-    title: 'Delete Project',
-    description: 'Are you sure you want to delete this project? This will permanently remove all characters, story bible entries, volumes, and chapters. This action cannot be undone.',
+    title: '删除项目',
+    description: '确定要删除这个项目吗？这将永久删除所有角色、故事设定、分卷和章节，此操作无法撤销。',
   }
   showDeleteConfirm.value = true
 }
@@ -168,24 +171,24 @@ async function handleConfirmDelete() {
       await projectStore.deleteProject(id)
       if (selectedProjectId.value === id)
         deselectProject()
-      toast.add('Project deleted', 'success')
+      toast.add('项目已删除', 'success')
     }
     else if (type === 'character') {
       await characterStore.deleteCharacter(selectedProjectId.value!, id)
-      toast.add('Character deleted', 'success')
+      toast.add('角色已删除', 'success')
     }
     else if (type === 'volume') {
       await volumeStore.deleteVolume(selectedProjectId.value!, id)
-      toast.add('Volume deleted', 'success')
+      toast.add('分卷已删除', 'success')
       await chapterStore.fetchChapters(selectedProjectId.value!)
     }
     else if (type === 'chapter') {
       await chapterStore.deleteChapter(selectedProjectId.value!, id)
-      toast.add('Chapter deleted', 'success')
+      toast.add('章节已删除', 'success')
     }
   }
   catch {
-    toast.add(`Failed to delete ${type}`, 'error')
+    toast.add('删除失败', 'error')
   }
   finally {
     showDeleteConfirm.value = false
@@ -236,16 +239,16 @@ async function handleSaveCharacter() {
     }
     if (editingCharacterId.value) {
       await characterStore.updateCharacter(selectedProjectId.value, editingCharacterId.value, data)
-      toast.add('Character updated', 'success')
+      toast.add('角色已更新', 'success')
     }
     else {
       await characterStore.createCharacter(selectedProjectId.value, data)
-      toast.add('Character created', 'success')
+      toast.add('角色已创建', 'success')
     }
     showCharacterModal.value = false
   }
   catch {
-    toast.add('Failed to save character', 'error')
+    toast.add('角色保存失败', 'error')
   }
 }
 
@@ -253,8 +256,8 @@ function handleDeleteCharacter(id: string) {
   pendingDelete.value = {
     type: 'character',
     id,
-    title: 'Delete Character',
-    description: 'Are you sure you want to delete this character? This action cannot be undone.',
+    title: '删除角色',
+    description: '确定要删除这个角色吗？此操作无法撤销。',
   }
   showDeleteConfirm.value = true
 }
@@ -277,17 +280,17 @@ async function handleCreateVolume() {
     }
     await volumeStore.createVolume(selectedProjectId.value, data)
     showVolumeModal.value = false
-    toast.add('Volume created', 'success')
+    toast.add('分卷已创建', 'success')
   }
-  catch { toast.add('Failed to create volume', 'error') }
+  catch { toast.add('分卷创建失败', 'error') }
 }
 
 function handleDeleteVolume(id: string) {
   pendingDelete.value = {
     type: 'volume',
     id,
-    title: 'Delete Volume',
-    description: 'Are you sure you want to delete this volume and all its chapters? This action cannot be undone.',
+    title: '删除分卷',
+    description: '确定要删除这个分卷及其所有章节吗？此操作无法撤销。',
   }
   showDeleteConfirm.value = true
 }
@@ -314,17 +317,17 @@ async function handleCreateChapter() {
     }
     await chapterStore.createChapter(selectedProjectId.value, data)
     showChapterModal.value = false
-    toast.add('Chapter created', 'success')
+    toast.add('章节已创建', 'success')
   }
-  catch { toast.add('Failed to create chapter', 'error') }
+  catch { toast.add('章节创建失败', 'error') }
 }
 
 function handleDeleteChapter(id: string) {
   pendingDelete.value = {
     type: 'chapter',
     id,
-    title: 'Delete Chapter',
-    description: 'Are you sure you want to delete this chapter? This action cannot be undone.',
+    title: '删除章节',
+    description: '确定要删除这个章节吗？此操作无法撤销。',
   }
   showDeleteConfirm.value = true
 }
@@ -350,15 +353,15 @@ async function handleSaveBible() {
   try {
     if (storyBibleStore.storyBible) {
       await storyBibleStore.updateStoryBible(selectedProjectId.value, bibleForm.value)
-      toast.add('Story bible updated', 'success')
+      toast.add('故事设定集已更新', 'success')
     }
     else {
       await storyBibleStore.createStoryBible(selectedProjectId.value, bibleForm.value)
-      toast.add('Story bible created', 'success')
+      toast.add('故事设定集已创建', 'success')
     }
     showBibleModal.value = false
   }
-  catch { toast.add('Failed to save story bible', 'error') }
+  catch { toast.add('故事设定集保存失败', 'error') }
 }
 
 function formatDate(dateStr: string) {
@@ -367,19 +370,19 @@ function formatDate(dateStr: string) {
 
 function getVolumesForChapter(volumeId?: string) {
   if (!volumeId)
-    return 'Uncategorized'
+    return '未归类'
   const vol = volumeStore.volumes.find((v: any) => v.id === volumeId)
-  return vol ? vol.title : 'Uncategorized'
+  return vol ? vol.title : '未归类'
 }
 </script>
 
 <template>
-  <NAppLayout :project-name="projectStore.currentProject?.title || 'Project Workbench'">
+  <NAppLayout :project-name="projectStore.currentProject?.title || '项目工作台'">
     <template #nav>
       <div class="h-full flex flex-col">
         <div class="flex items-center justify-between border-b border-border-light p-4">
           <h2 class="text-base text-text-primary font-semibold">
-            Projects
+            项目列表
           </h2>
           <NButton size="sm" @click="openCreateModal">
             + 新建
@@ -390,8 +393,8 @@ function getVolumesForChapter(volumeId?: string) {
 
         <NEmptyState
           v-else-if="projectStore.projects.length === 0"
-          title="No projects yet"
-          description="Create your first novel project to get started"
+          title="暂无项目"
+          description="创建第一个小说项目后开始调试数据流程"
         >
           <template #action>
             <NButton size="sm" @click="openCreateModal">
@@ -424,7 +427,7 @@ function getVolumesForChapter(volumeId?: string) {
               </div>
               <button
                 class="mt-0.5 h-6 w-6 inline-flex shrink-0 items-center justify-center rounded text-text-muted transition-colors hover:bg-semantic-error/10 hover:text-semantic-error"
-                title="Delete project"
+                title="删除项目"
                 @click.stop="confirmDelete(project.id)"
               >
                 <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -450,8 +453,8 @@ function getVolumesForChapter(volumeId?: string) {
 
       <div v-if="!selectedProjectId" class="h-full flex items-center justify-center">
         <NEmptyState
-          title="Select a project"
-          description="Choose a project from the sidebar to view its details"
+          title="请选择项目"
+          description="从侧边栏选择一个项目以查看详情"
         />
       </div>
 
@@ -470,35 +473,35 @@ function getVolumesForChapter(volumeId?: string) {
                 {{ projectStore.currentProject.status }}
               </NTag>
               <span v-if="projectStore.currentProject?.targetWords" class="text-sm text-text-muted">
-                Target: {{ projectStore.currentProject.targetWords.toLocaleString() }} words
+                目标：{{ projectStore.currentProject.targetWords.toLocaleString() }} 字
               </span>
             </div>
             <p v-if="projectStore.currentProject?.theme" class="mt-1 text-sm text-text-muted">
-              Theme: {{ projectStore.currentProject.theme }}
+              主题：{{ projectStore.currentProject.theme }}
             </p>
           </div>
           <div class="flex gap-2">
             <NButton variant="ghost" size="sm" @click="openEditProjectModal">
-              Edit Project
+              编辑项目
             </NButton>
             <NButton variant="secondary" size="sm" @click="deselectProject">
-              Back
+              返回
             </NButton>
           </div>
         </div>
 
         <!-- Story Bible -->
-        <NPanel title="Story Bible" description="World-building and narrative rules">
+        <NPanel title="故事设定集" description="世界观构建与叙事规则">
           <template #actions>
             <NButton size="sm" variant="ghost" @click="openEditBibleModal">
-              {{ storyBibleStore.storyBible ? 'Edit' : 'Create' }} Bible
+              {{ storyBibleStore.storyBible ? '编辑' : '创建' }} 设定集
             </NButton>
           </template>
           <template v-if="storyBibleStore.storyBible">
             <div class="space-y-3">
               <div v-if="storyBibleStore.storyBible.worldview">
                 <div class="text-xs text-text-muted font-medium tracking-wide uppercase">
-                  Worldview
+                  世界观
                 </div>
                 <p class="mt-1 text-sm text-text-primary">
                   {{ storyBibleStore.storyBible.worldview }}
@@ -506,7 +509,7 @@ function getVolumesForChapter(volumeId?: string) {
               </div>
               <div v-if="storyBibleStore.storyBible.mainConflict">
                 <div class="text-xs text-text-muted font-medium tracking-wide uppercase">
-                  Main Conflict
+                  主线冲突
                 </div>
                 <p class="mt-1 text-sm text-text-primary">
                   {{ storyBibleStore.storyBible.mainConflict }}
@@ -514,7 +517,7 @@ function getVolumesForChapter(volumeId?: string) {
               </div>
               <div v-if="storyBibleStore.storyBible.theme">
                 <div class="text-xs text-text-muted font-medium tracking-wide uppercase">
-                  Theme
+                  主题
                 </div>
                 <p class="mt-1 text-sm text-text-primary">
                   {{ storyBibleStore.storyBible.theme }}
@@ -522,7 +525,7 @@ function getVolumesForChapter(volumeId?: string) {
               </div>
               <div v-if="storyBibleStore.storyBible.rules">
                 <div class="text-xs text-text-muted font-medium tracking-wide uppercase">
-                  Rules
+                  系统规则
                 </div>
                 <p class="mt-1 text-sm text-text-primary">
                   {{ storyBibleStore.storyBible.rules }}
@@ -530,7 +533,7 @@ function getVolumesForChapter(volumeId?: string) {
               </div>
               <div v-if="storyBibleStore.storyBible.timeline">
                 <div class="text-xs text-text-muted font-medium tracking-wide uppercase">
-                  Timeline
+                  时间线
                 </div>
                 <p class="mt-1 text-sm text-text-primary">
                   {{ storyBibleStore.storyBible.timeline }}
@@ -540,20 +543,20 @@ function getVolumesForChapter(volumeId?: string) {
           </template>
           <template v-else>
             <p class="text-sm text-text-muted">
-              No story bible created yet.
+              尚未创建故事设定集。
             </p>
           </template>
         </NPanel>
 
         <!-- Characters -->
-        <NPanel title="Characters" :description="`Cast of ${characterStore.characters.length} character(s)`">
+        <NPanel title="角色" :description="`共 ${characterStore.characters.length} 个角色`">
           <template #actions>
             <NButton size="sm" @click="openCreateCharacterModal">
-              + Add Character
+              + 添加角色
             </NButton>
           </template>
           <div v-if="characterStore.characters.length === 0" class="text-sm text-text-muted">
-            No characters defined yet.
+            尚未定义角色。
           </div>
           <div v-else class="grid gap-3 sm:grid-cols-2">
             <div
@@ -565,7 +568,7 @@ function getVolumesForChapter(volumeId?: string) {
                 <div class="flex items-center gap-2">
                   <span class="text-sm text-text-primary font-medium">{{ char.name }}</span>
                   <NTag v-if="char.role" size="sm" variant="ai">
-                    {{ char.role }}
+                    {{ getCharacterRoleLabel(char.role) }}
                   </NTag>
                 </div>
                 <div class="flex gap-1">
@@ -578,24 +581,24 @@ function getVolumesForChapter(volumeId?: string) {
                 </div>
               </div>
               <p v-if="char.goal" class="mt-1 text-xs text-text-muted">
-                Goal: {{ char.goal }}
+                目标：{{ char.goal }}
               </p>
               <p v-if="char.personality" class="mt-1 text-xs text-text-muted">
-                Personality: {{ char.personality }}
+                性格：{{ char.personality }}
               </p>
             </div>
           </div>
         </NPanel>
 
         <!-- Volumes -->
-        <NPanel title="Volumes" :description="`${volumeStore.volumes.length} volume(s)`">
+        <NPanel title="分卷" :description="`${volumeStore.volumes.length} 个分卷`">
           <template #actions>
             <NButton size="sm" @click="openCreateVolumeModal">
-              + Add Volume
+              + 添加分卷
             </NButton>
           </template>
           <div v-if="volumeStore.volumes.length === 0" class="text-sm text-text-muted">
-            No volumes defined yet.
+            尚未定义分卷。
           </div>
           <div v-else class="space-y-2">
             <div
@@ -610,7 +613,7 @@ function getVolumesForChapter(volumeId?: string) {
                 </div>
                 <button
                   class="h-6 w-6 inline-flex items-center justify-center rounded text-text-muted transition-colors hover:bg-semantic-error/10 hover:text-semantic-error"
-                  title="Delete volume"
+                  title="删除分卷"
                   @click.stop="handleDeleteVolume(vol.id)"
                 >
                   <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -627,14 +630,14 @@ function getVolumesForChapter(volumeId?: string) {
         </NPanel>
 
         <!-- Chapters -->
-        <NPanel title="Chapters" :description="`${chapterStore.chapters.length} chapter(s)`">
+        <NPanel title="章节" :description="`${chapterStore.chapters.length} 个章节`">
           <template #actions>
             <NButton size="sm" @click="openCreateChapterModal">
-              + Add Chapter
+              + 添加章节
             </NButton>
           </template>
           <div v-if="chapterStore.chapters.length === 0" class="text-sm text-text-muted">
-            No chapters defined yet.
+            尚未定义章节。
           </div>
           <div v-else class="space-y-2">
             <div
@@ -649,8 +652,8 @@ function getVolumesForChapter(volumeId?: string) {
                 </div>
                 <div class="mt-1 flex items-center gap-2 text-xs text-text-muted">
                   <span>{{ getVolumesForChapter(ch.volumeId) }}</span>
-                  <span v-if="ch.outline">Has outline</span>
-                  <span v-if="ch.draft">{{ ch.draft.length }} chars draft</span>
+                  <span v-if="ch.outline">有大纲</span>
+                  <span v-if="ch.draft">{{ ch.draft.length }} 字草稿</span>
                 </div>
               </div>
               <div class="flex items-center gap-2">
@@ -667,8 +670,8 @@ function getVolumesForChapter(volumeId?: string) {
 
         <!-- Metadata -->
         <div class="flex items-center gap-4 text-xs text-text-muted">
-          <span>Created: {{ projectStore.currentProject ? formatDate(projectStore.currentProject.createdAt) : '' }}</span>
-          <span>Updated: {{ projectStore.currentProject ? formatDate(projectStore.currentProject.updatedAt) : '' }}</span>
+          <span>创建：{{ projectStore.currentProject ? formatDate(projectStore.currentProject.createdAt) : '' }}</span>
+          <span>更新：{{ projectStore.currentProject ? formatDate(projectStore.currentProject.updatedAt) : '' }}</span>
         </div>
       </div>
 
@@ -678,23 +681,23 @@ function getVolumesForChapter(volumeId?: string) {
           <NInput
             v-model="formTitle"
             label="标题"
-            placeholder="Enter project title"
-            :error="createError && !formTitle.trim() ? 'Title is required' : ''"
+            placeholder="输入项目标题"
+            :error="createError && !formTitle.trim() ? '请输入项目标题' : ''"
           />
           <NInput
             v-model="formGenre"
             label="类型"
-            placeholder="e.g. Fantasy, Sci-Fi, Romance"
+            placeholder="如：奇幻、科幻、言情"
           />
           <NInput
             v-model="formTheme"
             label="主题"
-            placeholder="e.g. Redemption, Coming of age"
+            placeholder="如：救赎、成长、复仇"
           />
           <NInput
             v-model="formTargetWords"
             label="目标字数"
-            placeholder="e.g. 80000"
+            placeholder="如：80000"
             type="number"
           />
           <p v-if="createError && formTitle.trim()" class="text-xs text-semantic-error">
@@ -716,9 +719,9 @@ function getVolumesForChapter(volumeId?: string) {
       <!-- Edit Project Modal -->
       <NModal v-model="showEditProjectModal" title="编辑项目">
         <form class="space-y-4" @submit.prevent="handleUpdateProject">
-          <NInput v-model="formTitle" label="标题" placeholder="Project title" />
-          <NInput v-model="formGenre" label="类型" placeholder="Genre" />
-          <NInput v-model="formTheme" label="主题" placeholder="Theme" />
+          <NInput v-model="formTitle" label="标题" placeholder="项目标题" />
+          <NInput v-model="formGenre" label="类型" placeholder="小说类型" />
+          <NInput v-model="formTheme" label="主题" placeholder="核心主题" />
           <NInput v-model="formTargetWords" label="目标字数" type="number" />
           <p v-if="createError" class="text-xs text-semantic-error">
             {{ createError }}
@@ -739,10 +742,10 @@ function getVolumesForChapter(volumeId?: string) {
       <!-- Character Modal -->
       <NModal v-model="showCharacterModal" :title="editingCharacterId ? '编辑角色' : '创建角色'">
         <form class="space-y-4" @submit.prevent="handleSaveCharacter">
-          <NInput v-model="charForm.name" label="姓名" placeholder="Character name" />
-          <NInput v-model="charForm.role" label="角色定位" placeholder="Role (e.g. Protagonist)" />
-          <NInput v-model="charForm.goal" label="目标" placeholder="Character's primary goal" />
-          <NTextArea v-model="charForm.personality" label="性格" placeholder="Describe their personality" />
+          <NInput v-model="charForm.name" label="姓名" placeholder="角色姓名" />
+          <NInput v-model="charForm.role" label="角色定位" placeholder="如：主角、反派、配角" />
+          <NInput v-model="charForm.goal" label="目标" placeholder="角色的核心目标" />
+          <NTextArea v-model="charForm.personality" label="性格" placeholder="描述角色性格" />
         </form>
         <template #footer>
           <div class="flex justify-end gap-3">
@@ -759,9 +762,9 @@ function getVolumesForChapter(volumeId?: string) {
       <!-- Volume Modal -->
       <NModal v-model="showVolumeModal" title="创建分卷">
         <form class="space-y-4" @submit.prevent="handleCreateVolume">
-          <NInput v-model="volForm.title" label="标题" placeholder="Volume title" />
-          <NTextArea v-model="volForm.summary" label="摘要" placeholder="Short summary" />
-          <NInput v-model="volForm.orderIndex" label="Order Index" type="number" />
+          <NInput v-model="volForm.title" label="标题" placeholder="分卷标题" />
+          <NTextArea v-model="volForm.summary" label="摘要" placeholder="简短摘要" />
+          <NInput v-model="volForm.orderIndex" label="排序序号" type="number" />
         </form>
         <template #footer>
           <div class="flex justify-end gap-3">
@@ -784,7 +787,7 @@ function getVolumesForChapter(volumeId?: string) {
             v-model="chForm.volumeId"
             label="分卷"
             :options="volumeStore.volumes.map((v: any) => ({ label: v.title, value: v.id }))"
-            placeholder="Select Volume"
+            placeholder="选择分卷"
           />
         </form>
         <template #footer>
@@ -802,10 +805,10 @@ function getVolumesForChapter(volumeId?: string) {
       <!-- Story Bible Modal -->
       <NModal v-model="showBibleModal" :title="storyBibleStore.storyBible ? '编辑故事设定集' : '创建故事设定集'">
         <form class="space-y-4" @submit.prevent="handleSaveBible">
-          <NTextArea v-model="bibleForm.worldview" label="世界观" placeholder="Describe the world" />
-          <NTextArea v-model="bibleForm.mainConflict" label="主线冲突" placeholder="What is the core conflict?" />
-          <NTextArea v-model="bibleForm.theme" label="主题" placeholder="Central theme" />
-          <NTextArea v-model="bibleForm.rules" label="系统规则" placeholder="Magic systems, social rules, etc." />
+          <NTextArea v-model="bibleForm.worldview" label="世界观" placeholder="描述故事世界" />
+          <NTextArea v-model="bibleForm.mainConflict" label="主线冲突" placeholder="故事的核心冲突是什么？" />
+          <NTextArea v-model="bibleForm.theme" label="主题" placeholder="核心主题" />
+          <NTextArea v-model="bibleForm.rules" label="系统规则" placeholder="魔法体系、社会规则等" />
           <NTextArea v-model="bibleForm.timeline" label="时间线" placeholder="Key events" />
         </form>
         <template #footer>

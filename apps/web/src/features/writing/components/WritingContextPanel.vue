@@ -4,6 +4,7 @@ import { NTag } from '@ai-novel/ui'
 import { BookOpen, ChevronRight, ScrollText, Sparkles, Users } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import AIAssistantSidebar from '../../../components/AIAssistantSidebar.vue'
+import { getCharacterRoleLabel } from '../../../utils/character-labels'
 
 const props = defineProps<{
   chapter: Chapter | undefined
@@ -121,7 +122,7 @@ defineExpose({
             <div class="h-2 w-2 rounded-full bg-primary/40" />
             <span class="text-sm text-text-primary font-bold">{{ char.name }}</span>
             <NTag v-if="char.role" size="sm" variant="ai">
-              {{ char.role }}
+              {{ getCharacterRoleLabel(char.role) }}
             </NTag>
           </div>
           <div class="space-y-2">

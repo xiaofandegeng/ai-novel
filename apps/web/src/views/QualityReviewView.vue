@@ -52,7 +52,7 @@ onMounted(async () => {
     selectedChapterId.value = chapterStore.chapters[0]?.id || ''
   }
   catch {
-    toast.add('Failed to load quality workspace', 'error')
+    toast.add('加载质量评估工作台失败，请稍后重试', 'error')
   }
   finally {
     loading.value = false
@@ -80,12 +80,12 @@ async function runQualityCheck() {
     )
     if (res && res.success) {
       selectedReport.value = res.data
-      toast.add('Quality report generated successfully', 'success')
+      toast.add('质量报告已成功生成', 'success')
       await fetchReports()
     }
   }
   catch {
-    toast.add('Failed to run quality check', 'error')
+    toast.add('运行质量检测失败，请稍后重试', 'error')
   }
   finally {
     evaluating.value = false
@@ -165,7 +165,7 @@ function selectReport(report: QualityReport) {
 </script>
 
 <template>
-  <NAppLayout :project-name="projectStore.currentProject?.title || 'Loading...'">
+  <NAppLayout :project-name="projectStore.currentProject?.title || '加载中…'">
     <template #nav>
       <AppSidebar :project-id="projectId" />
     </template>
@@ -193,7 +193,7 @@ function selectReport(report: QualityReport) {
                 编辑评估
               </NTag>
             </div>
-            <h1 class="text-3xl text-text-primary font-bold">
+            <h1 class="text-2xl text-text-primary font-bold">
               质量评估工作台
             </h1>
             <p class="mt-2 max-w-2xl text-sm text-text-secondary leading-relaxed">

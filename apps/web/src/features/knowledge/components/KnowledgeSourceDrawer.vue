@@ -18,9 +18,9 @@ const emit = defineEmits<{
       <ChevronRight class="rotate-180" :size="16" /> 返回书库
     </button>
 
-    <div class="border border-border-light rounded-3xl bg-bg-surface p-8 shadow-sm space-y-6">
+    <div class="border border-border-light rounded-lg bg-bg-surface p-8 shadow-sm space-y-6">
       <div>
-        <h2 class="text-3xl text-text-primary font-bold">
+        <h2 class="text-2xl text-text-primary font-bold">
           {{ source.title }}
         </h2>
         <p class="text-text-muted">

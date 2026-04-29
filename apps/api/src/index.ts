@@ -13,6 +13,7 @@ import { registerKnowledgeRoutes } from './routes/knowledge'
 import { registerProjectRoutes } from './routes/projects'
 import { registerQualityRoutes } from './routes/quality'
 import { registerRelationshipRoutes } from './routes/relationships'
+import { registerSettingsRoutes } from './routes/settings'
 import { registerStoryBibleRoutes } from './routes/story-bibles'
 import { registerVersionRoutes } from './routes/versions'
 import { registerVolumeRoutes } from './routes/volumes'
@@ -38,6 +39,7 @@ registerVersionRoutes(app)
 registerExportRoutes(app)
 registerKnowledgeRoutes(app)
 registerQualityRoutes(app)
+registerSettingsRoutes(app)
 
 app.notFound((c) => {
   return c.json({ error: 'Not Found' }, 404)

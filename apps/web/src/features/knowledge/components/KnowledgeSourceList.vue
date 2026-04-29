@@ -22,7 +22,7 @@ const emit = defineEmits<{
     <div
       v-for="source in sources"
       :key="source.id"
-      class="group cursor-pointer overflow-hidden border border-border-light rounded-2xl bg-bg-surface shadow-sm transition-all hover:border-primary/30 hover:shadow-md"
+      class="group cursor-pointer overflow-hidden border border-border-light rounded-lg bg-bg-surface shadow-sm transition-all hover:border-primary/30 hover:shadow-sm"
       @click="emit('select', source)"
     >
       <div class="relative h-32 flex items-center justify-center overflow-hidden border-b border-border-light bg-bg-subtle">

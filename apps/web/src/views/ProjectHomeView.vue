@@ -48,7 +48,7 @@ onMounted(async () => {
     ])
   }
   catch {
-    toast.add('Failed to load project data', 'error')
+    toast.add('加载项目数据失败，请稍后重试', 'error')
     router.push('/')
   }
   finally {
@@ -88,11 +88,11 @@ async function handleExport() {
       a.download = data.data.filename
       a.click()
       URL.revokeObjectURL(url)
-      toast.add('Export successful!', 'success')
+      toast.add('项目导出成功！', 'success')
     }
   }
   catch {
-    toast.add('Export failed', 'error')
+    toast.add('导出失败，请稍后重试', 'error')
   }
   finally {
     isExporting.value = false
@@ -102,7 +102,7 @@ async function handleExport() {
 
 <template>
   <NAppLayout
-    :project-name="projectStore.currentProject?.title || 'Loading...'"
+    :project-name="projectStore.currentProject?.title || '加载中…'"
     :project-id="projectId"
   >
     <template #topbar-left>
@@ -118,7 +118,7 @@ async function handleExport() {
         <div class="h-6 w-px bg-border-light" />
 
         <span class="text-base text-text-primary font-semibold">
-          {{ projectStore.currentProject?.title || 'Loading...' }}
+          {{ projectStore.currentProject?.title || '加载中…' }}
         </span>
       </div>
     </template>
@@ -173,7 +173,7 @@ async function handleExport() {
         <div class="grid gap-6 md:grid-cols-3">
           <!-- Continue Writing Card -->
           <div
-            class="group relative cursor-pointer overflow-hidden rounded-xl bg-primary p-6 text-white shadow-lg shadow-primary/20 md:col-span-2"
+            class="group relative cursor-pointer overflow-hidden rounded-xl bg-primary p-6 text-white shadow-sm md:col-span-2"
             @click="router.push(`/project/${projectId}/write`)"
           >
             <div class="relative z-10">

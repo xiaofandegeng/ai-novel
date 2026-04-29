@@ -32,7 +32,7 @@ const emit = defineEmits<{
     <div
       v-for="entry in entries"
       :key="entry.id"
-      class="group animate-in flex cursor-pointer items-start gap-6 border border-border-light rounded-2xl bg-bg-surface p-6 transition-all hover:border-primary/30 hover:shadow-md"
+      class="group animate-in flex cursor-pointer items-start gap-6 border border-border-light rounded-lg bg-bg-surface p-6 transition-all hover:border-primary/30 hover:shadow-sm"
       @click="emit('navigate', entry)"
     >
       <div class="h-12 w-12 flex items-center justify-center rounded-xl bg-bg-subtle text-text-secondary transition-colors group-hover:bg-primary/10 group-hover:text-primary">

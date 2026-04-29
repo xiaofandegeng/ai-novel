@@ -9,11 +9,11 @@ onMounted(async () => {
     const res = await fetch('/api/health')
     const data = await res.json()
     apiStatus.value = 'ok'
-    apiMessage.value = data.message || 'Backend is healthy'
+    apiMessage.value = data.message || '后端连接正常'
   }
   catch {
     apiStatus.value = 'error'
-    apiMessage.value = 'Failed to connect to backend'
+    apiMessage.value = '后端连接失败'
   }
 })
 </script>
@@ -28,7 +28,7 @@ onMounted(async () => {
       <div class="space-y-4">
         <div class="flex items-center gap-3">
           <span class="inline-block h-2.5 w-2.5 rounded-full bg-semantic-success" />
-          <span class="text-body">Frontend: Running</span>
+          <span class="text-body">前端：运行中</span>
         </div>
 
         <div class="flex items-center gap-3">
@@ -41,7 +41,7 @@ onMounted(async () => {
             }"
           />
           <span class="text-body">
-            Backend: {{ apiStatus === 'loading' ? 'Checking...' : apiMessage }}
+            后端：{{ apiStatus === 'loading' ? '检查中...' : apiMessage }}
           </span>
         </div>
       </div>

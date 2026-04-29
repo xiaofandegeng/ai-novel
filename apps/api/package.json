@@ -9,17 +9,20 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/scripts/seed.ts",
+    "db:migrate:sqlite": "tsx src/scripts/migrate-sqlite-to-postgres.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-novel/shared": "workspace:*",
     "@hono/node-server": "catalog:backend",
-    "better-sqlite3": "catalog:backend",
+    "dotenv": "catalog:backend",
     "drizzle-orm": "catalog:backend",
     "hono": "catalog:backend",
-    "openai": "catalog:backend"
+    "openai": "catalog:backend",
+    "postgres": "catalog:backend"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "catalog:backend",
+    "@types/node": "catalog:backend",
     "drizzle-kit": "catalog:backend",
     "tsx": "catalog:backend",
     "typescript": "catalog:dev"

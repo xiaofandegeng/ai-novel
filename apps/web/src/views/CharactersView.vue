@@ -6,6 +6,7 @@ import {
   NConfirmDialog,
   NInput,
   NLoadingState,
+  NSelect,
   NTextArea,
   useToast,
 } from '@ai-novel/ui'
@@ -25,6 +26,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useCharacterStore, useProjectStore } from '../stores/projects'
+import { characterRoleOptions, getCharacterRoleLabel } from '../utils/character-labels'
 
 const route = useRoute()
 const router = useRouter()
@@ -74,7 +76,7 @@ onMounted(async () => {
     }
   }
   catch {
-    toast.add('Failed to load characters', 'error')
+    toast.add('加载角色数据失败，请稍后重试', 'error')
   }
   finally {
     loading.value = false
@@ -87,8 +89,16 @@ const filteredCharacters = computed(() => {
   const q = searchQuery.value.toLowerCase()
   return characterStore.characters.filter(c =>
     c.name.toLowerCase().includes(q)
-    || (c.role && c.role.toLowerCase().includes(q)),
+    || Boolean(c.role && c.role.toLowerCase().includes(q))
+    || getCharacterRoleLabel(c.role).toLowerCase().includes(q),
   )
+})
+
+const charRoleModel = computed<string | number>({
+  get: () => charForm.value.role,
+  set: (value) => {
+    charForm.value.role = String(value) as CharacterRole
+  },
 })
 
 function selectCharacter(id: string) {
@@ -112,14 +122,14 @@ function selectCharacter(id: string) {
 async function handleAddCharacter() {
   try {
     const newChar = await characterStore.createCharacter(projectId, {
-      name: 'New Character',
+      name: '新角色',
       role: 'supporting',
     })
-    toast.add('Character added', 'success')
+    toast.add('角色已添加', 'success')
     selectCharacter(newChar.id)
   }
   catch {
-    toast.add('Failed to add character', 'error')
+    toast.add('添加角色失败，请稍后重试', 'error')
   }
 }
 
@@ -133,10 +143,10 @@ async function handleSave() {
       role: (charForm.value.role || undefined) as CharacterRole | undefined,
     }
     await characterStore.updateCharacter(projectId, selectedCharId.value, data)
-    toast.add('Character updated', 'success')
+    toast.add('角色已更新', 'success')
   }
   catch {
-    toast.add('Failed to save', 'error')
+    toast.add('保存失败，请稍后重试', 'error')
   }
   finally {
     saving.value = false
@@ -157,7 +167,7 @@ async function handleConfirmDelete() {
   try {
     const idToDelete = selectedCharId.value
     await characterStore.deleteCharacter(projectId, idToDelete)
-    toast.add('Character deleted', 'success')
+    toast.add('角色已删除', 'success')
 
     if (characterStore.characters.length > 0) {
       selectCharacter(characterStore.characters[0].id)
@@ -167,7 +177,7 @@ async function handleConfirmDelete() {
     }
   }
   catch {
-    toast.add('Failed to delete', 'error')
+    toast.add('删除失败，请稍后重试', 'error')
   }
   finally {
     showDeleteConfirm.value = false
@@ -184,7 +194,7 @@ const activeTab = ref('profile')
 
 <template>
   <NAppLayout
-    :project-name="projectStore.currentProject?.title || 'Loading...'"
+    :project-name="projectStore.currentProject?.title || '加载中…'"
     :project-id="projectId"
   >
     <template #topbar-left>
@@ -203,7 +213,7 @@ const activeTab = ref('profile')
           :to="`/project/${projectId}`"
           class="text-base text-text-primary font-semibold transition-colors hover:text-primary"
         >
-          {{ projectStore.currentProject?.title || 'Loading...' }}
+          {{ projectStore.currentProject?.title || '加载中…' }}
         </router-link>
       </div>
     </template>
@@ -238,12 +248,14 @@ const activeTab = ref('profile')
             </NButton>
           </div>
           <div class="relative">
+            <label class="sr-only" for="character-search">搜索角色</label>
             <Search class="absolute left-3 top-1/2 text-text-muted -translate-y-1/2" :size="14" />
             <input
+              id="character-search"
               v-model="searchQuery"
               type="text"
               placeholder="搜索角色..."
-              class="w-full border border-border-light rounded-md bg-bg-subtle py-1.5 pl-9 pr-3 text-xs transition-colors focus:border-primary focus:outline-none"
+              class="w-full border border-border-light rounded-md bg-bg-subtle py-1.5 pl-9 pr-3 text-xs transition-colors focus:border-primary placeholder:text-text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
             >
           </div>
         </div>
@@ -261,7 +273,7 @@ const activeTab = ref('profile')
               <span class="font-semibold" :class="selectedCharId === char.id ? 'text-primary' : 'text-text-primary'">
                 {{ char.name }}
               </span>
-              <span class="max-w-40 truncate text-xs text-text-muted">{{ char.role || '未定义身份' }}</span>
+              <span class="max-w-40 truncate text-xs text-text-muted">{{ getCharacterRoleLabel(char.role) }}</span>
             </div>
             <ChevronRight v-if="selectedCharId === char.id" :size="14" />
           </button>
@@ -286,12 +298,17 @@ const activeTab = ref('profile')
           <!-- Main Info Header -->
           <section class="space-y-6">
             <div class="flex items-end gap-6">
-              <div class="border-border-default h-24 w-24 flex items-center justify-center border-2 rounded-2xl border-dashed bg-bg-subtle text-text-muted">
+              <div class="border-border-default h-24 w-24 flex items-center justify-center border-2 rounded-xl border-dashed bg-bg-subtle text-text-muted">
                 <UserCircle :size="48" stroke-width="1" />
               </div>
               <div class="flex-1 space-y-4">
                 <NInput v-model="charForm.name" label="角色姓名" placeholder="例：林语森" />
-                <NInput v-model="charForm.role" label="身份定位 / 原型" placeholder="例：主角，怀才不遇的诗人" />
+                <NSelect
+                  v-model="charRoleModel"
+                  label="身份定位"
+                  :options="characterRoleOptions"
+                  placeholder="选择角色身份"
+                />
               </div>
             </div>
           </section>

@@ -84,7 +84,7 @@ onMounted(async () => {
     }
   }
   catch {
-    toast.add('Failed to load writing workspace', 'error')
+    toast.add('写作工作区加载失败', 'error')
   }
   finally {
     loading.value = false
@@ -110,12 +110,12 @@ async function handleSnapshot() {
       projectId,
       currentChapterId.value,
       draft.value,
-      `Snapshot at ${new Date().toLocaleTimeString()}`,
+      `快照 ${new Date().toLocaleTimeString()}`,
     )
-    toast.add('Snapshot saved to history', 'success')
+    toast.add('快照已保存到版本历史', 'success')
   }
   catch {
-    toast.add('Failed to save snapshot', 'error')
+    toast.add('快照保存失败', 'error')
   }
 }
 
@@ -126,8 +126,14 @@ function handleSelection(payload: { text: string, start: number, end: number }) 
 }
 
 function handleRunAI(type: 'continue' | 'polish' | 'expand' | 'shorten') {
+  const actionLabels = {
+    continue: '续写',
+    polish: '润色',
+    expand: '扩写',
+    shorten: '精简',
+  }
   const prompt = buildAIPrompt(type)
-  toast.add(`AI ${type} started...`, 'info')
+  toast.add(`AI ${actionLabels[type]}已开始`, 'info')
   initPendingResult(type)
 
   if (contextPanelRef.value) {
@@ -147,7 +153,7 @@ function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discard') {
 
 <template>
   <NAppLayout
-    :project-name="projectStore.currentProject?.title || 'Loading...'"
+    :project-name="projectStore.currentProject?.title || '加载中...'"
     :project-id="projectId"
     :current-chapter="currentChapter?.title"
   >

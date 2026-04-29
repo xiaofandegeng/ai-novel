@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import process from 'node:process'
-import { db } from '../db'
+import { db, sql } from '../db'
 import {
   chapters,
   chapterVersions,
@@ -157,7 +157,10 @@ async function seed() {
   console.log('Seed data inserted successfully')
 }
 
-seed().catch((err) => {
+seed().then(async () => {
+  await sql.end()
+}).catch(async (err) => {
   console.error('Seed failed:', err)
+  await sql.end()
   process.exit(1)
 })

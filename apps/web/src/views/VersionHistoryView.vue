@@ -59,7 +59,7 @@ onMounted(async () => {
       await versionStore.fetchVersions(projectId, chapterId.value)
   }
   catch {
-    toast.add('Failed to load version history', 'error')
+    toast.add('加载版本历史失败，请稍后重试', 'error')
   }
   finally {
     loading.value = false
@@ -84,11 +84,11 @@ async function handleConfirmRestore() {
     if (!selectedVersion.value)
       return
     await chapterStore.updateChapter(projectId, chapterId.value, { draft: selectedVersion.value.content })
-    toast.add('Version restored successfully', 'success')
+    toast.add('版本已成功恢复', 'success')
     router.push({ path: `/project/${projectId}/write`, query: { chapter: chapterId.value } })
   }
   catch {
-    toast.add('Failed to restore version', 'error')
+    toast.add('恢复版本失败，请稍后重试', 'error')
   }
   finally {
     showRestoreConfirm.value = false
@@ -107,10 +107,10 @@ async function handleConfirmDeleteSnapshot() {
     await versionStore.deleteVersion(projectId, snapshotToDelete.value)
     if (selectedVersionId.value === snapshotToDelete.value)
       selectedVersionId.value = null
-    toast.add('Snapshot deleted', 'success')
+    toast.add('快照已删除', 'success')
   }
   catch {
-    toast.add('Delete failed', 'error')
+    toast.add('删除快照失败，请稍后重试', 'error')
   }
   finally {
     showDeleteSnapshotConfirm.value = false
@@ -138,7 +138,7 @@ function formatDate(date?: string) {
 </script>
 
 <template>
-  <NAppLayout :project-name="projectStore.currentProject?.title || 'Loading...'" :project-id="projectId">
+  <NAppLayout :project-name="projectStore.currentProject?.title || '加载中…'" :project-id="projectId">
     <template #nav>
       <AppSidebar :project-id="projectId" />
     </template>
@@ -193,7 +193,8 @@ function formatDate(date?: string) {
                 {{ formatDate(v.createdAt) }}
               </span>
               <button
-                class="p-1 opacity-0 hover:text-semantic-error group-hover:opacity-100"
+                class="p-1 text-text-muted transition-colors hover:text-semantic-error"
+                aria-label="删除快照"
                 @click.stop="confirmDeleteSnapshot(v.id)"
               >
                 <Trash2 :size="12" />

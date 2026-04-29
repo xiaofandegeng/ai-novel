@@ -4,12 +4,13 @@ packages:
 catalogs:
   backend:
     '@hono/node-server': ^1.14.1
-    '@types/better-sqlite3': ^7.6.13
-    better-sqlite3: ^11.9.1
+    '@types/node': ^22.15.21
+    dotenv: ^16.4.7
     drizzle-kit: ^0.31.1
     drizzle-orm: ^0.44.2
     hono: ^4.7.10
     openai: ^4.104.0
+    postgres: ^3.4.5
     tsx: ^4.19.4
   dev:
     '@antfu/eslint-config': ^4.14.1

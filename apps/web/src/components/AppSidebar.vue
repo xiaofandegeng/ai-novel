@@ -7,6 +7,7 @@ import {
   ListTree,
   PenLine,
   Search,
+  Settings,
   Share2,
   Users,
   Zap,
@@ -79,6 +80,12 @@ const menuItems = [
     path: `/project/${props.projectId}/quality`,
     icon: BarChart3,
     activeMatch: /quality/,
+  },
+  {
+    name: '项目设置',
+    path: `/project/${props.projectId}/settings`,
+    icon: Settings,
+    activeMatch: /settings/,
   },
 ]
 

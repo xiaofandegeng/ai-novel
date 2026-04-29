@@ -26,6 +26,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { chatStream, readChatStream } from '../api/ai'
 import AppSidebar from '../components/AppSidebar.vue'
+import ChapterTitleField from '../features/outline/components/ChapterTitleField.vue'
 import {
   useChapterStore,
   useCharacterStore,
@@ -79,7 +80,7 @@ onMounted(async () => {
     }
   }
   catch {
-    toast.add('Failed to load outline data', 'error')
+    toast.add('大纲数据加载失败', 'error')
   }
   finally {
     loading.value = false
@@ -114,10 +115,10 @@ async function handleSave() {
       characters: JSON.stringify(outlineForm.value.characterIds),
     }
     await chapterStore.updateChapter(projectId, selectedChapterId.value, data)
-    toast.add('Outline saved', 'success')
+    toast.add('大纲已保存', 'success')
   }
   catch {
-    toast.add('Failed to save', 'error')
+    toast.add('大纲保存失败', 'error')
   }
   finally {
     saving.value = false
@@ -130,16 +131,16 @@ async function handleAddChapter(volumeId: string) {
     const nextNumber = lastChapter ? lastChapter.chapterNumber + 1 : 1
 
     const newCh = await chapterStore.createChapter(projectId, {
-      title: `New Chapter ${nextNumber}`,
+      title: `第 ${nextNumber} 章`,
       volumeId,
       chapterNumber: nextNumber,
       status: 'planning',
     })
-    toast.add('Chapter added', 'success')
+    toast.add('章节已添加', 'success')
     selectChapter(newCh.id)
   }
   catch {
-    toast.add('Failed to add chapter', 'error')
+    toast.add('章节添加失败', 'error')
   }
 }
 
@@ -147,13 +148,13 @@ async function handleAddVolume() {
   try {
     const nextOrder = volumeStore.volumes.length + 1
     await volumeStore.createVolume(projectId, {
-      title: `Volume ${nextOrder}`,
+      title: `第 ${nextOrder} 卷`,
       orderIndex: nextOrder,
     })
-    toast.add('Volume added', 'success')
+    toast.add('分卷已添加', 'success')
   }
   catch {
-    toast.add('Failed to add volume', 'error')
+    toast.add('分卷添加失败', 'error')
   }
 }
 
@@ -209,7 +210,7 @@ async function handleAIBrainstorm() {
     aiSuggestion.value = await readChatStream(response)
   }
   catch {
-    toast.add('AI Brainstorm failed', 'error')
+    toast.add('AI 灵感风暴失败', 'error')
     aiSuggestion.value = null
   }
   finally {
@@ -242,7 +243,7 @@ function confirmOutlineAIResult(action: 'insert' | 'replace' | 'backup' | 'disca
 </script>
 
 <template>
-  <NAppLayout :project-name="projectStore.currentProject?.title || 'Loading...'" :project-id="projectId">
+  <NAppLayout :project-name="projectStore.currentProject?.title || '加载中...'" :project-id="projectId">
     <template #topbar-left>
       <div class="flex items-center gap-4">
         <router-link
@@ -259,7 +260,7 @@ function confirmOutlineAIResult(action: 'insert' | 'replace' | 'backup' | 'disca
           :to="`/project/${projectId}`"
           class="text-base text-text-primary font-semibold transition-colors hover:text-primary"
         >
-          {{ projectStore.currentProject?.title || 'Loading...' }}
+          {{ projectStore.currentProject?.title || '加载中...' }}
         </router-link>
       </div>
     </template>
@@ -362,11 +363,7 @@ function confirmOutlineAIResult(action: 'insert' | 'replace' | 'backup' | 'disca
           <header class="space-y-6">
             <div class="flex items-center justify-between">
               <div class="flex-1">
-                <input
-                  v-model="outlineForm.title"
-                  class="w-full border-none bg-transparent p-0 text-3xl text-text-primary font-bold focus:outline-none focus:ring-0"
-                  placeholder="章节标题"
-                >
+                <ChapterTitleField v-model="outlineForm.title" />
               </div>
               <div class="flex items-center gap-4">
                 <NButton variant="ai" size="sm" :loading="isBrainstorming" @click="handleAIBrainstorm">
@@ -374,10 +371,11 @@ function confirmOutlineAIResult(action: 'insert' | 'replace' | 'backup' | 'disca
                 </NButton>
                 <div class="h-6 w-px bg-border-light" />
                 <div class="flex items-center gap-2">
-                  <span class="mr-2 text-xs text-text-muted font-bold uppercase">Status</span>
+                  <span class="mr-2 text-xs text-text-muted font-bold">状态</span>
                   <select
                     v-model="outlineForm.status"
-                    class="border border-border-light rounded-md bg-bg-surface px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                    aria-label="章节状态"
+                    class="border border-border-light rounded-md bg-bg-surface px-2 py-1 text-xs focus:outline-none focus-visible:ring-2 focus:ring-1 focus-visible:ring-primary/20 focus:ring-primary"
                   >
                     <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
                       {{ opt.label }}

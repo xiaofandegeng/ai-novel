@@ -12,7 +12,7 @@ export function useKnowledgeUpload(projectId: string) {
     return new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => resolve(String(reader.result || ''))
-      reader.onerror = () => reject(reader.error || new Error('Failed to read file'))
+      reader.onerror = () => reject(reader.error || new Error('文件读取失败'))
       reader.readAsText(file)
     })
   }
@@ -46,7 +46,7 @@ export function useKnowledgeUpload(projectId: string) {
 
   function validateFile(file: File): string | null {
     if (!file.name.toLowerCase().endsWith('.txt')) {
-      return 'Only .txt files are supported'
+      return '仅支持 .txt 文本文件'
     }
     return null
   }

@@ -28,7 +28,7 @@ The product is not a generic AI chat app. It is a structured creative writing sy
 
 - Monorepo: pnpm workspace
 - Frontend: Vue 3, TypeScript, Pinia, Vue Router, UnoCSS
-- Backend: Hono, TypeScript, Drizzle ORM, SQLite
+- Backend: Hono, TypeScript, Drizzle ORM, PostgreSQL
 - Shared contracts: `packages/shared`
 - UI package: `packages/ui`
 

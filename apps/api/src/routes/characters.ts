@@ -5,18 +5,18 @@ import { characters } from '../db/schema'
 import { fail, generateId, now, success, updatedFields } from '../utils'
 
 export function registerCharacterRoutes(app: Hono) {
-  app.get('/api/projects/:projectId/characters', (c) => {
+  app.get('/api/projects/:projectId/characters', async (c) => {
     const projectId = c.req.param('projectId')
-    const rows = db.select().from(characters).where(eq(characters.projectId, projectId)).all()
+    const rows = await db.select().from(characters).where(eq(characters.projectId, projectId))
     return c.json(success(rows))
   })
 
-  app.get('/api/projects/:projectId/characters/:id', (c) => {
+  app.get('/api/projects/:projectId/characters/:id', async (c) => {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
-    const row = db.select().from(characters).where(
+    const [row] = await db.select().from(characters).where(
       and(eq(characters.id, id), eq(characters.projectId, projectId)),
-    ).get()
+    )
     if (!row)
       return c.json(fail('Character not found'), 404)
     return c.json(success(row))
@@ -27,7 +27,7 @@ export function registerCharacterRoutes(app: Hono) {
     const body = await c.req.json()
     const id = generateId()
     const timestamp = now()
-    const row = db.insert(characters).values({
+    const [row] = await db.insert(characters).values({
       id,
       projectId,
       name: body.name,
@@ -41,7 +41,7 @@ export function registerCharacterRoutes(app: Hono) {
       arc: body.arc,
       createdAt: timestamp,
       updatedAt: timestamp,
-    }).returning().get()
+    }).returning()
     return c.json(success(row), 201)
   })
 
@@ -60,20 +60,20 @@ export function registerCharacterRoutes(app: Hono) {
       personality: body.personality,
       arc: body.arc,
     })
-    const row = db.update(characters).set(fields).where(
+    const [row] = await db.update(characters).set(fields).where(
       and(eq(characters.id, id), eq(characters.projectId, projectId)),
-    ).returning().get()
+    ).returning()
     if (!row)
       return c.json(fail('Character not found'), 404)
     return c.json(success(row))
   })
 
-  app.delete('/api/projects/:projectId/characters/:id', (c) => {
+  app.delete('/api/projects/:projectId/characters/:id', async (c) => {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
-    const row = db.delete(characters).where(
+    const [row] = await db.delete(characters).where(
       and(eq(characters.id, id), eq(characters.projectId, projectId)),
-    ).returning().get()
+    ).returning()
     if (!row)
       return c.json({ success: false, error: 'Character not found' }, 404)
     return c.json(success(row, 'Character deleted'))

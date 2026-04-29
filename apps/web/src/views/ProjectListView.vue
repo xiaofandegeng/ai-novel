@@ -3,6 +3,7 @@ import {
   NButton,
   NConfirmDialog,
   NEmptyState,
+  NIconButton,
   NInput,
   NModal,
   NTag,
@@ -12,9 +13,7 @@ import {
   BarChart3,
   BookOpen,
   Clock,
-  ExternalLink,
   Plus,
-  Search,
   Trash2,
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
@@ -78,11 +77,11 @@ async function handleCreate() {
     }
     const p = await projectStore.createProject(data)
     showCreateModal.value = false
-    toast.add('Project created', 'success')
+    toast.add('项目已创建', 'success')
     router.push(`/project/${p.id}`)
   }
   catch (e: any) {
-    createError.value = e.message || 'Failed to create project'
+    createError.value = e.message || '创建项目失败，请稍后重试'
   }
 }
 
@@ -99,10 +98,10 @@ async function handleConfirmDelete() {
     return
   try {
     await projectStore.deleteProject(projectToDelete.value)
-    toast.add('Project deleted', 'success')
+    toast.add('项目已删除', 'success')
   }
   catch {
-    toast.add('Failed to delete', 'error')
+    toast.add('删除项目失败，请稍后重试', 'error')
   }
   finally {
     showDeleteConfirm.value = false
@@ -119,6 +118,17 @@ function formatDate(dateStr: string) {
   if (diff < 86400000)
     return `${Math.floor(diff / 3600000)} 小时前`
   return date.toLocaleDateString('zh-CN')
+}
+
+function statusLabel(status: string) {
+  const map: Record<string, string> = {
+    planning: '规划中',
+    writing: '写作中',
+    paused: '已暂停',
+    completed: '已完成',
+    archived: '已归档',
+  }
+  return map[status] || '未设置'
 }
 </script>
 
@@ -142,14 +152,18 @@ function formatDate(dateStr: string) {
         </div>
 
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div class="relative min-w-0 sm:w-72">
-            <Search class="absolute left-3 top-1/2 text-text-muted -translate-y-1/2" :size="16" />
-            <input
-              v-model="searchQuery"
-              type="text"
-              placeholder="搜索项目..."
-              class="h-10 w-full border border-border-light rounded-md bg-bg-subtle pl-9 pr-3 text-sm transition-colors focus:border-primary focus:bg-bg-surface focus:outline-none"
-            >
+          <div class="min-w-0 sm:w-72">
+            <label class="sr-only" for="project-search">搜索项目</label>
+            <div class="relative">
+              <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 text-text-muted -translate-y-1/2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+              <input
+                id="project-search"
+                v-model="searchQuery"
+                type="text"
+                placeholder="搜索项目..."
+                class="h-10 w-full border border-border-light rounded-md bg-bg-subtle pl-9 pr-3 text-sm text-text-primary transition-colors focus:border-primary focus:bg-bg-surface placeholder:text-text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
+              >
+            </div>
           </div>
           <NButton variant="primary" @click="openCreateModal">
             <Plus :size="18" class="mr-1" /> 创建新项目
@@ -160,8 +174,8 @@ function formatDate(dateStr: string) {
 
     <!-- Main Content -->
     <main class="flex-1 overflow-y-auto p-8">
-      <div v-if="loading" class="grid gap-6 lg:grid-cols-3 md:grid-cols-2 xl:grid-cols-4">
-        <div v-for="i in 4" :key="i" class="h-48 animate-pulse border border-border-light rounded-xl bg-bg-surface" />
+      <div v-if="loading" class="grid gap-5 2xl:grid-cols-3 md:grid-cols-2">
+        <div v-for="i in 4" :key="i" class="h-44 animate-pulse border border-border-light rounded-lg bg-bg-surface" />
       </div>
 
       <NEmptyState
@@ -179,27 +193,27 @@ function formatDate(dateStr: string) {
 
       <div v-else class="mx-auto max-w-7xl space-y-6">
         <div class="grid gap-4 md:grid-cols-3">
-          <div class="border border-border-light rounded-lg bg-bg-surface p-4 shadow-sm">
+          <div class="border border-border-light rounded-lg bg-bg-surface px-4 py-3 shadow-sm">
             <div class="text-xs text-text-muted font-semibold tracking-widest uppercase">
               项目数
             </div>
-            <div class="mt-1 text-2xl text-text-primary font-bold">
+            <div class="mt-1 text-xl text-text-primary font-bold">
               {{ projectStore.projects.length }}
             </div>
           </div>
-          <div class="border border-border-light rounded-lg bg-bg-surface p-4 shadow-sm">
+          <div class="border border-border-light rounded-lg bg-bg-surface px-4 py-3 shadow-sm">
             <div class="text-xs text-text-muted font-semibold tracking-widest uppercase">
               目标总字数
             </div>
-            <div class="mt-1 text-2xl text-text-primary font-bold">
+            <div class="mt-1 text-xl text-text-primary font-bold">
               {{ totalTargetWords.toLocaleString() }}
             </div>
           </div>
-          <div class="border border-border-light rounded-lg bg-bg-surface p-4 shadow-sm">
+          <div class="border border-border-light rounded-lg bg-bg-surface px-4 py-3 shadow-sm">
             <div class="text-xs text-text-muted font-semibold tracking-widest uppercase">
               当前筛选
             </div>
-            <div class="mt-1 text-2xl text-text-primary font-bold">
+            <div class="mt-1 text-xl text-text-primary font-bold">
               {{ filteredProjects.length }}
             </div>
           </div>
@@ -212,57 +226,61 @@ function formatDate(dateStr: string) {
           <span class="text-xs text-text-muted">按最近更新排序</span>
         </div>
 
-        <div class="grid gap-6 lg:grid-cols-3 md:grid-cols-2 xl:grid-cols-4">
-          <div
+        <div class="grid gap-5 2xl:grid-cols-3 md:grid-cols-2">
+          <article
             v-for="project in filteredProjects"
             :key="project.id"
-            class="group relative cursor-pointer border border-border-light rounded-xl bg-bg-surface p-6 shadow-sm transition-all hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5"
-            @click="router.push(`/project/${project.id}`)"
+            class="group relative border border-border-light rounded-lg bg-bg-surface p-5 shadow-sm transition-all hover:border-primary/30 hover:shadow-sm"
           >
-            <!-- Card Header -->
-            <div class="mb-4 flex items-start justify-between">
-              <NTag v-if="project.genre" size="sm" variant="info">
-                {{ project.genre }}
-              </NTag>
-              <div v-else class="h-5" />
-
-              <div class="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                <button
-                  class="rounded p-1.5 text-text-muted transition-colors hover:bg-semantic-error/10 hover:text-semantic-error"
-                  @click.stop="confirmDelete(project.id)"
-                >
-                  <Trash2 :size="14" />
-                </button>
+            <router-link
+              :to="`/project/${project.id}`"
+              class="block focus-visible:rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
+            >
+              <!-- Card Header -->
+              <div class="mb-3 flex items-start justify-between">
+                <div class="flex items-center gap-2">
+                  <NTag v-if="project.genre" size="sm" variant="info">
+                    {{ project.genre }}
+                  </NTag>
+                  <NTag size="sm" :variant="project.status === 'completed' ? 'success' : 'info'">
+                    {{ statusLabel(project.status) }}
+                  </NTag>
+                </div>
               </div>
-            </div>
 
-            <!-- Card Body -->
-            <div>
-              <h3 class="mb-2 text-lg text-text-primary font-bold leading-tight transition-colors group-hover:text-primary">
-                {{ project.title }}
-              </h3>
-              <p class="line-clamp-2 mb-6 h-10 text-sm text-text-muted">
-                {{ project.theme || '尚未设定项目主题。' }}
-              </p>
-            </div>
-
-            <!-- Card Footer -->
-            <div class="flex items-center justify-between border-t border-border-light pt-4">
-              <div class="flex items-center gap-1.5 text-xs text-text-muted">
-                <Clock :size="12" />
-                {{ formatDate(project.updatedAt) }}
+              <!-- Card Body -->
+              <div>
+                <h3 class="mb-2 text-lg text-text-primary font-bold leading-tight transition-colors group-hover:text-primary">
+                  {{ project.title }}
+                </h3>
+                <p class="line-clamp-2 mb-4 h-10 text-sm text-text-muted">
+                  {{ project.theme || '尚未设定项目主题。' }}
+                </p>
               </div>
-              <div class="flex items-center gap-1.5 text-xs text-text-secondary font-medium">
-                <BarChart3 :size="12" />
-                {{ project.targetWords ? `${(project.targetWords / 1000).toFixed(0)}k` : '?' }} 字
-              </div>
-            </div>
 
-            <!-- Quick Link Overlay bit -->
-            <div class="absolute right-4 top-4 flex items-center gap-1 text-xs text-primary underline decoration-2 underline-offset-4 opacity-0 transition-all group-hover:opacity-100">
-              打开项目 <ExternalLink :size="10" />
-            </div>
-          </div>
+              <!-- Card Footer -->
+              <div class="flex items-center justify-between border-t border-border-light pt-3">
+                <div class="flex items-center gap-1.5 text-xs text-text-muted">
+                  <Clock :size="12" />
+                  {{ formatDate(project.updatedAt) }}
+                </div>
+                <div class="flex items-center gap-1.5 text-xs text-text-secondary font-medium">
+                  <BarChart3 :size="12" />
+                  目标 {{ project.targetWords?.toLocaleString() || '未设定' }} 字
+                </div>
+              </div>
+            </router-link>
+
+            <NIconButton
+              label="删除项目"
+              variant="ghost"
+              size="sm"
+              class="absolute right-3 top-3 text-text-muted hover:text-semantic-error"
+              @click.stop="confirmDelete(project.id)"
+            >
+              <Trash2 :size="14" />
+            </NIconButton>
+          </article>
         </div>
       </div>
     </main>

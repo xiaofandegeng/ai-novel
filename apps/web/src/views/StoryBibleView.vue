@@ -70,7 +70,7 @@ onMounted(async () => {
     }
   }
   catch {
-    toast.add('Failed to load project bible', 'error')
+    toast.add('加载故事设定集失败，请稍后重试', 'error')
   }
   finally {
     loading.value = false
@@ -86,10 +86,10 @@ async function handleSave() {
     else {
       await storyBibleStore.createStoryBible(projectId, form.value)
     }
-    toast.add('Story Bible saved', 'success')
+    toast.add('故事设定集已保存', 'success')
   }
   catch {
-    toast.add('Failed to save', 'error')
+    toast.add('保存失败，请稍后重试', 'error')
   }
   finally {
     saving.value = false
@@ -98,7 +98,7 @@ async function handleSave() {
 </script>
 
 <template>
-  <NAppLayout :project-name="projectStore.currentProject?.title || 'Loading...'" :project-id="projectId">
+  <NAppLayout :project-name="projectStore.currentProject?.title || '加载中…'" :project-id="projectId">
     <template #topbar-left>
       <div class="flex items-center gap-4">
         <router-link
@@ -115,7 +115,7 @@ async function handleSave() {
           :to="`/project/${projectId}`"
           class="text-base text-text-primary font-semibold transition-colors hover:text-primary"
         >
-          {{ projectStore.currentProject?.title || 'Loading...' }}
+          {{ projectStore.currentProject?.title || '加载中…' }}
         </router-link>
       </div>
     </template>

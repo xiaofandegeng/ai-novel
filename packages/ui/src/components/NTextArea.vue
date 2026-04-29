@@ -26,7 +26,6 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-const textareaRef = defineModel<string>()
 const textareaId = useId()
 
 function onInput(event: Event) {
@@ -47,7 +46,6 @@ function onInput(event: Event) {
     </label>
     <textarea
       :id="textareaId"
-      ref="textareaRef"
       :value="modelValue"
       :placeholder="placeholder"
       :disabled="disabled"

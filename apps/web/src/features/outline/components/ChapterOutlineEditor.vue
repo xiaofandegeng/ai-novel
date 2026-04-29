@@ -9,6 +9,7 @@ import {
   Plus,
   Users,
 } from 'lucide-vue-next'
+import ChapterTitleField from './ChapterTitleField.vue'
 
 defineProps<{
   characters: Character[]
@@ -45,19 +46,16 @@ const statusOptions = [
     <header class="space-y-6">
       <div class="flex items-center justify-between">
         <div class="flex-1">
-          <input
-            v-model="form.title"
-            class="w-full border-none bg-transparent p-0 text-3xl text-text-primary font-bold focus:outline-none focus:ring-0"
-            placeholder="章节标题"
-          >
+          <ChapterTitleField v-model="form.title" />
         </div>
         <div class="flex items-center gap-4">
           <div class="h-6 w-px bg-border-light" />
           <div class="flex items-center gap-2">
-            <span class="mr-2 text-xs text-text-muted font-bold uppercase">Status</span>
+            <span class="mr-2 text-xs text-text-muted font-bold">状态</span>
             <select
               v-model="form.status"
-              class="border border-border-light rounded-md bg-bg-surface px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              aria-label="章节状态"
+              class="border border-border-light rounded-md bg-bg-surface px-2 py-1 text-xs focus:outline-none focus-visible:ring-2 focus:ring-1 focus-visible:ring-primary/20 focus:ring-primary"
             >
               <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
                 {{ opt.label }}

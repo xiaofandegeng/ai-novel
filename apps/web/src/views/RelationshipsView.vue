@@ -65,7 +65,7 @@ onMounted(async () => {
     }
   }
   catch {
-    toast.add('Failed to load relationships', 'error')
+    toast.add('加载关系数据失败，请稍后重试', 'error')
   }
   finally {
     loading.value = false
@@ -86,7 +86,7 @@ function selectRelationship(id: string) {
 
 async function handleAdd() {
   if (characterStore.characters.length < 2) {
-    toast.add('You need at least 2 characters to create a relationship', 'warning')
+    toast.add('至少需要 2 名角色才能创建关系', 'warning')
     return
   }
 
@@ -96,13 +96,13 @@ async function handleAdd() {
       characterBId: characterStore.characters[1].id,
       type: 'ally',
       strength: 5,
-      description: 'New Relationship',
+      description: '新关系',
     })
-    toast.add('Relationship added', 'success')
+    toast.add('关系已添加', 'success')
     selectRelationship(newRel.id)
   }
   catch {
-    toast.add('Failed to add relationship', 'error')
+    toast.add('添加关系失败，请稍后重试', 'error')
   }
 }
 
@@ -112,10 +112,10 @@ async function handleSave() {
   saving.value = true
   try {
     await relationshipStore.updateRelationship(projectId, selectedRelId.value, relForm.value)
-    toast.add('Relationship saved', 'success')
+    toast.add('关系已保存', 'success')
   }
   catch {
-    toast.add('Failed to save', 'error')
+    toast.add('保存失败，请稍后重试', 'error')
   }
   finally {
     saving.value = false
@@ -135,18 +135,18 @@ async function handleConfirmDelete() {
     return
   try {
     await relationshipStore.deleteRelationship(projectId, selectedRelId.value)
-    toast.add('Relationship deleted', 'success')
+    toast.add('关系已删除', 'success')
     selectedRelId.value = null
   }
   catch {
-    toast.add('Failed to delete', 'error')
+    toast.add('删除失败，请稍后重试', 'error')
   }
   finally {
     showDeleteConfirm.value = false
   }
 }
 
-const getCharName = (id: string) => characterStore.characters.find(c => c.id === id)?.name || 'Unknown'
+const getCharName = (id: string) => characterStore.characters.find(c => c.id === id)?.name || '未知'
 
 const relationshipTypes = [
   { value: 'ally', label: '盟友 / 朋友', icon: Users },
@@ -159,7 +159,7 @@ const relationshipTypes = [
 </script>
 
 <template>
-  <NAppLayout :project-name="projectStore.currentProject?.title || 'Loading...'" :project-id="projectId">
+  <NAppLayout :project-name="projectStore.currentProject?.title || '加载中…'" :project-id="projectId">
     <template #topbar-left>
       <div class="flex items-center gap-4">
         <router-link
@@ -176,7 +176,7 @@ const relationshipTypes = [
           :to="`/project/${projectId}`"
           class="text-base text-text-primary font-semibold transition-colors hover:text-primary"
         >
-          {{ projectStore.currentProject?.title || 'Loading...' }}
+          {{ projectStore.currentProject?.title || '加载中…' }}
         </router-link>
       </div>
     </template>
@@ -254,7 +254,7 @@ const relationshipTypes = [
             </div>
           </header>
 
-          <div class="grid items-center gap-8 border border-border-light rounded-2xl bg-bg-surface p-6 py-6 shadow-sm md:grid-cols-2">
+          <div class="grid items-center gap-8 border border-border-light rounded-lg bg-bg-surface p-6 py-6 shadow-sm md:grid-cols-2">
             <div class="flex flex-col items-center gap-3">
               <UserCircle2 :size="48" class="text-text-muted" />
               <span class="text-sm text-text-primary font-bold">{{ getCharName(relForm.characterAId) }}</span>

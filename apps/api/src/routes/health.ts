@@ -1,25 +1,30 @@
 import type { Hono } from 'hono'
-import { sqlite } from '../db'
+import { sql } from '../db'
 
 export function registerHealthRoutes(app: Hono) {
-  app.get('/api/health', (c) => {
-    let dbStatus: 'connected' | 'error' = 'error'
-
+  app.get('/api/health', async (c) => {
     try {
-      sqlite.prepare('SELECT 1').get()
-      dbStatus = 'connected'
+      await sql`select 1`
+      return c.json({
+        status: 'ok',
+        message: 'AI Novel API is running',
+        timestamp: new Date().toISOString(),
+        services: {
+          database: 'connected',
+          databaseType: 'postgresql',
+        },
+      })
     }
     catch {
-      dbStatus = 'error'
+      return c.json({
+        status: 'error',
+        message: 'Database connection failed',
+        timestamp: new Date().toISOString(),
+        services: {
+          database: 'disconnected',
+          databaseType: 'postgresql',
+        },
+      }, 500)
     }
-
-    return c.json({
-      status: 'ok' as const,
-      message: 'AI Novel API is running',
-      timestamp: new Date().toISOString(),
-      services: {
-        database: dbStatus,
-      },
-    })
   })
 }

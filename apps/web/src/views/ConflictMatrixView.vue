@@ -70,7 +70,7 @@ onMounted(async () => {
     }
   }
   catch {
-    toast.add('Failed to load conflicts', 'error')
+    toast.add('加载冲突数据失败，请稍后重试', 'error')
   }
   finally {
     loading.value = false
@@ -93,17 +93,17 @@ function selectConflict(id: string) {
 async function handleAdd() {
   try {
     const newConf = await conflictStore.createConflict(projectId, {
-      title: 'New Conflict',
+      title: '新冲突',
       type: 'external',
       intensity: 3,
       status: 'latent',
-      description: 'Define the core motivation of this struggle.',
+      description: '定义这场冲突的核心动因。',
     })
-    toast.add('Conflict added', 'success')
+    toast.add('冲突已添加', 'success')
     selectConflict(newConf.id)
   }
   catch {
-    toast.add('Failed to add conflict', 'error')
+    toast.add('添加冲突失败，请稍后重试', 'error')
   }
 }
 
@@ -117,10 +117,10 @@ async function handleSave() {
       participants: JSON.stringify(conflictForm.value.participants),
     }
     await conflictStore.updateConflict(projectId, selectedConflictId.value, data)
-    toast.add('Conflict updated', 'success')
+    toast.add('冲突已更新', 'success')
   }
   catch {
-    toast.add('Failed to save', 'error')
+    toast.add('保存失败，请稍后重试', 'error')
   }
   finally {
     saving.value = false
@@ -140,11 +140,11 @@ async function handleConfirmDelete() {
     return
   try {
     await conflictStore.deleteConflict(projectId, selectedConflictId.value)
-    toast.add('Conflict deleted', 'success')
+    toast.add('冲突已删除', 'success')
     selectedConflictId.value = null
   }
   catch {
-    toast.add('Failed to delete', 'error')
+    toast.add('删除失败，请稍后重试', 'error')
   }
   finally {
     showDeleteConfirm.value = false
@@ -178,7 +178,7 @@ const types = [
 
 <template>
   <NAppLayout
-    :project-name="projectStore.currentProject?.title || 'Loading...'"
+    :project-name="projectStore.currentProject?.title || '加载中…'"
     :project-id="projectId"
   >
     <template #topbar-left>
@@ -197,7 +197,7 @@ const types = [
           :to="`/project/${projectId}`"
           class="text-base text-text-primary font-semibold transition-colors hover:text-primary"
         >
-          {{ projectStore.currentProject?.title || 'Loading...' }}
+          {{ projectStore.currentProject?.title || '加载中…' }}
         </router-link>
       </div>
     </template>
@@ -261,7 +261,8 @@ const types = [
             <div class="mr-8 flex-1">
               <input
                 v-model="conflictForm.title"
-                class="w-full border-none bg-transparent p-0 text-3xl text-text-primary font-bold focus:outline-none focus:ring-0"
+                aria-label="矛盾名称"
+                class="w-full border-none bg-transparent p-0 text-2xl text-text-primary font-bold focus-visible:rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
                 placeholder="矛盾名称"
               >
             </div>
@@ -275,7 +276,7 @@ const types = [
             </div>
           </header>
 
-          <!-- Status Tracker -->
+          <!-- 冲突状态轨迹 -->
           <div class="grid grid-cols-5 gap-2">
             <button
               v-for="item in statusOptions"
@@ -335,7 +336,7 @@ const types = [
           </div>
 
           <!-- Planning Note -->
-          <div class="flex gap-4 border border-accent/10 rounded-2xl bg-accent-soft/30 p-4">
+          <div class="flex gap-4 border border-accent/10 rounded-lg bg-accent-soft/30 p-4">
             <TrendingUp :size="20" class="mt-1 shrink-0 text-accent" />
             <div>
               <p class="mb-1 text-sm text-text-primary font-bold">

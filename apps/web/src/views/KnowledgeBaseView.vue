@@ -34,6 +34,7 @@ import {
   useRelationshipStore,
   useStoryBibleStore,
 } from '../stores/projects'
+import { getCharacterRoleLabel } from '../utils/character-labels'
 
 const route = useRoute()
 const router = useRouter()
@@ -74,7 +75,7 @@ onMounted(async () => {
     ])
   }
   catch {
-    toast.add('Failed to aggregate knowledge base', 'error')
+    toast.add('加载知识库数据失败，请稍后重试', 'error')
   }
   finally {
     loading.value = false
@@ -123,7 +124,7 @@ const allEntries = computed<KnowledgeEntry[]>(() => {
     items.push({
       id: c.id,
       title: c.name,
-      content: `${c.role}. ${c.personality || ''} ${c.goal || ''}`,
+      content: `${getCharacterRoleLabel(c.role)}。${c.personality || ''} ${c.goal || ''}`,
       type: 'character',
       icon: Users,
       original: c,
@@ -174,7 +175,7 @@ function navigateTo(entry: KnowledgeEntry) {
 
 <template>
   <NAppLayout
-    :project-name="projectStore.currentProject?.title || 'Loading...'"
+    :project-name="projectStore.currentProject?.title || '加载中…'"
     :project-id="projectId"
   >
     <template #topbar-left>
@@ -193,7 +194,7 @@ function navigateTo(entry: KnowledgeEntry) {
           :to="`/project/${projectId}`"
           class="text-base text-text-primary font-semibold transition-colors hover:text-primary"
         >
-          {{ projectStore.currentProject?.title || 'Loading...' }}
+          {{ projectStore.currentProject?.title || '加载中…' }}
         </router-link>
       </div>
     </template>

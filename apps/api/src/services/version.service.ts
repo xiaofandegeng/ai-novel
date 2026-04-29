@@ -22,7 +22,7 @@ export async function createSnapshot(
   }
 
   const id = generateId()
-  const row = db
+  const [row] = await db
     .insert(chapterVersions)
     .values({
       id,
@@ -33,17 +33,15 @@ export async function createSnapshot(
       note: note || 'Manual snapshot',
     })
     .returning()
-    .get()
 
   return row
 }
 
 export async function deleteVersion(projectId: string, versionId: string) {
-  const row = db
+  const [row] = await db
     .delete(chapterVersions)
     .where(and(eq(chapterVersions.id, versionId), eq(chapterVersions.projectId, projectId)))
     .returning()
-    .get()
 
   if (!row) {
     return fail('Version not found')

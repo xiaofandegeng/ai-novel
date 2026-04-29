@@ -5,18 +5,18 @@ import { chapters } from '../db/schema'
 import { fail, generateId, now, success, updatedFields } from '../utils'
 
 export function registerChapterRoutes(app: Hono) {
-  app.get('/api/projects/:projectId/chapters', (c) => {
+  app.get('/api/projects/:projectId/chapters', async (c) => {
     const projectId = c.req.param('projectId')
-    const rows = db.select().from(chapters).where(eq(chapters.projectId, projectId)).all()
+    const rows = await db.select().from(chapters).where(eq(chapters.projectId, projectId))
     return c.json(success(rows))
   })
 
-  app.get('/api/projects/:projectId/chapters/:id', (c) => {
+  app.get('/api/projects/:projectId/chapters/:id', async (c) => {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
-    const row = db.select().from(chapters).where(
+    const [row] = await db.select().from(chapters).where(
       and(eq(chapters.id, id), eq(chapters.projectId, projectId)),
-    ).get()
+    )
     if (!row)
       return c.json(fail('Chapter not found'), 404)
     return c.json(success(row))
@@ -27,7 +27,7 @@ export function registerChapterRoutes(app: Hono) {
     const body = await c.req.json()
     const id = generateId()
     const timestamp = now()
-    const row = db.insert(chapters).values({
+    const [row] = await db.insert(chapters).values({
       id,
       projectId,
       volumeId: body.volumeId,
@@ -46,7 +46,7 @@ export function registerChapterRoutes(app: Hono) {
       status: body.status ?? 'not_started',
       createdAt: timestamp,
       updatedAt: timestamp,
-    }).returning().get()
+    }).returning()
     return c.json(success(row), 201)
   })
 
@@ -70,20 +70,20 @@ export function registerChapterRoutes(app: Hono) {
       endingHook: body.endingHook,
       status: body.status,
     })
-    const row = db.update(chapters).set(fields).where(
+    const [row] = await db.update(chapters).set(fields).where(
       and(eq(chapters.id, id), eq(chapters.projectId, projectId)),
-    ).returning().get()
+    ).returning()
     if (!row)
       return c.json(fail('Chapter not found'), 404)
     return c.json(success(row))
   })
 
-  app.delete('/api/projects/:projectId/chapters/:id', (c) => {
+  app.delete('/api/projects/:projectId/chapters/:id', async (c) => {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
-    const row = db.delete(chapters).where(
+    const [row] = await db.delete(chapters).where(
       and(eq(chapters.id, id), eq(chapters.projectId, projectId)),
-    ).returning().get()
+    ).returning()
     if (!row)
       return c.json(fail('Chapter not found'), 404)
     return c.json(success(row, 'Chapter deleted'))

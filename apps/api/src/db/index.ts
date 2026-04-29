@@ -1,16 +1,22 @@
-import { mkdirSync } from 'node:fs'
+import { existsSync } from 'node:fs'
+import { userInfo } from 'node:os'
+import { resolve } from 'node:path'
 import process from 'node:process'
-import Database from 'better-sqlite3'
-import { drizzle } from 'drizzle-orm/better-sqlite3'
+import { config } from 'dotenv'
+import { drizzle } from 'drizzle-orm/postgres-js'
+import postgres from 'postgres'
 import * as schema from './schema'
 
-const dbPath = process.env.DATABASE_URL || './data/ai-novel.db'
+for (const envPath of [resolve(process.cwd(), '.env'), resolve(process.cwd(), '../../.env')]) {
+  if (existsSync(envPath))
+    config({ path: envPath, override: false })
+}
 
-mkdirSync(dbPath.substring(0, dbPath.lastIndexOf('/')), { recursive: true })
+export const databaseUrl
+  = process.env.DATABASE_URL || `postgres://${userInfo().username}@localhost:5432/ai_novel`
 
-const sqlite = new Database(dbPath)
-sqlite.pragma('journal_mode = WAL')
-sqlite.pragma('foreign_keys = ON')
+export const sql = postgres(databaseUrl, {
+  max: 10,
+})
 
-export const db = drizzle(sqlite, { schema })
-export { sqlite }
+export const db = drizzle(sql, { schema })

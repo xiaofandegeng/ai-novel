@@ -5,9 +5,9 @@ import { storyBibles } from '../db/schema'
 import { fail, generateId, now, success, updatedFields } from '../utils'
 
 export function registerStoryBibleRoutes(app: Hono) {
-  app.get('/api/projects/:projectId/story-bible', (c) => {
+  app.get('/api/projects/:projectId/story-bible', async (c) => {
     const projectId = c.req.param('projectId')
-    const row = db.select().from(storyBibles).where(eq(storyBibles.projectId, projectId)).get()
+    const [row] = await db.select().from(storyBibles).where(eq(storyBibles.projectId, projectId))
     if (!row)
       return c.json(fail('Story bible not found'), 404)
     return c.json(success(row))
@@ -18,7 +18,7 @@ export function registerStoryBibleRoutes(app: Hono) {
     const body = await c.req.json()
     const id = generateId()
     const timestamp = now()
-    const row = db.insert(storyBibles).values({
+    const [row] = await db.insert(storyBibles).values({
       id,
       projectId,
       worldview: body.worldview,
@@ -28,7 +28,7 @@ export function registerStoryBibleRoutes(app: Hono) {
       timeline: body.timeline,
       createdAt: timestamp,
       updatedAt: timestamp,
-    }).returning().get()
+    }).returning()
     return c.json(success(row), 201)
   })
 
@@ -42,7 +42,7 @@ export function registerStoryBibleRoutes(app: Hono) {
       rules: body.rules,
       timeline: body.timeline,
     })
-    const row = db.update(storyBibles).set(fields).where(eq(storyBibles.projectId, projectId)).returning().get()
+    const [row] = await db.update(storyBibles).set(fields).where(eq(storyBibles.projectId, projectId)).returning()
     if (!row)
       return c.json(fail('Story bible not found'), 404)
     return c.json(success(row))

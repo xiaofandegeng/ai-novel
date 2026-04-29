@@ -5,14 +5,14 @@ import { novelProjects } from '../db/schema'
 import { fail, generateId, now, success, updatedFields } from '../utils'
 
 export function registerProjectRoutes(app: Hono) {
-  app.get('/api/projects', (c) => {
-    const rows = db.select().from(novelProjects).all()
+  app.get('/api/projects', async (c) => {
+    const rows = await db.select().from(novelProjects)
     return c.json(success(rows))
   })
 
-  app.get('/api/projects/:id', (c) => {
+  app.get('/api/projects/:id', async (c) => {
     const id = c.req.param('id')
-    const row = db.select().from(novelProjects).where(eq(novelProjects.id, id)).get()
+    const [row] = await db.select().from(novelProjects).where(eq(novelProjects.id, id))
     if (!row)
       return c.json(fail('Project not found'), 404)
     return c.json(success(row))
@@ -22,7 +22,7 @@ export function registerProjectRoutes(app: Hono) {
     const body = await c.req.json()
     const id = generateId()
     const timestamp = now()
-    const row = db.insert(novelProjects).values({
+    const [row] = await db.insert(novelProjects).values({
       id,
       title: body.title,
       description: body.description,
@@ -34,7 +34,7 @@ export function registerProjectRoutes(app: Hono) {
       status: body.status ?? 'planning',
       createdAt: timestamp,
       updatedAt: timestamp,
-    }).returning().get()
+    }).returning()
     return c.json(success(row), 201)
   })
 
@@ -51,15 +51,15 @@ export function registerProjectRoutes(app: Hono) {
       styleProfile: body.styleProfile,
       status: body.status,
     })
-    const row = db.update(novelProjects).set(fields).where(eq(novelProjects.id, id)).returning().get()
+    const [row] = await db.update(novelProjects).set(fields).where(eq(novelProjects.id, id)).returning()
     if (!row)
       return c.json(fail('Project not found'), 404)
     return c.json(success(row))
   })
 
-  app.delete('/api/projects/:id', (c) => {
+  app.delete('/api/projects/:id', async (c) => {
     const id = c.req.param('id')
-    const row = db.delete(novelProjects).where(eq(novelProjects.id, id)).returning().get()
+    const [row] = await db.delete(novelProjects).where(eq(novelProjects.id, id)).returning()
     if (!row)
       return c.json(fail('Project not found'), 404)
     return c.json(success(row, 'Project deleted'))

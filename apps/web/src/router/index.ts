@@ -59,6 +59,11 @@ const router = createRouter({
       component: () => import('@/views/QualityReviewView.vue'),
     },
     {
+      path: '/project/:id/settings',
+      name: 'project-settings',
+      component: () => import('@/views/ProjectSettingsView.vue'),
+    },
+    {
       path: '/debug',
       name: 'debug',
       component: () => import('@/views/DataViewer.vue'),
