@@ -59,16 +59,6 @@ const router = createRouter({
       component: () => import('@/views/QualityReviewView.vue'),
     },
     {
-      path: '/project/:id/versions',
-      name: 'versions',
-      component: () => import('@/views/VersionHistoryView.vue'),
-    },
-    {
-      path: '/project/:id/quality',
-      name: 'quality',
-      component: () => import('@/views/QualityReviewView.vue'),
-    },
-    {
       path: '/debug',
       name: 'debug',
       component: () => import('@/views/DataViewer.vue'),

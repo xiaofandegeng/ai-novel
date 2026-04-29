@@ -36,7 +36,8 @@ export function registerKnowledgeRoutes(app: Hono) {
   // Get source details with chunks
   app.get('/api/projects/:projectId/knowledge/sources/:id', async (c) => {
     const id = c.req.param('id')
-    const [source] = await db.select().from(knowledgeSources).where(eq(knowledgeSources.id, id))
+    const projectId = c.req.param('projectId')
+    const [source] = await db.select().from(knowledgeSources).where(and(eq(knowledgeSources.id, id), eq(knowledgeSources.projectId, projectId)))
 
     if (!source)
       return c.json({ success: false, error: 'Source not found' }, 404)
@@ -54,8 +55,13 @@ export function registerKnowledgeRoutes(app: Hono) {
     if (!content)
       return c.json({ success: false, error: 'No content to analyze' }, 400)
 
+    // Verify source belongs to project
+    const [source] = await db.select().from(knowledgeSources).where(and(eq(knowledgeSources.id, id), eq(knowledgeSources.projectId, projectId)))
+    if (!source)
+      return c.json({ success: false, error: 'Source not found' }, 404)
+
     // Update status to processing
-    await db.update(knowledgeSources).set({ status: 'processing' }).where(eq(knowledgeSources.id, id))
+    await db.update(knowledgeSources).set({ status: 'processing' }).where(and(eq(knowledgeSources.id, id), eq(knowledgeSources.projectId, projectId)))
 
     try {
       // Basic chapter splitting by regex (Chapter/第X章/第X卷)
@@ -103,12 +109,12 @@ export function registerKnowledgeRoutes(app: Hono) {
       }
 
       // Update source to completed
-      await db.update(knowledgeSources).set({ status: 'completed' }).where(eq(knowledgeSources.id, id))
+      await db.update(knowledgeSources).set({ status: 'completed' }).where(and(eq(knowledgeSources.id, id), eq(knowledgeSources.projectId, projectId)))
 
       return c.json({ success: true, data: { chunks: chunksData.length } })
     }
     catch (e: any) {
-      await db.update(knowledgeSources).set({ status: 'failed' }).where(eq(knowledgeSources.id, id))
+      await db.update(knowledgeSources).set({ status: 'failed' }).where(and(eq(knowledgeSources.id, id), eq(knowledgeSources.projectId, projectId)))
       return c.json({ success: false, error: e.message }, 500)
     }
   })

@@ -74,12 +74,27 @@ async function fetchSources() {
   sources.value = data
 }
 
+function readFileAsText(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('Failed to read file'))
+    reader.readAsText(file)
+  })
+}
+
 async function handleFileUpload(event: Event) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length)
     return
 
   const file = input.files[0]
+  if (!file.name.toLowerCase().endsWith('.txt')) {
+    toast.add('Only .txt files are supported', 'error')
+    input.value = ''
+    return
+  }
+
   uploading.value = true
 
   try {
@@ -92,17 +107,16 @@ async function handleFileUpload(event: Event) {
     })
 
     // 2. Read file content
-    const reader = new FileReader()
-    reader.onload = async (e) => {
-      const content = e.target?.result as string
-      // 3. Trigger analysis (In real app, this would be backend task)
-      await api.post(`/api/projects/${projectId}/knowledge/sources/${source.id}/analyze`, { content })
-      toast.add('Reference material uploaded and analyzed', 'success')
-      fetchSources()
-    }
-    reader.readAsText(file)
+    const content = await readFileAsText(file)
+
+    // 3. Trigger analysis
+    await api.post(`/api/projects/${projectId}/knowledge/sources/${source.id}/analyze`, { content })
+
+    toast.add('Reference material uploaded and analyzed', 'success')
+    await fetchSources()
   }
-  catch {
+  catch (error: any) {
+    console.error('Upload error:', error)
     toast.add('Upload failed', 'error')
   }
   finally {

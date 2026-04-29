@@ -1,6 +1,6 @@
 import type { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { chapters, qualityReports } from '../db/schema'
 
@@ -20,7 +20,7 @@ export function registerQualityRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
     const chapterId = c.req.param('chapterId')
 
-    const [chapter] = await db.select().from(chapters).where(eq(chapters.id, chapterId))
+    const [chapter] = await db.select().from(chapters).where(and(eq(chapters.id, chapterId), eq(chapters.projectId, projectId)))
     if (!chapter)
       return c.json({ success: false, error: 'Chapter not found' }, 404)
     if (!chapter.draft)
@@ -51,7 +51,8 @@ export function registerQualityRoutes(app: Hono) {
   // Get report detail
   app.get('/api/projects/:projectId/quality/reports/:id', async (c) => {
     const id = c.req.param('id')
-    const [report] = await db.select().from(qualityReports).where(eq(qualityReports.id, id))
+    const projectId = c.req.param('projectId')
+    const [report] = await db.select().from(qualityReports).where(and(eq(qualityReports.id, id), eq(qualityReports.projectId, projectId)))
     if (!report)
       return c.json({ success: false, error: 'Report not found' }, 404)
     return c.json({ success: true, data: report })

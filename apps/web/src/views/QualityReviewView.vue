@@ -14,12 +14,14 @@ import {
   CheckCircle2,
   ChevronRight,
   Gauge,
+  History,
   Sparkles,
   Target,
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
+import { useApi } from '../composables/useApi'
 import {
   useChapterStore,
   useProjectStore,
@@ -28,18 +30,23 @@ import {
 const route = useRoute()
 const projectId = route.params.id as string
 const toast = useToast()
+const api = useApi()
 
 const projectStore = useProjectStore()
 const chapterStore = useChapterStore()
 
 const loading = ref(true)
+const evaluating = ref(false)
 const selectedChapterId = ref('')
+const reports = ref<any[]>([])
+const selectedReport = ref<any | null>(null)
 
 onMounted(async () => {
   try {
     await Promise.all([
       projectStore.fetchProject(projectId),
       chapterStore.fetchChapters(projectId),
+      fetchReports(),
     ])
     selectedChapterId.value = chapterStore.chapters[0]?.id || ''
   }
@@ -51,46 +58,104 @@ onMounted(async () => {
   }
 })
 
+async function fetchReports() {
+  const res = await api.get<any>(`/api/projects/${projectId}/quality/reports`)
+  if (res && res.success) {
+    reports.value = res.data
+    if (reports.value.length > 0 && !selectedReport.value) {
+      selectedReport.value = reports.value[0]
+    }
+  }
+}
+
+async function runQualityCheck() {
+  if (!selectedChapterId.value)
+    return
+  evaluating.value = true
+  try {
+    const res = await api.post<any>(
+      `/api/projects/${projectId}/chapters/${selectedChapterId.value}/quality-check`,
+      {},
+    )
+    if (res && res.success) {
+      selectedReport.value = res.data
+      toast.add('Quality report generated successfully', 'success')
+      await fetchReports()
+    }
+  }
+  catch {
+    toast.add('Failed to run quality check', 'error')
+  }
+  finally {
+    evaluating.value = false
+  }
+}
+
 const selectedChapter = computed(() =>
   chapterStore.chapters.find(ch => ch.id === selectedChapterId.value),
 )
 
 const wordCount = computed(() => selectedChapter.value?.draft?.length || 0)
-const hasEnoughText = computed(() => wordCount.value >= 500)
+const hasEnoughText = computed(() => wordCount.value >= 100) // Lowered threshold for MVP/Mock
 
-const qualityDimensions = computed(() => [
-  {
-    label: '节奏密度',
-    score: hasEnoughText.value ? 76 : 0,
-    description: '场景推进、信息释放与段落呼吸感。',
-    icon: Gauge,
-  },
-  {
-    label: '冲突强度',
-    score: hasEnoughText.value ? 68 : 0,
-    description: '人物目标、阻力与场景张力是否清晰。',
-    icon: Target,
-  },
-  {
-    label: '逻辑连续性',
-    score: hasEnoughText.value ? 82 : 0,
-    description: '事件因果、设定约束和前后文一致性。',
-    icon: CheckCircle2,
-  },
-  {
-    label: '人物一致性',
-    score: hasEnoughText.value ? 73 : 0,
-    description: '行为、语言和动机是否贴合人物档案。',
-    icon: BookOpen,
-  },
-])
-
-const overallScore = computed(() => {
-  if (!hasEnoughText.value)
-    return 0
-  const total = qualityDimensions.value.reduce((sum, item) => sum + item.score, 0)
-  return Math.round(total / qualityDimensions.value.length)
+const qualityDimensions = computed(() => {
+  const r = selectedReport.value
+  return [
+    {
+      label: '节奏密度',
+      score: r ? r.rhythmScore * 10 : 0,
+      description: '场景推进、信息释放与段落呼吸感。',
+      icon: Gauge,
+    },
+    {
+      label: '冲突强度',
+      score: r ? r.conflictScore * 10 : 0,
+      description: '人物目标、阻力与场景张力是否清晰。',
+      icon: Target,
+    },
+    {
+      label: '逻辑连续性',
+      score: r ? r.logicScore * 10 : 0,
+      description: '事件因果、设定约束和前后文一致性。',
+      icon: CheckCircle2,
+    },
+    {
+      label: '人物一致性',
+      score: r ? r.characterScore * 10 : 0,
+      description: '行为、语言和动机是否贴合人物档案。',
+      icon: BookOpen,
+    },
+  ]
 })
+
+const overallScore = computed(() => selectedReport.value?.score || 0)
+
+const reportIssues = computed(() => {
+  if (!selectedReport.value?.issues)
+    return []
+  try {
+    return JSON.parse(selectedReport.value.issues)
+  }
+  catch {
+    return []
+  }
+})
+
+const reportSuggestions = computed(() => {
+  if (!selectedReport.value?.suggestions)
+    return []
+  try {
+    return JSON.parse(selectedReport.value.suggestions)
+  }
+  catch {
+    return []
+  }
+})
+
+function selectReport(report: any) {
+  selectedReport.value = report
+  selectedChapterId.value = report.chapterId
+}
 </script>
 
 <template>
@@ -101,10 +166,7 @@ const overallScore = computed(() => {
 
     <template #topbar-right>
       <div class="flex items-center gap-3">
-        <NTag variant="warning" size="sm">
-          待接入 AI 评估 API
-        </NTag>
-        <NButton variant="primary" size="sm" :disabled="!hasEnoughText">
+        <NButton variant="primary" size="sm" :disabled="!hasEnoughText || evaluating" :loading="evaluating" @click="runQualityCheck">
           <Sparkles :size="15" />
           生成质量报告
         </NButton>
@@ -129,13 +191,13 @@ const overallScore = computed(() => {
               质量评估工作台
             </h1>
             <p class="mt-2 max-w-2xl text-sm text-text-secondary leading-relaxed">
-              当前页面先统一质量评估的信息架构和视觉入口，后续接入 AI 后会生成可保存的章节与全书评估报告。
+              基于 AI 深度分析章节的创作质量，提供可落地的修改建议。
             </p>
           </div>
 
           <div class="border border-border-light rounded-lg bg-bg-surface p-4 shadow-sm">
             <div class="text-xs text-text-muted font-semibold tracking-widest uppercase">
-              当前综合评分
+              综合评分
             </div>
             <div class="mt-1 flex items-end gap-2">
               <span class="text-4xl text-text-primary font-bold">{{ overallScore }}</span>
@@ -145,103 +207,133 @@ const overallScore = computed(() => {
         </header>
 
         <div class="grid gap-6 lg:grid-cols-[320px_1fr]">
-          <NPanel title="章节选择" description="选择需要评估的正文样本" padding>
-            <div v-if="chapterStore.chapters.length === 0" class="py-10 text-center text-sm text-text-muted">
-              暂无章节。请先在大纲中创建章节。
-            </div>
-            <div v-else class="space-y-2">
-              <button
-                v-for="chapter in chapterStore.chapters"
-                :key="chapter.id"
-                class="w-full border rounded-lg p-3 text-left transition-colors"
-                :class="selectedChapterId === chapter.id
-                  ? 'border-primary bg-primary-soft text-primary'
-                  : 'border-border-light bg-bg-surface text-text-secondary hover:bg-bg-subtle'"
-                @click="selectedChapterId = chapter.id"
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <div class="min-w-0">
-                    <div class="truncate text-sm font-semibold">
-                      {{ chapter.chapterNumber }}. {{ chapter.title }}
-                    </div>
-                    <div class="mt-1 text-xs opacity-75">
-                      {{ chapter.draft?.length || 0 }} 字 · {{ chapter.status }}
-                    </div>
-                  </div>
-                  <ChevronRight :size="15" />
-                </div>
-              </button>
-            </div>
-          </NPanel>
-
           <div class="space-y-6">
-            <NPanel title="评估维度" :description="selectedChapter ? selectedChapter.title : '未选择章节'" padding>
-              <div v-if="!hasEnoughText" class="mb-5 flex items-start gap-3 border border-semantic-warning/20 rounded-lg bg-semantic-warning/10 p-4">
-                <AlertTriangle :size="18" class="mt-0.5 text-semantic-warning" />
-                <div>
-                  <div class="text-sm text-text-primary font-semibold">
-                    正文样本偏短
-                  </div>
-                  <p class="mt-1 text-sm text-text-secondary">
-                    建议章节正文超过 500 字后再生成正式质量报告，避免 AI 给出过度泛化的建议。
-                  </p>
-                </div>
+            <NPanel title="章节选择" description="选择正文样本" padding>
+              <div v-if="chapterStore.chapters.length === 0" class="py-10 text-center text-sm text-text-muted">
+                暂无章节。
               </div>
-
-              <div class="grid gap-4 md:grid-cols-2">
-                <div
-                  v-for="item in qualityDimensions"
-                  :key="item.label"
-                  class="border border-border-light rounded-lg bg-bg-subtle/60 p-4"
+              <div v-else class="space-y-2">
+                <button
+                  v-for="chapter in chapterStore.chapters"
+                  :key="chapter.id"
+                  class="w-full border rounded-lg p-3 text-left transition-colors"
+                  :class="selectedChapterId === chapter.id
+                    ? 'border-primary bg-primary-soft text-primary'
+                    : 'border-border-light bg-bg-surface text-text-secondary hover:bg-bg-subtle'"
+                  @click="selectedChapterId = chapter.id"
                 >
-                  <div class="mb-4 flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <span class="h-9 w-9 flex items-center justify-center rounded-lg bg-bg-surface text-primary">
-                        <component :is="item.icon" :size="18" />
-                      </span>
-                      <div class="text-sm text-text-primary font-semibold">
-                        {{ item.label }}
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                      <div class="truncate text-sm font-semibold">
+                        {{ chapter.chapterNumber }}. {{ chapter.title }}
+                      </div>
+                      <div class="mt-1 text-xs opacity-75">
+                        {{ chapter.draft?.length || 0 }} 字
                       </div>
                     </div>
-                    <span class="text-xl text-text-primary font-bold">{{ item.score }}</span>
+                    <ChevronRight :size="15" />
                   </div>
-                  <div class="mb-3 h-2 overflow-hidden rounded-full bg-bg-muted">
-                    <div class="h-full rounded-full bg-primary transition-all" :style="{ width: `${item.score}%` }" />
-                  </div>
-                  <p class="text-xs text-text-secondary leading-relaxed">
-                    {{ item.description }}
-                  </p>
-                </div>
+                </button>
               </div>
             </NPanel>
 
-            <NPanel title="待生成的编辑建议" description="AI 接入后，建议只进入确认区，不直接改写正文" padding>
-              <div class="grid gap-3 md:grid-cols-3">
-                <div class="border border-border-light rounded-lg bg-bg-surface p-4">
-                  <div class="text-sm text-text-primary font-semibold">
-                    问题清单
-                  </div>
-                  <p class="mt-2 text-xs text-text-secondary leading-relaxed">
-                    标记节奏拖沓、冲突缺位、设定矛盾等具体段落。
-                  </p>
-                </div>
-                <div class="border border-border-light rounded-lg bg-bg-surface p-4">
-                  <div class="text-sm text-text-primary font-semibold">
-                    修订建议
-                  </div>
-                  <p class="mt-2 text-xs text-text-secondary leading-relaxed">
-                    给出可执行改法，但必须由作者确认后应用。
-                  </p>
-                </div>
-                <div class="border border-border-light rounded-lg bg-bg-surface p-4">
-                  <div class="text-sm text-text-primary font-semibold">
-                    历史报告
-                  </div>
-                  <p class="mt-2 text-xs text-text-secondary leading-relaxed">
-                    保存每次评估结果，便于比较修订前后的质量变化。
-                  </p>
-                </div>
+            <NPanel title="历史报告" description="过往评估记录" padding>
+              <div v-if="reports.length === 0" class="py-10 text-center text-sm text-text-muted">
+                尚无评估历史。
               </div>
+              <div v-else class="space-y-2">
+                <button
+                  v-for="report in reports"
+                  :key="report.id"
+                  class="w-full border rounded-lg p-3 text-left transition-colors"
+                  :class="selectedReport?.id === report.id
+                    ? 'border-primary bg-primary-soft text-primary'
+                    : 'border-border-light bg-bg-surface text-text-secondary hover:bg-bg-subtle'"
+                  @click="selectReport(report)"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="min-w-0">
+                      <div class="text-xs font-bold uppercase opacity-60">
+                        {{ new Date(report.createdAt).toLocaleDateString() }}
+                      </div>
+                      <div class="mt-1 truncate text-sm font-semibold">
+                        得分: {{ report.score }}
+                      </div>
+                    </div>
+                    <History :size="15" class="opacity-40" />
+                  </div>
+                </button>
+              </div>
+            </NPanel>
+          </div>
+
+          <div class="space-y-6">
+            <NPanel title="评估维度" :description="selectedChapter ? `针对第 ${selectedChapter.chapterNumber} 章的分析结果` : '未选择报告'" padding>
+              <div v-if="!selectedReport" class="py-20 text-center text-text-muted">
+                点击上方“生成质量报告”开启 AI 诊断
+              </div>
+              <template v-else>
+                <div v-if="!hasEnoughText" class="mb-5 flex items-start gap-3 border border-semantic-warning/20 rounded-lg bg-semantic-warning/10 p-4">
+                  <AlertTriangle :size="18" class="mt-0.5 text-semantic-warning" />
+                  <div>
+                    <div class="text-sm text-text-primary font-semibold">
+                      正文样本偏短
+                    </div>
+                    <p class="mt-1 text-sm text-text-secondary">
+                      建议正文超过 500 字，目前仅 {{ wordCount }} 字。评估结果可能不准确。
+                    </p>
+                  </div>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div
+                    v-for="item in qualityDimensions"
+                    :key="item.label"
+                    class="border border-border-light rounded-lg bg-bg-subtle/60 p-4"
+                  >
+                    <div class="mb-4 flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <span class="h-9 w-9 flex items-center justify-center rounded-lg bg-bg-surface text-primary">
+                          <component :is="item.icon" :size="18" />
+                        </span>
+                        <div class="text-sm text-text-primary font-semibold">
+                          {{ item.label }}
+                        </div>
+                      </div>
+                      <span class="text-xl text-text-primary font-bold">{{ item.score }}</span>
+                    </div>
+                    <div class="mb-3 h-2 overflow-hidden rounded-full bg-bg-muted">
+                      <div class="h-full rounded-full bg-primary transition-all" :style="{ width: `${item.score}%` }" />
+                    </div>
+                    <p class="text-xs text-text-secondary leading-relaxed">
+                      {{ item.description }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="mt-8 grid gap-6 md:grid-cols-2">
+                  <div class="space-y-4">
+                    <h3 class="flex items-center gap-2 text-sm text-text-primary font-bold">
+                      <AlertTriangle :size="16" class="text-semantic-error" /> 潜在问题
+                    </h3>
+                    <ul class="space-y-2">
+                      <li v-for="(issue, idx) in reportIssues" :key="idx" class="border border-border-light rounded-lg bg-bg-surface p-3 text-sm text-text-secondary">
+                        {{ issue }}
+                      </li>
+                    </ul>
+                  </div>
+                  <div class="space-y-4">
+                    <h3 class="flex items-center gap-2 text-sm text-text-primary font-bold">
+                      <Sparkles :size="16" class="text-primary" /> 修订建议
+                    </h3>
+                    <ul class="space-y-2">
+                      <li v-for="(sug, idx) in reportSuggestions" :key="idx" class="border border-border-light rounded-lg bg-bg-surface p-3 text-sm text-text-secondary">
+                        {{ sug }}
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </template>
             </NPanel>
           </div>
         </div>
