@@ -68,10 +68,15 @@ Thumbs.db
 # Local databases and runtime files
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 *.pid
 local.db
+apps/api/data/*.db
+apps/api/data/*.db-shm
+apps/api/data/*.db-wal
 
 # Workspace specific
 packages/*/dist

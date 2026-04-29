@@ -1,0 +1,19 @@
+---
+description: Project-level overview and required reading for AI Novel Workbench.
+alwaysApply: true
+---
+
+# Project Overview
+
+Before editing this repository, read:
+
+1. `AGENTS.md`
+2. `docs/development/engineering-standards.md`
+3. `docs/development/ui-implementation-rules.md`
+4. `docs/development/ai-collaboration-rules.md`
+5. `docs/development/architecture-refactor-plan-2026-04-29.md`
+
+This is an AI-assisted long-form novel writing workbench, not a generic chatbot. AI output must be reviewable and controlled by the author.
+
+Always keep the repository buildable. Run `pnpm check` before claiming completion.
+

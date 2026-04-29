@@ -11,6 +11,7 @@
     "lint": "eslint . --cache --concurrency=auto",
     "lint:fix": "eslint . --fix --cache --concurrency=auto",
     "test": "pnpm run -r test",
+    "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test",
     "db:generate": "pnpm --filter @ai-novel/api db:generate",
     "db:migrate": "pnpm --filter @ai-novel/api db:migrate",
     "db:studio": "pnpm --filter @ai-novel/api db:studio",

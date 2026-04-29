@@ -1,0 +1,29 @@
+---
+description: Hono, Drizzle, API, service, and migration rules for apps/api.
+globs:
+  - "apps/api/src/**/*"
+  - "apps/api/drizzle/**/*"
+alwaysApply: false
+---
+
+# Backend Rules
+
+- Hono routes handle HTTP only: params, status, response.
+- Put business logic in `apps/api/src/services`.
+- Use shared contracts from `packages/shared`.
+- Use uniform `success` and `fail` response helpers.
+- Import Drizzle SQL helpers explicitly, for example `eq` and `and` from `drizzle-orm`.
+- Do not use callback-style Drizzle `where(({ eq }) => ...)`.
+- Every project-scoped detail/update/delete query must verify `projectId`.
+- Schema changes require matching migrations.
+- Do not write fields that are not present in the schema.
+
+Required checks for DB/API changes:
+
+```bash
+pnpm db:generate
+pnpm db:migrate
+pnpm --filter @ai-novel/api db:seed
+pnpm check
+```
+

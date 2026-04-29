@@ -104,7 +104,7 @@ async function handleCreate() {
     return
   }
   try {
-    const data: Partial<NovelProject> = {
+    const data = {
       title: formTitle.value.trim(),
       genre: formGenre.value.trim() || undefined,
       theme: formTheme.value.trim() || undefined,
@@ -382,7 +382,7 @@ function getVolumesForChapter(volumeId?: string) {
             Projects
           </h2>
           <NButton size="sm" @click="openCreateModal">
-            + New
+            + 新建
           </NButton>
         </div>
 
@@ -395,7 +395,7 @@ function getVolumesForChapter(volumeId?: string) {
         >
           <template #action>
             <NButton size="sm" @click="openCreateModal">
-              Create Project
+              创建项目
             </NButton>
           </template>
         </NEmptyState>
@@ -439,6 +439,15 @@ function getVolumesForChapter(volumeId?: string) {
     </template>
 
     <template #default>
+      <div class="mb-4 flex items-center gap-3 px-6 pt-6">
+        <NTag variant="warning" size="sm">
+          开发调试页
+        </NTag>
+        <p class="text-sm text-text-muted">
+          此页面用于检查种子数据和 CRUD 接口，不属于正式创作流程。
+        </p>
+      </div>
+
       <div v-if="!selectedProjectId" class="h-full flex items-center justify-center">
         <NEmptyState
           title="Select a project"
@@ -664,27 +673,27 @@ function getVolumesForChapter(volumeId?: string) {
       </div>
 
       <!-- Create Project Modal -->
-      <NModal v-model="showCreateModal" title="Create New Project">
+      <NModal v-model="showCreateModal" title="创建新项目">
         <form class="space-y-4" @submit.prevent="handleCreate">
           <NInput
             v-model="formTitle"
-            label="Title"
+            label="标题"
             placeholder="Enter project title"
             :error="createError && !formTitle.trim() ? 'Title is required' : ''"
           />
           <NInput
             v-model="formGenre"
-            label="Genre"
+            label="类型"
             placeholder="e.g. Fantasy, Sci-Fi, Romance"
           />
           <NInput
             v-model="formTheme"
-            label="Theme"
+            label="主题"
             placeholder="e.g. Redemption, Coming of age"
           />
           <NInput
             v-model="formTargetWords"
-            label="Target Word Count"
+            label="目标字数"
             placeholder="e.g. 80000"
             type="number"
           />
@@ -695,22 +704,22 @@ function getVolumesForChapter(volumeId?: string) {
         <template #footer>
           <div class="flex justify-end gap-3">
             <NButton variant="ghost" @click="showCreateModal = false">
-              Cancel
+              取消
             </NButton>
             <NButton variant="primary" @click="handleCreate">
-              Create Project
+              创建项目
             </NButton>
           </div>
         </template>
       </NModal>
 
       <!-- Edit Project Modal -->
-      <NModal v-model="showEditProjectModal" title="Edit Project">
+      <NModal v-model="showEditProjectModal" title="编辑项目">
         <form class="space-y-4" @submit.prevent="handleUpdateProject">
-          <NInput v-model="formTitle" label="Title" placeholder="Project title" />
-          <NInput v-model="formGenre" label="Genre" placeholder="Genre" />
-          <NInput v-model="formTheme" label="Theme" placeholder="Theme" />
-          <NInput v-model="formTargetWords" label="Target Word Count" type="number" />
+          <NInput v-model="formTitle" label="标题" placeholder="Project title" />
+          <NInput v-model="formGenre" label="类型" placeholder="Genre" />
+          <NInput v-model="formTheme" label="主题" placeholder="Theme" />
+          <NInput v-model="formTargetWords" label="目标字数" type="number" />
           <p v-if="createError" class="text-xs text-semantic-error">
             {{ createError }}
           </p>
@@ -718,62 +727,62 @@ function getVolumesForChapter(volumeId?: string) {
         <template #footer>
           <div class="flex justify-end gap-3">
             <NButton variant="ghost" @click="showEditProjectModal = false">
-              Cancel
+              取消
             </NButton>
             <NButton variant="primary" @click="handleUpdateProject">
-              Save Changes
+              保存更改
             </NButton>
           </div>
         </template>
       </NModal>
 
       <!-- Character Modal -->
-      <NModal v-model="showCharacterModal" :title="editingCharacterId ? 'Edit Character' : 'Create Character'">
+      <NModal v-model="showCharacterModal" :title="editingCharacterId ? '编辑角色' : '创建角色'">
         <form class="space-y-4" @submit.prevent="handleSaveCharacter">
-          <NInput v-model="charForm.name" label="Name" placeholder="Character name" />
-          <NInput v-model="charForm.role" label="Role" placeholder="Role (e.g. Protagonist)" />
-          <NInput v-model="charForm.goal" label="Goal" placeholder="Character's primary goal" />
-          <NTextArea v-model="charForm.personality" label="Personality" placeholder="Describe their personality" />
+          <NInput v-model="charForm.name" label="姓名" placeholder="Character name" />
+          <NInput v-model="charForm.role" label="角色定位" placeholder="Role (e.g. Protagonist)" />
+          <NInput v-model="charForm.goal" label="目标" placeholder="Character's primary goal" />
+          <NTextArea v-model="charForm.personality" label="性格" placeholder="Describe their personality" />
         </form>
         <template #footer>
           <div class="flex justify-end gap-3">
             <NButton variant="ghost" @click="showCharacterModal = false">
-              Cancel
+              取消
             </NButton>
             <NButton variant="primary" @click="handleSaveCharacter">
-              {{ editingCharacterId ? 'Save' : 'Create' }}
+              {{ editingCharacterId ? '保存' : '创建' }}
             </NButton>
           </div>
         </template>
       </NModal>
 
       <!-- Volume Modal -->
-      <NModal v-model="showVolumeModal" title="Create Volume">
+      <NModal v-model="showVolumeModal" title="创建分卷">
         <form class="space-y-4" @submit.prevent="handleCreateVolume">
-          <NInput v-model="volForm.title" label="Title" placeholder="Volume title" />
-          <NTextArea v-model="volForm.summary" label="Summary" placeholder="Short summary" />
+          <NInput v-model="volForm.title" label="标题" placeholder="Volume title" />
+          <NTextArea v-model="volForm.summary" label="摘要" placeholder="Short summary" />
           <NInput v-model="volForm.orderIndex" label="Order Index" type="number" />
         </form>
         <template #footer>
           <div class="flex justify-end gap-3">
             <NButton variant="ghost" @click="showVolumeModal = false">
-              Cancel
+              取消
             </NButton>
             <NButton variant="primary" @click="handleCreateVolume">
-              Create
+              创建
             </NButton>
           </div>
         </template>
       </NModal>
 
       <!-- Chapter Modal -->
-      <NModal v-model="showChapterModal" title="Create Chapter">
+      <NModal v-model="showChapterModal" title="创建章节">
         <form class="space-y-4" @submit.prevent="handleCreateChapter">
-          <NInput v-model="chForm.title" label="Title" placeholder="Chapter title" />
-          <NInput v-model="chForm.chapterNumber" label="Chapter Number" type="number" />
+          <NInput v-model="chForm.title" label="标题" placeholder="Chapter title" />
+          <NInput v-model="chForm.chapterNumber" label="章节序号" type="number" />
           <NSelect
             v-model="chForm.volumeId"
-            label="Volume"
+            label="分卷"
             :options="volumeStore.volumes.map((v: any) => ({ label: v.title, value: v.id }))"
             placeholder="Select Volume"
           />
@@ -781,31 +790,31 @@ function getVolumesForChapter(volumeId?: string) {
         <template #footer>
           <div class="flex justify-end gap-3">
             <NButton variant="ghost" @click="showChapterModal = false">
-              Cancel
+              取消
             </NButton>
             <NButton variant="primary" @click="handleCreateChapter">
-              Create
+              创建
             </NButton>
           </div>
         </template>
       </NModal>
 
       <!-- Story Bible Modal -->
-      <NModal v-model="showBibleModal" :title="storyBibleStore.storyBible ? 'Edit Story Bible' : 'Create Story Bible'">
+      <NModal v-model="showBibleModal" :title="storyBibleStore.storyBible ? '编辑故事设定集' : '创建故事设定集'">
         <form class="space-y-4" @submit.prevent="handleSaveBible">
-          <NTextArea v-model="bibleForm.worldview" label="Worldview" placeholder="Describe the world" />
-          <NTextArea v-model="bibleForm.mainConflict" label="Main Conflict" placeholder="What is the core conflict?" />
-          <NTextArea v-model="bibleForm.theme" label="Theme" placeholder="Central theme" />
-          <NTextArea v-model="bibleForm.rules" label="System Rules" placeholder="Magic systems, social rules, etc." />
-          <NTextArea v-model="bibleForm.timeline" label="Timeline" placeholder="Key events" />
+          <NTextArea v-model="bibleForm.worldview" label="世界观" placeholder="Describe the world" />
+          <NTextArea v-model="bibleForm.mainConflict" label="主线冲突" placeholder="What is the core conflict?" />
+          <NTextArea v-model="bibleForm.theme" label="主题" placeholder="Central theme" />
+          <NTextArea v-model="bibleForm.rules" label="系统规则" placeholder="Magic systems, social rules, etc." />
+          <NTextArea v-model="bibleForm.timeline" label="时间线" placeholder="Key events" />
         </form>
         <template #footer>
           <div class="flex justify-end gap-3">
             <NButton variant="ghost" @click="showBibleModal = false">
-              Cancel
+              取消
             </NButton>
             <NButton variant="primary" @click="handleSaveBible">
-              Save
+              保存
             </NButton>
           </div>
         </template>
@@ -813,9 +822,9 @@ function getVolumesForChapter(volumeId?: string) {
 
       <NConfirmDialog
         v-model="showDeleteConfirm"
-        :title="pendingDelete?.title || 'Delete'"
-        :description="pendingDelete?.description || 'Are you sure?'"
-        :confirm-text="pendingDelete?.title || 'Confirm'"
+        :title="pendingDelete?.title || '删除'"
+        :description="pendingDelete?.description || '确定要执行此操作吗？'"
+        :confirm-text="pendingDelete?.title || '确认'"
         variant="danger"
         @confirm="handleConfirmDelete"
       />

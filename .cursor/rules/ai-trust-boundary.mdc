@@ -1,0 +1,21 @@
+---
+description: Rules for AI writing features and destructive operations.
+globs:
+  - "apps/web/src/**/*"
+  - "apps/api/src/routes/ai.ts"
+  - "apps/api/src/services/**/*ai*"
+alwaysApply: false
+---
+
+# AI Trust Boundary
+
+AI is an assistant, not an automatic author.
+
+- AI-generated text must not directly overwrite drafts, outlines, characters, relationships, conflicts, or story bible fields.
+- Generated results must first be stored as a pending proposal.
+- User actions must include insert, replace, save as alternative, and discard when applicable.
+- Replacement and restore operations must use a design-system confirmation dialog.
+- Show enough context for the user to understand what the AI used.
+- Quality suggestions must not directly rewrite chapters.
+- Knowledge-base analysis should extract structure and technique, not imitate protected works.
+

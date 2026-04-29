@@ -76,3 +76,43 @@ export interface Chapter {
   createdAt: string
   updatedAt: string
 }
+
+export interface CharacterRelationship {
+  id: string
+  projectId: string
+  characterAId: string
+  characterBId: string
+  type: string
+  strength: number
+  status?: string
+  description?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type ConflictType = 'internal' | 'external'
+export type ConflictStatus = 'latent' | 'forming' | 'escalating' | 'exploding' | 'resolved' | 'abandoned'
+
+export interface Conflict {
+  id: string
+  projectId: string
+  title: string
+  type: ConflictType
+  intensity: number
+  status: ConflictStatus
+  participants?: string
+  description?: string
+  resolution?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChapterVersion {
+  id: string
+  projectId: string
+  chapterId: string
+  content: string
+  wordCount: number
+  note?: string
+  createdAt: string
+}

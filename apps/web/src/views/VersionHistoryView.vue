@@ -40,7 +40,7 @@ const selectedVersionId = ref<string | null>(null)
 const compareMode = ref(false)
 const compareWithId = ref<string | null>(null)
 
-const currentChapter = computed(() => chapterStore.chapters.find((c: any) => c.id === chapterId.value))
+const currentChapter = computed(() => chapterStore.chapters.find(c => c.id === chapterId.value))
 
 onMounted(async () => {
   try {
@@ -125,7 +125,9 @@ function selectForCompare(id: string) {
   compareMode.value = true
 }
 
-function formatDate(date: string) {
+function formatDate(date?: string) {
+  if (!date)
+    return '未选择版本'
   return new Date(date).toLocaleString('zh-CN', {
     month: 'short',
     day: 'numeric',

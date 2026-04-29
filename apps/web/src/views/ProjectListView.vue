@@ -50,14 +50,14 @@ const filteredProjects = computed(() => {
   if (!searchQuery.value.trim())
     return projectStore.projects
   const q = searchQuery.value.toLowerCase()
-  return projectStore.projects.filter((p: any) =>
+  return projectStore.projects.filter(p =>
     p.title.toLowerCase().includes(q)
     || (p.genre && p.genre.toLowerCase().includes(q)),
   )
 })
 
 const totalTargetWords = computed(() =>
-  projectStore.projects.reduce((sum: number, project: any) => sum + (project.targetWords || 0), 0),
+  projectStore.projects.reduce((sum: number, project) => sum + (project.targetWords || 0), 0),
 )
 
 function openCreateModal() {

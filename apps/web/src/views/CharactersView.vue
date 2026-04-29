@@ -85,7 +85,7 @@ const filteredCharacters = computed(() => {
   if (!searchQuery.value.trim())
     return characterStore.characters
   const q = searchQuery.value.toLowerCase()
-  return characterStore.characters.filter((c: any) =>
+  return characterStore.characters.filter(c =>
     c.name.toLowerCase().includes(q)
     || (c.role && c.role.toLowerCase().includes(q)),
   )
@@ -93,7 +93,7 @@ const filteredCharacters = computed(() => {
 
 function selectCharacter(id: string) {
   selectedCharId.value = id
-  const char = characterStore.characters.find((c: any) => c.id === id)
+  const char = characterStore.characters.find(c => c.id === id)
   if (char) {
     charForm.value = {
       name: char.name,

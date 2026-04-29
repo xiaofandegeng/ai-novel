@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { ConflictStatus, ConflictType } from '@ai-novel/shared'
+import type { Component } from 'vue'
 import {
   NAppLayout,
   NButton,
@@ -47,9 +49,9 @@ const selectedConflictId = ref<string | null>(null)
 // Form state
 const conflictForm = ref({
   title: '',
-  type: 'external' as any,
+  type: 'external' as ConflictType,
   intensity: 5,
-  status: 'latent' as any,
+  status: 'latent' as ConflictStatus,
   description: '',
   resolution: '',
   participants: [] as string[],
@@ -81,7 +83,9 @@ function selectConflict(id: string) {
   if (conf) {
     conflictForm.value = {
       ...conf,
+      description: conf.description || '',
       participants: conf.participants ? JSON.parse(conf.participants) : [],
+      resolution: conf.resolution || '',
     }
   }
 }
@@ -154,12 +158,16 @@ function toggleParticipant(id: string) {
   else conflictForm.value.participants.splice(index, 1)
 }
 
-const statusMap: Record<string, { label: string, icon: any, color: string, bg: string }> = {
-  latent: { label: '潜伏 / 萌芽', icon: HelpCircle, color: 'text-text-muted', bg: 'bg-bg-subtle' },
-  forming: { label: '成型期', icon: AlertCircle, color: 'text-info', bg: 'bg-info/10' },
-  escalating: { label: '激化中', icon: TrendingUp, color: 'text-warning', bg: 'bg-warning/10' },
-  exploding: { label: '顶点 / 爆发', icon: Flame, color: 'text-semantic-error', bg: 'bg-semantic-error/10' },
-  resolved: { label: '已解决', icon: CheckCircle2, color: 'text-semantic-success', bg: 'bg-semantic-success/10' },
+const statusOptions: Array<{ value: ConflictStatus, label: string, icon: Component, color: string, bg: string }> = [
+  { value: 'latent', label: '潜伏 / 萌芽', icon: HelpCircle, color: 'text-text-muted', bg: 'bg-bg-subtle' },
+  { value: 'forming', label: '成型期', icon: AlertCircle, color: 'text-info', bg: 'bg-info/10' },
+  { value: 'escalating', label: '激化中', icon: TrendingUp, color: 'text-warning', bg: 'bg-warning/10' },
+  { value: 'exploding', label: '顶点 / 爆发', icon: Flame, color: 'text-semantic-error', bg: 'bg-semantic-error/10' },
+  { value: 'resolved', label: '已解决', icon: CheckCircle2, color: 'text-semantic-success', bg: 'bg-semantic-success/10' },
+]
+
+function getStatusStyle(status: string) {
+  return statusOptions.find(s => s.value === status)
 }
 
 const types = [
@@ -223,7 +231,7 @@ const types = [
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-bold" :class="selectedConflictId === conf.id ? 'text-primary' : 'text-text-primary'">{{ conf.title }}</span>
-              <component :is="statusMap[conf.status as keyof typeof statusMap]?.icon || HelpCircle" :size="14" :class="statusMap[conf.status as keyof typeof statusMap]?.color" />
+              <component :is="getStatusStyle(conf.status)?.icon || HelpCircle" :size="14" :class="getStatusStyle(conf.status)?.color" />
             </div>
             <div class="flex items-center gap-2">
               <NTag size="sm" variant="ai">
@@ -270,16 +278,16 @@ const types = [
           <!-- Status Tracker -->
           <div class="grid grid-cols-5 gap-2">
             <button
-              v-for="(val, key) in statusMap"
-              :key="key"
+              v-for="item in statusOptions"
+              :key="item.value"
               class="flex flex-col items-center gap-2 border rounded-xl p-3 transition-all"
-              :class="conflictForm.status === key
-                ? `${val.bg} ${val.color} border-primary/20 shadow-sm ring-1 ring-primary/5`
+              :class="conflictForm.status === item.value
+                ? `${item.bg} ${item.color} border-primary/20 shadow-sm ring-1 ring-primary/5`
                 : 'bg-bg-surface border-border-light text-text-muted hover:border-text-muted'"
-              @click="conflictForm.status = key"
+              @click="conflictForm.status = item.value"
             >
-              <component :is="val.icon" :size="20" />
-              <span class="h-4 text-center text-[9px] font-bold tracking-tighter uppercase">{{ val.label }}</span>
+              <component :is="item.icon" :size="20" />
+              <span class="h-4 text-center text-[9px] font-bold tracking-tighter uppercase">{{ item.label }}</span>
             </button>
           </div>
 

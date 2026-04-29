@@ -1,0 +1,29 @@
+---
+description: Vue, Pinia, API, and UI rules for apps/web and packages/ui.
+globs:
+  - "apps/web/src/**/*"
+  - "packages/ui/src/**/*"
+alwaysApply: false
+---
+
+# Frontend Rules
+
+- Use Vue 3 Composition API and TypeScript.
+- Views compose feature components; they should not contain large business workflows.
+- Put HTTP calls in `apps/web/src/api`.
+- Keep Pinia stores domain-specific and typed.
+- Use shared types from `packages/shared`.
+- Use design-system components from `packages/ui`.
+- Do not use native `alert`, `confirm`, or `prompt`.
+- Do not hardcode `http://localhost:3000`; use `/api`.
+- AI results must enter a confirmation area before modifying user content.
+- Check affected UI at desktop, tablet, and mobile widths.
+
+Required checks:
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm build
+```
+

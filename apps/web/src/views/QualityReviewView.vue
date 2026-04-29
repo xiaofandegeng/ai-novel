@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { QualityReport } from '@ai-novel/shared'
 import {
   NAppLayout,
   NButton,
@@ -38,8 +39,8 @@ const chapterStore = useChapterStore()
 const loading = ref(true)
 const evaluating = ref(false)
 const selectedChapterId = ref('')
-const reports = ref<any[]>([])
-const selectedReport = ref<any | null>(null)
+const reports = ref<QualityReport[]>([])
+const selectedReport = ref<QualityReport | null>(null)
 
 onMounted(async () => {
   try {
@@ -59,7 +60,7 @@ onMounted(async () => {
 })
 
 async function fetchReports() {
-  const res = await api.get<any>(`/api/projects/${projectId}/quality/reports`)
+  const res = await api.get<{ success: boolean, data: QualityReport[] }>(`/api/projects/${projectId}/quality/reports`)
   if (res && res.success) {
     reports.value = res.data
     if (reports.value.length > 0 && !selectedReport.value) {
@@ -73,7 +74,7 @@ async function runQualityCheck() {
     return
   evaluating.value = true
   try {
-    const res = await api.post<any>(
+    const res = await api.post<{ success: boolean, data: QualityReport }>(
       `/api/projects/${projectId}/chapters/${selectedChapterId.value}/quality-check`,
       {},
     )
@@ -98,30 +99,34 @@ const selectedChapter = computed(() =>
 const wordCount = computed(() => selectedChapter.value?.draft?.length || 0)
 const hasEnoughText = computed(() => wordCount.value >= 100) // Lowered threshold for MVP/Mock
 
+function dimensionScore(value?: number) {
+  return (value ?? 0) * 10
+}
+
 const qualityDimensions = computed(() => {
   const r = selectedReport.value
   return [
     {
       label: '节奏密度',
-      score: r ? r.rhythmScore * 10 : 0,
+      score: r ? dimensionScore(r.rhythmScore) : 0,
       description: '场景推进、信息释放与段落呼吸感。',
       icon: Gauge,
     },
     {
       label: '冲突强度',
-      score: r ? r.conflictScore * 10 : 0,
+      score: r ? dimensionScore(r.conflictScore) : 0,
       description: '人物目标、阻力与场景张力是否清晰。',
       icon: Target,
     },
     {
       label: '逻辑连续性',
-      score: r ? r.logicScore * 10 : 0,
+      score: r ? dimensionScore(r.logicScore) : 0,
       description: '事件因果、设定约束和前后文一致性。',
       icon: CheckCircle2,
     },
     {
       label: '人物一致性',
-      score: r ? r.characterScore * 10 : 0,
+      score: r ? dimensionScore(r.characterScore) : 0,
       description: '行为、语言和动机是否贴合人物档案。',
       icon: BookOpen,
     },
@@ -152,9 +157,10 @@ const reportSuggestions = computed(() => {
   }
 })
 
-function selectReport(report: any) {
+function selectReport(report: QualityReport) {
   selectedReport.value = report
-  selectedChapterId.value = report.chapterId
+  if (report.chapterId)
+    selectedChapterId.value = report.chapterId
 }
 </script>
 
@@ -311,7 +317,7 @@ function selectReport(report: any) {
                   </div>
                 </div>
 
-                <div class="mt-8 grid gap-6 md:grid-cols-2">
+                <div class="grid mt-8 gap-6 md:grid-cols-2">
                   <div class="space-y-4">
                     <h3 class="flex items-center gap-2 text-sm text-text-primary font-bold">
                       <AlertTriangle :size="16" class="text-semantic-error" /> 潜在问题

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { NButton } from '@ai-novel/ui'
 import {
   Bot,
   Loader2,
@@ -8,6 +9,7 @@ import {
   User,
 } from 'lucide-vue-next'
 import { nextTick, ref } from 'vue'
+import { chatStream } from '../api/ai'
 
 const props = defineProps<{
   projectId: string
@@ -45,16 +47,10 @@ async function handleSend() {
   const lastIndex = messages.value.length - 1
 
   try {
-    const response = await fetch('/api/ai/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectId: props.projectId,
-        messages: [{ role: 'user', content: userMsg }],
-        context: props.context,
-        model: selectedModel.value,
-      }),
-    })
+    const response = await chatStream(
+      [{ role: 'user', content: userMsg }],
+      { projectId: props.projectId, context: props.context, model: selectedModel.value },
+    )
 
     if (!response.body)
       throw new Error('No response body')
@@ -130,7 +126,7 @@ defineExpose({
       <div v-if="messages.length === 0" class="h-full flex flex-col items-center justify-center px-6 text-center opacity-40">
         <Bot :size="48" class="mb-4 text-text-muted" stroke-width="1" />
         <p class="text-xs text-text-muted leading-relaxed">
-          I'm your creative partner. Ask me to brainstorm plot points, refine character voices, or check for logic errors.
+          我是你的创作伙伴。可以让我头脑风暴情节、打磨角色语言，或检查逻辑漏洞。
         </p>
       </div>
 
@@ -150,7 +146,7 @@ defineExpose({
         </div>
 
         <div
-          class="group/msg relative max-w-[90%] rounded-xl px-3 py-2 text-sm leading-relaxed"
+          class="relative max-w-[90%] rounded-xl px-3 py-2 text-sm leading-relaxed"
           :class="msg.role === 'user'
             ? 'bg-bg-subtle text-text-primary rounded-tr-none border border-border-light'
             : 'bg-ai-soft/50 text-text-primary rounded-tl-none border border-ai/10'"
@@ -163,15 +159,16 @@ defineExpose({
             <div class="h-1.5 w-1.5 animate-bounce rounded-full bg-ai" style="animation-delay: 0.2s" />
             <div class="h-1.5 w-1.5 animate-bounce rounded-full bg-ai" style="animation-delay: 0.4s" />
           </div>
-
-          <!-- Apply Button -->
-          <button
-            v-if="msg.role === 'assistant' && msg.content && !isStreaming"
-            class="absolute flex items-center gap-1 rounded bg-primary px-2 py-1 text-[10px] text-white opacity-0 shadow-sm transition-opacity -bottom-2 -right-2 group-hover/msg:opacity-100"
+        </div>
+        <div v-if="msg.role === 'assistant' && msg.content && !isStreaming" class="mt-1.5 flex justify-end">
+          <NButton
+            variant="secondary"
+            size="sm"
+            aria-label="应用 AI 回复到编辑器"
             @click="emit('apply', msg.content)"
           >
-            Apply to Editor
-          </button>
+            应用到编辑器
+          </NButton>
         </div>
       </div>
     </div>
@@ -181,12 +178,14 @@ defineExpose({
       <div class="group relative">
         <textarea
           v-model="inputMessage"
-          placeholder="Type your message..."
+          placeholder="输入你的问题或写作指令..."
           rows="3"
-          class="group-hover:border-border-default w-full resize-none border border-border-light rounded-xl bg-bg-surface py-3 pl-4 pr-12 text-sm shadow-sm transition-all focus:border-ai focus:outline-none"
+          aria-label="输入给 AI 助手的消息"
+          class="group-hover:border-border-default w-full resize-none border border-border-light rounded-xl bg-bg-surface py-3 pl-4 pr-12 text-sm shadow-sm transition-all focus:border-ai focus:outline-none focus-visible:ring-2 focus-visible:ring-ai/30"
           @keydown.enter.prevent="handleSend"
         />
         <button
+          aria-label="发送消息"
           class="absolute bottom-3 right-3 rounded-lg bg-ai p-2 text-white shadow-md transition-all disabled:cursor-not-allowed hover:bg-ai/90 disabled:opacity-30"
           :disabled="!inputMessage.trim() || isStreaming"
           @click="handleSend"
@@ -196,7 +195,7 @@ defineExpose({
         </button>
       </div>
       <p class="mt-2 text-center text-[10px] text-text-muted italic">
-        Press Enter to send. Use Shift+Enter for new line.
+        按 Enter 发送，Shift+Enter 换行。
       </p>
     </div>
   </div>

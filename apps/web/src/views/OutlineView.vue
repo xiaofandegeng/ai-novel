@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ChapterStatus } from '@ai-novel/shared'
 import {
   NAppLayout,
   NButton,
@@ -23,6 +24,7 @@ import {
 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { chatStream, readChatStream } from '../api/ai'
 import AppSidebar from '../components/AppSidebar.vue'
 import {
   useChapterStore,
@@ -40,7 +42,7 @@ const projectStore = useProjectStore()
 const characterStore = useCharacterStore()
 const volumeStore = useVolumeStore()
 const chapterStore = useChapterStore()
-const getCharName = (id: string) => characterStore.characters.find((c: any) => c.id === id)?.name || ''
+const getCharName = (id: string) => characterStore.characters.find(c => c.id === id)?.name || ''
 
 const loading = ref(true)
 const saving = ref(false)
@@ -56,7 +58,7 @@ const outlineForm = ref({
   emotionalArc: '',
   foreshadowing: '',
   endingHook: '',
-  status: 'planning' as any,
+  status: 'planning' as ChapterStatus,
   characterIds: [] as string[],
 })
 
@@ -70,7 +72,7 @@ onMounted(async () => {
     ])
 
     // Expand all volumes by default
-    volumeStore.volumes.forEach((v: any) => expandedVolumes.value[v.id] = true)
+    volumeStore.volumes.forEach(v => expandedVolumes.value[v.id] = true)
 
     if (chapterStore.chapters.length > 0) {
       selectChapter(chapterStore.chapters[0].id)
@@ -86,7 +88,7 @@ onMounted(async () => {
 
 function selectChapter(id: string) {
   selectedChapterId.value = id
-  const ch = chapterStore.chapters.find((c: any) => c.id === id)
+  const ch = chapterStore.chapters.find(c => c.id === id)
   if (ch) {
     outlineForm.value = {
       title: ch.title,
@@ -124,7 +126,7 @@ async function handleSave() {
 
 async function handleAddChapter(volumeId: string) {
   try {
-    const lastChapter = chapterStore.chapters.filter((c: any) => c.volumeId === volumeId).sort((a: any, b: any) => b.chapterNumber - a.chapterNumber)[0]
+    const lastChapter = chapterStore.chapters.filter(c => c.volumeId === volumeId).sort((a, b) => b.chapterNumber - a.chapterNumber)[0]
     const nextNumber = lastChapter ? lastChapter.chapterNumber + 1 : 1
 
     const newCh = await chapterStore.createChapter(projectId, {
@@ -178,12 +180,13 @@ function toggleCharacter(charId: string) {
 
 const isBrainstorming = ref(false)
 const aiSuggestion = ref<string | null>(null)
+const outlineAlternatives = ref<string[]>([])
 
 async function handleAIBrainstorm() {
   if (!selectedChapterId.value)
     return
   isBrainstorming.value = true
-  aiSuggestion.value = '' // Clear and show area
+  aiSuggestion.value = ''
 
   try {
     const context = `
@@ -193,37 +196,17 @@ async function handleAIBrainstorm() {
       Characters Involved: ${outlineForm.value.characterIds.map(id => getCharName(id)).join(', ')}
     `
 
-    // We target the AI chat endpoint but with a specialized instruction
-    const response = await fetch('/api/ai/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectId,
-        messages: [{
-          role: 'user',
-          content: `Based on the context, brainstorm a detailed outline for this chapter. 
-           Please provide: 1. Core Conflict, 2. Three Key Events, 3. An Ending Hook. 
-           Keep it concise and dramatic.`,
-        }],
-        context,
-      }),
-    })
+    const response = await chatStream(
+      [{
+        role: 'user',
+        content: `Based on the context, brainstorm a detailed outline for this chapter.
+         Please provide: 1. Core Conflict, 2. Three Key Events, 3. An Ending Hook.
+         Keep it concise and dramatic.`,
+      }],
+      { projectId, context },
+    )
 
-    if (!response.body)
-      throw new Error('AI response body is empty')
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let result = ''
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done)
-        break
-      result += decoder.decode(value)
-    }
-
-    // Set the result for user review in the sidebar
-    aiSuggestion.value = result
+    aiSuggestion.value = await readChatStream(response)
   }
   catch {
     toast.add('AI Brainstorm failed', 'error')
@@ -234,15 +217,26 @@ async function handleAIBrainstorm() {
   }
 }
 
-function applyAISuggestion() {
+function confirmOutlineAIResult(action: 'insert' | 'replace' | 'backup' | 'discard') {
   if (!aiSuggestion.value)
     return
-  outlineForm.value.events = (outlineForm.value.events ? `${outlineForm.value.events}\n\n` : '') + aiSuggestion.value
-  aiSuggestion.value = null
-  toast.add('Suggestion applied', 'success')
-}
 
-function discardAISuggestion() {
+  if (action === 'insert') {
+    outlineForm.value.events = (outlineForm.value.events ? `${outlineForm.value.events}\n\n` : '') + aiSuggestion.value
+    toast.add('AI 建议已插入关键事件', 'success')
+  }
+  else if (action === 'replace') {
+    outlineForm.value.events = aiSuggestion.value
+    toast.add('AI 建议已替换关键事件', 'success')
+  }
+  else if (action === 'backup') {
+    outlineAlternatives.value.unshift(aiSuggestion.value)
+    toast.add('AI 建议已保存为备选', 'success')
+  }
+  else {
+    toast.add('AI 建议已丢弃', 'info')
+  }
+
   aiSuggestion.value = null
 }
 </script>
@@ -326,7 +320,7 @@ function discardAISuggestion() {
 
             <div v-if="expandedVolumes[vol.id]" class="pl-6 space-y-1">
               <button
-                v-for="ch in chapterStore.chapters.filter((c: any) => c.volumeId === vol.id).sort((a: any, b: any) => a.chapterNumber - b.chapterNumber)"
+                v-for="ch in chapterStore.chapters.filter((c) => c.volumeId === vol.id).sort((a, b) => a.chapterNumber - b.chapterNumber)"
                 :key="ch.id"
                 class="w-full flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-all"
                 :class="selectedChapterId === ch.id
@@ -497,9 +491,6 @@ function discardAISuggestion() {
               <p class="flex items-center gap-2 text-sm text-text-primary font-bold">
                 <Sparkles :size="14" class="text-ai" /> AI 建议方案
               </p>
-              <NButton v-if="aiSuggestion" variant="ghost" size="sm" @click="discardAISuggestion">
-                放弃
-              </NButton>
             </div>
             <div v-if="isBrainstorming && !aiSuggestion" class="py-4 space-y-2">
               <div class="h-2 w-3/4 animate-pulse rounded-full bg-ai/20" />
@@ -508,15 +499,20 @@ function discardAISuggestion() {
             <div v-else class="mb-4 max-h-60 overflow-y-auto whitespace-pre-wrap text-xs text-text-secondary leading-relaxed italic">
               {{ aiSuggestion }}
             </div>
-            <NButton
-              v-if="aiSuggestion"
-              variant="ai"
-              size="sm"
-              class="w-full border-none bg-ai text-white shadow-ai/20 shadow-sm"
-              @click="applyAISuggestion"
-            >
-              应用到大纲
-            </NButton>
+            <div v-if="aiSuggestion" class="grid grid-cols-2 gap-2">
+              <NButton size="sm" variant="ai" @click="confirmOutlineAIResult('insert')">
+                插入
+              </NButton>
+              <NButton size="sm" variant="ghost" @click="confirmOutlineAIResult('replace')">
+                替换
+              </NButton>
+              <NButton size="sm" variant="ghost" @click="confirmOutlineAIResult('backup')">
+                存为备选
+              </NButton>
+              <NButton size="sm" variant="ghost" @click="confirmOutlineAIResult('discard')">
+                丢弃
+              </NButton>
+            </div>
           </div>
 
           <div v-else class="group border border-border-light rounded-xl bg-bg-surface p-4 transition-colors hover:border-ai/30">

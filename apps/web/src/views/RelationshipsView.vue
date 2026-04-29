@@ -74,9 +74,13 @@ onMounted(async () => {
 
 function selectRelationship(id: string) {
   selectedRelId.value = id
-  const rel = relationshipStore.relationships.find((r: any) => r.id === id)
+  const rel = relationshipStore.relationships.find(r => r.id === id)
   if (rel) {
-    relForm.value = { ...rel }
+    relForm.value = {
+      ...rel,
+      description: rel.description || '',
+      status: rel.status || '',
+    }
   }
 }
 
@@ -142,7 +146,7 @@ async function handleConfirmDelete() {
   }
 }
 
-const getCharName = (id: string) => characterStore.characters.find((c: any) => c.id === id)?.name || 'Unknown'
+const getCharName = (id: string) => characterStore.characters.find(c => c.id === id)?.name || 'Unknown'
 
 const relationshipTypes = [
   { value: 'ally', label: '盟友 / 朋友', icon: Users },

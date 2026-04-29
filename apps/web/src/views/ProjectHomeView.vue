@@ -59,13 +59,13 @@ onMounted(async () => {
 const lastEditedChapter = computed(() => {
   if (chapterStore.chapters.length === 0)
     return null
-  return [...chapterStore.chapters].sort((a: any, b: any) =>
+  return [...chapterStore.chapters].sort((a, b) =>
     new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   )[0]
 })
 
 const totalWords = computed(() => {
-  return chapterStore.chapters.reduce((sum: number, ch: any) => sum + (ch.draft?.length || 0), 0)
+  return chapterStore.chapters.reduce((sum: number, ch) => sum + (ch.draft?.length || 0), 0)
 })
 
 const progressPercent = computed(() => {
