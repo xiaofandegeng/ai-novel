@@ -15,6 +15,13 @@
       "when": 1777516277310,
       "tag": "0001_optimal_starfox",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777555811077,
+      "tag": "0002_milky_sage",
+      "breakpoints": true
     }
   ]
 }

@@ -538,10 +538,15 @@ async function handleTestAI() {
 
             <template #footer>
               <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p class="text-xs text-text-muted">
-                  {{ aiForm.hasApiKey ? '当前已保存 API Key。为了安全，页面不会回显密钥。' : '当前尚未保存 API Key。' }}
-                  <span v-if="aiTestMessage" class="ml-2 text-text-secondary">{{ aiTestMessage }}</span>
-                </p>
+                <div class="flex flex-col">
+                  <p class="text-xs text-text-muted">
+                    {{ aiForm.hasApiKey ? '当前已保存 API Key。为了安全，页面不会回显密钥。' : '当前尚未保存 API Key。' }}
+                  </p>
+                  <p v-if="!aiForm.hasApiKey" class="mt-1 text-xs text-semantic-error font-bold">
+                    请先配置 API Key 以启用 AI 辅助创作功能。
+                  </p>
+                  <span v-if="aiTestMessage" class="mt-1 text-xs text-text-secondary">{{ aiTestMessage }}</span>
+                </div>
                 <div class="flex justify-end gap-2">
                   <NButton variant="secondary" :loading="testingAI" @click="handleTestAI">
                     检测可用性

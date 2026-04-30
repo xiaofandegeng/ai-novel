@@ -1,7 +1,8 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import {
   chapterAnalyses,
+  referenceChapterAnalysisErrors,
   referenceChapters,
   referenceTrainingSets,
   referenceWorks,
@@ -238,6 +239,45 @@ export async function getChapterAnalysis(chapterId: string) {
   return row || null
 }
 
+async function clearChapterAnalysisError(chapterId: string) {
+  await db.delete(referenceChapterAnalysisErrors).where(eq(referenceChapterAnalysisErrors.chapterId, chapterId))
+}
+
+async function recordChapterAnalysisError(chapter: typeof referenceChapters.$inferSelect, message: string) {
+  await clearChapterAnalysisError(chapter.id)
+  await db.insert(referenceChapterAnalysisErrors).values({
+    id: generateId(),
+    chapterId: chapter.id,
+    workId: chapter.workId,
+    trainingSetId: chapter.trainingSetId,
+    message,
+  })
+}
+
+async function updateWorkAnalysisStatus(workId: string) {
+  const chapters = await db.select({ id: referenceChapters.id }).from(referenceChapters).where(eq(referenceChapters.workId, workId))
+  const analyses = await db.select({ id: chapterAnalyses.id }).from(chapterAnalyses).where(eq(chapterAnalyses.workId, workId))
+  const errors = await db.select({ id: referenceChapterAnalysisErrors.id }).from(referenceChapterAnalysisErrors).where(eq(referenceChapterAnalysisErrors.workId, workId))
+
+  const finalStatus = errors.length > 0 && analyses.length === 0
+    ? 'failed' as const
+    : errors.length > 0 || analyses.length < chapters.length
+      ? 'partial_failed' as const
+      : 'completed' as const
+
+  await db.update(referenceWorks).set({
+    status: finalStatus,
+    updatedAt: now(),
+  }).where(eq(referenceWorks.id, workId))
+
+  return {
+    analyzed: analyses.length,
+    failed: errors.length,
+    chapters: chapters.length,
+    status: finalStatus,
+  }
+}
+
 export async function analyzeAllChapters(workId: string) {
   const chapters = await db.select().from(referenceChapters).where(eq(referenceChapters.workId, workId))
   if (chapters.length === 0)
@@ -255,34 +295,33 @@ export async function analyzeAllChapters(workId: string) {
         const result = await analyzeChapter(chapter.id)
         if (typeof result === 'object' && 'error' in result && result.error) {
           errors.push(`${chapter.title}: ${result.error}`)
+          await recordChapterAnalysisError(chapter, result.error)
         }
         else {
+          await clearChapterAnalysisError(chapter.id)
           results.push(result)
         }
       }
       else {
+        await clearChapterAnalysisError(chapter.id)
         results.push(existing)
       }
     }
     catch (e: any) {
-      errors.push(`${chapter.title}: ${e.message}`)
+      const message = e.message || '未知错误'
+      errors.push(`${chapter.title}: ${message}`)
+      await recordChapterAnalysisError(chapter, message)
     }
   }
 
-  const allCompleted = errors.length === 0
-  const allFailed = results.length === 0 && errors.length > 0
-  const finalStatus = allFailed ? 'failed' as const : allCompleted ? 'completed' as const : 'partial_failed' as const
-  await db.update(referenceWorks).set({
-    status: finalStatus,
-    updatedAt: now(),
-  }).where(eq(referenceWorks.id, workId))
+  const status = await updateWorkAnalysisStatus(workId)
 
   return {
-    analyzed: results.length,
-    failed: errors.length,
+    analyzed: status.analyzed,
+    failed: status.failed,
     errors,
-    chapters: chapters.length,
-    status: finalStatus,
+    chapters: status.chapters,
+    status: status.status,
   }
 }
 
@@ -517,15 +556,14 @@ export async function getWorkAnalysisSummary(workId: string) {
 
   const chapters = await db.select({ id: referenceChapters.id }).from(referenceChapters).where(eq(referenceChapters.workId, workId))
   const analyses = await db.select({ id: chapterAnalyses.id }).from(chapterAnalyses).where(eq(chapterAnalyses.workId, workId))
+  const errors = await db.select({ id: referenceChapterAnalysisErrors.id }).from(referenceChapterAnalysisErrors).where(eq(referenceChapterAnalysisErrors.workId, workId))
   const [report] = await db.select({ id: workStyleReports.id }).from(workStyleReports).where(eq(workStyleReports.workId, workId))
 
   const chapterCount = chapters.length
   const analyzedCount = analyses.length
   const hasReport = !!report
-  const hasPartialFailure = work.status === 'partial_failed'
-  const failedCount = hasPartialFailure
-    ? Math.max(1, chapterCount - analyzedCount)
-    : 0
+  const failedCount = errors.length
+  const hasPartialFailure = failedCount > 0 || work.status === 'partial_failed'
 
   return {
     chapterCount,
@@ -535,6 +573,75 @@ export async function getWorkAnalysisSummary(workId: string) {
     hasReport,
     canAnalyze: chapterCount > 0 && analyzedCount < chapterCount,
     canGenerateReport: analyzedCount > 0 && !hasReport,
+  }
+}
+
+export async function listWorkAnalysisErrors(workId: string) {
+  return db
+    .select({
+      id: referenceChapterAnalysisErrors.id,
+      chapterId: referenceChapterAnalysisErrors.chapterId,
+      workId: referenceChapterAnalysisErrors.workId,
+      trainingSetId: referenceChapterAnalysisErrors.trainingSetId,
+      message: referenceChapterAnalysisErrors.message,
+      createdAt: referenceChapterAnalysisErrors.createdAt,
+      chapterTitle: referenceChapters.title,
+      chapterNumber: referenceChapters.chapterNumber,
+    })
+    .from(referenceChapterAnalysisErrors)
+    .innerJoin(referenceChapters, eq(referenceChapterAnalysisErrors.chapterId, referenceChapters.id))
+    .where(eq(referenceChapterAnalysisErrors.workId, workId))
+}
+
+export async function retryFailedChapterAnalyses(workId: string) {
+  const errors = await db
+    .select({ chapterId: referenceChapterAnalysisErrors.chapterId })
+    .from(referenceChapterAnalysisErrors)
+    .where(eq(referenceChapterAnalysisErrors.workId, workId))
+
+  if (errors.length === 0)
+    return { analyzed: 0, failed: 0, errors: [], chapters: 0, status: (await getWork(workId))?.status || 'completed' }
+
+  await db.update(referenceWorks).set({ status: 'analyzing', updatedAt: now() }).where(eq(referenceWorks.id, workId))
+
+  const failedMessages: string[] = []
+  let retried = 0
+
+  for (const error of errors) {
+    const [chapter] = await db.select().from(referenceChapters).where(
+      and(eq(referenceChapters.id, error.chapterId), eq(referenceChapters.workId, workId)),
+    )
+    if (!chapter)
+      continue
+
+    try {
+      await clearChapterAnalysisError(chapter.id)
+      const existing = await getChapterAnalysis(chapter.id)
+      const result = existing || await analyzeChapter(chapter.id)
+      if (typeof result === 'object' && 'error' in result && result.error) {
+        const message = String(result.error)
+        failedMessages.push(`${chapter.title}: ${message}`)
+        await recordChapterAnalysisError(chapter, message)
+      }
+      else {
+        retried += 1
+      }
+    }
+    catch (e: any) {
+      const message = e.message || '未知错误'
+      failedMessages.push(`${chapter.title}: ${message}`)
+      await recordChapterAnalysisError(chapter, message)
+    }
+  }
+
+  const status = await updateWorkAnalysisStatus(workId)
+
+  return {
+    analyzed: retried,
+    failed: status.failed,
+    errors: failedMessages,
+    chapters: status.chapters,
+    status: status.status,
   }
 }
 

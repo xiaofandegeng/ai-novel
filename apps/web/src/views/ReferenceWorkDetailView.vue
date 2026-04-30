@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ReferenceChapterAnalysisError } from '@ai-novel/shared'
 import type { WorkAnalysisSummary } from '../api/persona'
 import {
   NAppLayout,
@@ -28,14 +29,17 @@ const work = ref<any>(null)
 const chapters = ref<any[]>([])
 const styleReport = ref<any>(null)
 const analysisSummary = ref<WorkAnalysisSummary | null>(null)
+const analysisErrors = ref<ReferenceChapterAnalysisError[]>([])
 const analyzing = ref(false)
 const generatingReport = ref(false)
+const retryingFailed = ref(false)
 
 async function refreshWorkDetail() {
-  const [workResult, chaptersResult, summaryResult, reportResult] = await Promise.allSettled([
+  const [workResult, chaptersResult, summaryResult, errorsResult, reportResult] = await Promise.allSettled([
     personaApi.getWork(workId),
     personaApi.listWorkChapters(workId),
     personaApi.getWorkAnalysisSummary(workId),
+    personaApi.listWorkAnalysisErrors(workId),
     personaApi.getWorkStyleReport(workId),
   ])
 
@@ -45,6 +49,8 @@ async function refreshWorkDetail() {
     chapters.value = chaptersResult.value
   if (summaryResult.status === 'fulfilled')
     analysisSummary.value = summaryResult.value
+  if (errorsResult.status === 'fulfilled')
+    analysisErrors.value = errorsResult.value
   if (reportResult.status === 'fulfilled')
     styleReport.value = reportResult.value
   else
@@ -103,6 +109,26 @@ async function handleGenerateReport() {
   }
 }
 
+async function handleRetryFailed() {
+  retryingFailed.value = true
+  try {
+    const result = await personaApi.retryFailedAnalyses(workId)
+    await refreshWorkDetail()
+    if (result.failed > 0) {
+      toast.add(`失败章节已重试：成功 ${result.analyzed} 章，仍失败 ${result.failed} 章`, 'warning')
+    }
+    else {
+      toast.add('失败章节已全部重试成功', 'success')
+    }
+  }
+  catch (e: any) {
+    toast.add(e.message || '重试失败章节失败', 'error')
+  }
+  finally {
+    retryingFailed.value = false
+  }
+}
+
 function statusLabel(status: string) {
   const map: Record<string, string> = { uploaded: '已上传', splitting: '拆分中', analyzing: '分析中', completed: '已完成', partial_failed: '部分失败', failed: '失败' }
   return map[status] || status
@@ -158,6 +184,16 @@ function statusVariant(status: string) {
           <Sparkles :size="14" />
           生成报告
         </NButton>
+        <NButton
+          v-if="analysisErrors.length > 0"
+          variant="secondary"
+          size="sm"
+          :loading="retryingFailed"
+          @click="handleRetryFailed"
+        >
+          <Sparkles :size="14" />
+          重试失败章节
+        </NButton>
       </div>
     </template>
 
@@ -183,6 +219,28 @@ function statusVariant(status: string) {
             <p v-if="analysisSummary?.hasPartialFailure" class="text-xs text-semantic-warning">
               部分章节分析失败，当前报告只会基于已成功分析的章节生成。
             </p>
+          </div>
+        </NPanel>
+
+        <NPanel v-if="analysisErrors.length > 0" title="失败章节" padding>
+          <div class="space-y-3">
+            <div
+              v-for="error in analysisErrors"
+              :key="error.id"
+              class="border border-semantic-warning/20 rounded-lg bg-semantic-warning/10 p-3"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <div class="text-sm text-text-primary font-semibold">
+                  第{{ error.chapterNumber || '-' }}章 {{ error.chapterTitle || '未知章节' }}
+                </div>
+                <NTag variant="warning" size="sm">
+                  分析失败
+                </NTag>
+              </div>
+              <p class="mt-2 whitespace-pre-wrap text-xs text-text-secondary leading-relaxed">
+                {{ error.message }}
+              </p>
+            </div>
           </div>
         </NPanel>
 

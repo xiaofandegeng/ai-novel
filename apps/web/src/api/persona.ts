@@ -5,6 +5,7 @@ import type {
   CreateTrainingSetInput,
   ProjectPersonaConfig,
   ReferenceChapter,
+  ReferenceChapterAnalysisError,
   ReferenceTrainingSet,
   ReferenceWork,
   UpdateProjectPersonaConfigInput,
@@ -69,6 +70,17 @@ export function getChapterAnalysis(chapterId: string) {
 
 export function analyzeWork(workId: string) {
   return apiPost<{ analyzed: number, errors: string[], chapters: number }>(`/api/persona/works/${workId}/analyze`, {})
+}
+
+export function listWorkAnalysisErrors(workId: string) {
+  return apiGet<ReferenceChapterAnalysisError[]>(`/api/persona/works/${workId}/analysis-errors`)
+}
+
+export function retryFailedAnalyses(workId: string) {
+  return apiPost<{ analyzed: number, failed: number, errors: string[], chapters: number, status: string }>(
+    `/api/persona/works/${workId}/retry-failed-analyses`,
+    {},
+  )
 }
 
 // ─── Work Style Report ───

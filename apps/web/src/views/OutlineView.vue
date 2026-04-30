@@ -209,8 +209,8 @@ async function handleAIBrainstorm() {
 
     aiSuggestion.value = await readChatStream(response)
   }
-  catch {
-    toast.add('AI 灵感风暴失败', 'error')
+  catch (error: any) {
+    toast.add(error.message || 'AI 灵感风暴失败', 'error')
     aiSuggestion.value = null
   }
   finally {

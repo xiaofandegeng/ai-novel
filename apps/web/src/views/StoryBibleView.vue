@@ -20,6 +20,7 @@ import {
 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { chatStream, readChatStream } from '../api/ai'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useProjectStore, useStoryBibleStore } from '../stores/projects'
 
@@ -50,6 +51,58 @@ const form = ref({
   rules: '',
   timeline: '',
 })
+
+// --- AI Section ---
+const isBrainstorming = ref(false)
+const aiSuggestion = ref<string | null>(null)
+
+async function handleAIBrainstorm(customPrompt?: string) {
+  isBrainstorming.value = true
+  aiSuggestion.value = ''
+
+  const section = sections.find(s => s.id === activeSection.value)
+  const prompt = customPrompt || `基于当前项目主题"${projectStore.currentProject?.theme || '未定义'}"，为作品的"${section?.label}"部分提供一些深入的构思建议。`
+
+  try {
+    const response = await chatStream(
+      [{ role: 'user', content: prompt }],
+      {
+        projectId,
+        context: `当前设定: ${form.value[section?.field as keyof typeof form.value]}`,
+        scene: 'chat',
+      },
+    )
+
+    aiSuggestion.value = await readChatStream(response)
+  }
+  catch (error: any) {
+    toast.add(error.message || 'AI 辅助构思失败', 'error')
+    aiSuggestion.value = null
+  }
+  finally {
+    isBrainstorming.value = false
+  }
+}
+
+function handleApplyAI(action: 'append' | 'replace') {
+  if (!aiSuggestion.value)
+    return
+
+  const section = sections.find(s => s.id === activeSection.value)
+  if (!section)
+    return
+
+  const field = section.field as keyof typeof form.value
+  if (action === 'append') {
+    form.value[field] = (form.value[field] ? `${form.value[field]}\n\n` : '') + aiSuggestion.value
+  }
+  else {
+    form.value[field] = aiSuggestion.value
+  }
+
+  aiSuggestion.value = null
+  toast.add('已应用 AI 建议', 'success')
+}
 
 onMounted(async () => {
   try {
@@ -179,9 +232,34 @@ async function handleSave() {
                         供 AI 创作时遵循的基础逻辑与规则。
                       </p>
                     </div>
-                    <NButton variant="ai" size="sm">
+                    <NButton variant="ai" size="sm" :loading="isBrainstorming" @click="handleAIBrainstorm()">
                       <Sparkles :size="14" class="mr-1.5" /> AI 辅助构思
                     </NButton>
+                  </div>
+
+                  <div v-if="aiSuggestion" class="animate-in fade-in slide-in-from-top-2 border border-ai/20 rounded-lg bg-ai-soft/50 p-4 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <Sparkles :size="18" class="text-ai" />
+                        <h3 class="text-sm text-ai font-bold uppercase">
+                          AI 建议
+                        </h3>
+                      </div>
+                      <NButton variant="ghost" size="sm" @click="aiSuggestion = null">
+                        放弃
+                      </NButton>
+                    </div>
+                    <div class="max-h-60 overflow-y-auto whitespace-pre-wrap text-sm text-text-primary leading-relaxed italic">
+                      {{ aiSuggestion }}
+                    </div>
+                    <div class="flex gap-2">
+                      <NButton size="sm" variant="ai" @click="handleApplyAI('append')">
+                        在末尾追加
+                      </NButton>
+                      <NButton size="sm" variant="ghost" @click="handleApplyAI('replace')">
+                        全部替换
+                      </NButton>
+                    </div>
                   </div>
 
                   <NTextArea
@@ -220,10 +298,18 @@ async function handleSave() {
               我可以帮你扩充世界观细节，或者检查规则中是否存在逻辑矛盾。
             </p>
             <div class="space-y-2">
-              <button class="w-full border border-ai/20 rounded bg-white p-2 text-left text-xs text-ai transition-colors hover:bg-ai hover:text-white">
+              <button
+                class="w-full border border-ai/20 rounded bg-white p-2 text-left text-xs text-ai transition-colors hover:bg-ai hover:text-white disabled:opacity-50"
+                :disabled="isBrainstorming"
+                @click="handleAIBrainstorm('请为当前的世界观设定建议 3 条具体且有趣的规则。')"
+              >
                 建议 3 条世界观规则
               </button>
-              <button class="w-full border border-ai/20 rounded bg-white p-2 text-left text-xs text-ai transition-colors hover:bg-ai hover:text-white">
+              <button
+                class="w-full border border-ai/20 rounded bg-white p-2 text-left text-xs text-ai transition-colors hover:bg-ai hover:text-white disabled:opacity-50"
+                :disabled="isBrainstorming"
+                @click="handleAIBrainstorm('分析当前世界观设定，识别可能存在的逻辑冲突或矛盾，并给出改进建议。')"
+              >
                 识别世界观冲突
               </button>
             </div>

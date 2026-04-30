@@ -94,8 +94,8 @@ async function handleUpload(file: File) {
     await uploadFile(file)
     toast.add('Reference material uploaded and analyzed', 'success')
   }
-  catch {
-    toast.add('Upload failed', 'error')
+  catch (error: any) {
+    toast.add(error.message || '上传失败', 'error')
   }
 }
 

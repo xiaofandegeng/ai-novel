@@ -62,6 +62,17 @@ export interface ChapterAnalysis {
   createdAt: string
 }
 
+export interface ReferenceChapterAnalysisError {
+  id: string
+  chapterId: string
+  workId: string
+  trainingSetId: string
+  message: string
+  createdAt: string
+  chapterTitle?: string
+  chapterNumber?: number
+}
+
 export interface WorkStyleReport {
   id: string
   workId: string

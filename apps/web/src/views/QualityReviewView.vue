@@ -75,8 +75,8 @@ async function runQualityCheck() {
     reports.value = qualityStore.reports
     toast.add('质量报告已成功生成', 'success')
   }
-  catch {
-    toast.add('运行质量检测失败，请稍后重试', 'error')
+  catch (error: any) {
+    toast.add(error.message || '运行质量检测失败，请稍后重试', 'error')
   }
   finally {
     evaluating.value = false

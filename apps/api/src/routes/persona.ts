@@ -126,6 +126,27 @@ export function registerPersonaRoutes(app: Hono) {
     return c.json(success(summary))
   })
 
+  app.get('/api/persona/works/:workId/analysis-errors', async (c) => {
+    const work = await personaService.getWork(c.req.param('workId'))
+    if (!work)
+      return c.json(fail('作品不存在'), 404)
+    const rows = await personaService.listWorkAnalysisErrors(c.req.param('workId'))
+    return c.json(success(rows))
+  })
+
+  app.post('/api/persona/works/:workId/retry-failed-analyses', async (c) => {
+    try {
+      const work = await personaService.getWork(c.req.param('workId'))
+      if (!work)
+        return c.json(fail('作品不存在'), 404)
+      const result = await personaService.retryFailedChapterAnalyses(c.req.param('workId'))
+      return c.json(success(result))
+    }
+    catch (e: any) {
+      return c.json(fail(e.message), 500)
+    }
+  })
+
   app.get('/api/persona/works/:workId/style-report', async (c) => {
     const row = await personaService.getWorkStyleReport(c.req.param('workId'))
     if (!row)

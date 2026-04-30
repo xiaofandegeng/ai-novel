@@ -229,6 +229,15 @@ export const chapterAnalyses = pgTable('chapter_analyses', {
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().$defaultFn(() => new Date().toISOString()),
 })
 
+export const referenceChapterAnalysisErrors = pgTable('reference_chapter_analysis_errors', {
+  id: text('id').primaryKey(),
+  chapterId: text('chapter_id').notNull().references(() => referenceChapters.id, { onDelete: 'cascade' }),
+  workId: text('work_id').notNull().references(() => referenceWorks.id, { onDelete: 'cascade' }),
+  trainingSetId: text('training_set_id').notNull().references(() => referenceTrainingSets.id, { onDelete: 'cascade' }),
+  message: text('message').notNull(),
+  createdAt: timestamp('created_at', { mode: 'string' }).notNull().$defaultFn(() => new Date().toISOString()),
+})
+
 export const workStyleReports = pgTable('work_style_reports', {
   id: text('id').primaryKey(),
   workId: text('work_id').notNull().references(() => referenceWorks.id, { onDelete: 'cascade' }),

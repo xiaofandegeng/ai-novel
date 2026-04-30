@@ -24,6 +24,7 @@ import {
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { chatStream, readChatStream } from '../api/ai'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useCharacterStore, useProjectStore } from '../stores/projects'
 import { characterRoleOptions, getCharacterRoleLabel } from '../utils/character-labels'
@@ -64,6 +65,40 @@ const charForm = ref<CharForm>({
   personality: '',
   arc: '',
 })
+
+// --- AI Section ---
+const isAnalyzing = ref(false)
+const aiSuggestion = ref<string | null>(null)
+
+async function handleAIAnalyze() {
+  if (!selectedCharId.value)
+    return
+
+  isAnalyzing.value = true
+  aiSuggestion.value = ''
+
+  const prompt = `基于角色的基本信息（姓名：${charForm.value.name}，身份：${getCharacterRoleLabel(charForm.value.role)}），以及现有的性格描述："${charForm.value.personality || '无'}"，请深入分析该角色的行为动机，为其建议一些具有冲突性的恐惧、秘密与欲望。`
+
+  try {
+    const response = await chatStream(
+      [{ role: 'user', content: prompt }],
+      {
+        projectId,
+        context: `项目背景: ${projectStore.currentProject?.description || '未定义'}`,
+        scene: 'chat',
+      },
+    )
+
+    aiSuggestion.value = await readChatStream(response)
+  }
+  catch (error: any) {
+    toast.add(error.message || 'AI 分析失败', 'error')
+    aiSuggestion.value = null
+  }
+  finally {
+    isAnalyzing.value = false
+  }
+}
 
 onMounted(async () => {
   try {
@@ -384,9 +419,31 @@ const activeTab = ref('profile')
             <p class="mb-4 text-xs text-text-secondary leading-relaxed">
               我可以基于该角色的身份定位，为其建议一系列冲突性的恐惧、秘密与欲望。
             </p>
-            <NButton variant="ai" size="sm" class="w-full">
+            <NButton
+              variant="ai"
+              size="sm"
+              class="w-full"
+              :loading="isAnalyzing"
+              :disabled="!selectedCharId"
+              @click="handleAIAnalyze"
+            >
               分析并充实角色
             </NButton>
+
+            <div v-if="aiSuggestion" class="animate-in fade-in slide-in-from-top-2 mt-4 border border-ai/20 rounded-lg bg-white p-3 shadow-sm space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] text-ai font-bold uppercase">AI 建议</span>
+                <button class="text-[10px] text-text-muted hover:text-ai" @click="aiSuggestion = null">
+                  清除
+                </button>
+              </div>
+              <div class="max-h-60 overflow-y-auto text-xs text-text-secondary leading-relaxed italic">
+                {{ aiSuggestion }}
+              </div>
+              <p class="text-[10px] text-text-muted">
+                复制并手动更新到左侧表单中。
+              </p>
+            </div>
           </div>
 
           <div>
