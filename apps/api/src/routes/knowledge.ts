@@ -56,4 +56,17 @@ export function registerKnowledgeRoutes(app: Hono) {
     const notes = await knowledgeService.listNotes(projectId)
     return c.json(success(notes))
   })
+
+  app.post('/api/projects/:projectId/knowledge/notes', async (c) => {
+    const projectId = c.req.param('projectId')
+    const body = await c.req.json()
+
+    if (!body.title || !body.content)
+      return c.json(fail('标题和内容不能为空'), 400)
+
+    const result = await knowledgeService.createNote(projectId, body)
+    if (typeof result === 'object' && 'error' in result && result.error)
+      return c.json(fail(result.error), 400)
+    return c.json(success(result), 201)
+  })
 }

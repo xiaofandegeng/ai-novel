@@ -4,26 +4,34 @@ import {
   Bot,
   Loader2,
   Send,
+  Settings,
   Sparkles,
   Trash2,
   User,
 } from 'lucide-vue-next'
 import { nextTick, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { chatStream } from '../api/ai'
+
+type AIScene = 'outline' | 'draft' | 'polish' | 'quality' | 'chat'
 
 const props = defineProps<{
   projectId: string
   context?: string
+  scene?: AIScene
 }>()
 
 const emit = defineEmits<{
   (e: 'apply', content: string): void
 }>()
-const messages = ref<{ role: 'user' | 'assistant', content: string, model?: string }[]>([])
+
+const router = useRouter()
+const messages = ref<{ role: 'user' | 'assistant', content: string, model?: string, error?: boolean }[]>([])
 const inputMessage = ref('')
 const selectedModel = ref('gpt-4o-mini')
 const isStreaming = ref(false)
 const chatContainer = ref<HTMLElement | null>(null)
+const aiNotConfigured = ref(false)
 
 async function scrollToBottom() {
   await nextTick()
@@ -36,6 +44,7 @@ async function handleSend() {
   if (!inputMessage.value.trim() || isStreaming.value)
     return
 
+  aiNotConfigured.value = false
   const userMsg = inputMessage.value.trim()
   messages.value.push({ role: 'user', content: userMsg })
   inputMessage.value = ''
@@ -49,7 +58,7 @@ async function handleSend() {
   try {
     const response = await chatStream(
       [{ role: 'user', content: userMsg }],
-      { projectId: props.projectId, context: props.context, model: selectedModel.value },
+      { projectId: props.projectId, context: props.context, model: selectedModel.value, scene: props.scene || 'chat' },
     )
 
     if (!response.body)
@@ -69,9 +78,22 @@ async function handleSend() {
     }
   }
   catch (error: any) {
-    messages.value[lastIndex].content = `[Error: ${error.message}]`
+    const msg = error.message || 'AI 请求失败'
+    if (msg.includes('AI 服务未配置')) {
+      messages.value[lastIndex].content = msg
+      messages.value[lastIndex].error = true
+      aiNotConfigured.value = true
+    }
+    else {
+      messages.value[lastIndex].content = msg
+      messages.value[lastIndex].error = true
+    }
   }
   finally {
+    // Detect inline stream errors
+    if (messages.value[lastIndex].content.includes('[Error:')) {
+      messages.value[lastIndex].error = true
+    }
     isStreaming.value = false
   }
 }
@@ -160,7 +182,7 @@ defineExpose({
             <div class="h-1.5 w-1.5 animate-bounce rounded-full bg-ai" style="animation-delay: 0.4s" />
           </div>
         </div>
-        <div v-if="msg.role === 'assistant' && msg.content && !isStreaming" class="mt-1.5 flex justify-end">
+        <div v-if="msg.role === 'assistant' && msg.content && !msg.error && !isStreaming" class="mt-1.5 flex justify-end">
           <NButton
             variant="secondary"
             size="sm"
@@ -175,6 +197,20 @@ defineExpose({
 
     <!-- Input Area -->
     <div class="shrink-0 border-t border-border-light bg-bg-page/30 p-4">
+      <div v-if="aiNotConfigured" class="mb-3 flex flex-col gap-3 border border-semantic-warning/20 rounded-lg bg-semantic-warning/10 p-3 sm:flex-row sm:items-start">
+        <Settings :size="18" class="mt-0.5 shrink-0 text-semantic-warning" />
+        <div>
+          <p class="text-sm text-text-primary font-semibold">
+            AI 服务未配置
+          </p>
+          <p class="mt-1 text-xs text-text-secondary">
+            请先完成 AI 配置检测后再使用 AI 功能。
+          </p>
+          <NButton variant="secondary" size="sm" class="mt-2" @click="router.push(`/project/${props.projectId}/settings`)">
+            前往项目设置
+          </NButton>
+        </div>
+      </div>
       <div class="group relative">
         <textarea
           v-model="inputMessage"

@@ -2,6 +2,7 @@ import type { Hono } from 'hono'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { characterRelationships } from '../db/schema'
+import { assertCharactersBelongToProject } from '../services/ownership.service'
 import { fail, generateId, success } from '../utils'
 
 export function registerRelationshipRoutes(app: Hono) {
@@ -14,6 +15,15 @@ export function registerRelationshipRoutes(app: Hono) {
   app.post('/api/projects/:projectId/relationships', async (c) => {
     const projectId = c.req.param('projectId')
     const body = await c.req.json()
+    const charIds = [body.characterAId, body.characterBId].filter(Boolean)
+    if (charIds.length > 0) {
+      try {
+        await assertCharactersBelongToProject(projectId, charIds)
+      }
+      catch {
+        return c.json(fail('角色不属于当前项目'), 400)
+      }
+    }
     const id = generateId()
     const [row] = await db.insert(characterRelationships).values({
       id,
@@ -27,6 +37,15 @@ export function registerRelationshipRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
     const body = await c.req.json()
+    const charIds = [body.characterAId, body.characterBId].filter(Boolean)
+    if (charIds.length > 0) {
+      try {
+        await assertCharactersBelongToProject(projectId, charIds)
+      }
+      catch {
+        return c.json(fail('角色不属于当前项目'), 400)
+      }
+    }
     const [row] = await db.update(characterRelationships).set({
       ...body,
       updatedAt: new Date().toISOString(),

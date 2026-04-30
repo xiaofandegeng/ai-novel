@@ -1,4 +1,5 @@
 import type { Hono } from 'hono'
+import { assertChapterBelongsToProject } from '../services/ownership.service'
 import * as versionService from '../services/version.service'
 import { fail, success } from '../utils'
 
@@ -17,6 +18,13 @@ export function registerVersionRoutes(app: Hono) {
 
     if (!body.content)
       return c.json(fail('Content is required for snapshot'), 400)
+
+    try {
+      await assertChapterBelongsToProject(projectId, chapterId)
+    }
+    catch {
+      return c.json(fail('章节不属于当前项目'), 400)
+    }
 
     const row = await versionService.createSnapshot(projectId, chapterId, body.content, body.note)
     if (typeof row === 'object' && 'error' in row && row.error)

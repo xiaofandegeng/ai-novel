@@ -138,16 +138,27 @@ export async function testAIConnection(input?: UpdateAIProviderSettingsInput) {
   }
 }
 
+export async function assertAIConfigured() {
+  const settings = await getEffectiveAISettings()
+  if (!settings.apiKey) {
+    throw new Error('AI 服务未配置，请先到项目设置完成配置检测')
+  }
+  return settings
+}
+
 export async function* streamChat(
   messages: ChatCompletionMessageParam[],
-  context?: string,
-  model?: string,
+  options?: {
+    context?: string
+    model?: string
+    personaPrompt?: string | null
+  },
 ) {
   if (!messages || !messages.length) {
     throw new Error('Messages are required')
   }
 
-  const settings = await getEffectiveAISettings()
+  const settings = await assertAIConfigured()
   const openai = createOpenAIClient(settings)
 
   const systemMessages: ChatCompletionMessageParam[] = [
@@ -156,12 +167,15 @@ export async function* streamChat(
       content: 'You are an expert novelist and creative writing assistant. Help the author expand their world, brainstorm character motivations, or draft scenes based on the provided context.',
     },
   ]
-  if (context) {
-    systemMessages.push({ role: 'system', content: `Context: ${context}` })
+  if (options?.context) {
+    systemMessages.push({ role: 'system', content: `Context: ${options.context}` })
+  }
+  if (options?.personaPrompt) {
+    systemMessages.push({ role: 'system', content: `写作人格约束：\n${options.personaPrompt}` })
   }
 
   const response = await openai.chat.completions.create({
-    model: model || settings.model,
+    model: options?.model || settings.model,
     messages: [...systemMessages, ...messages],
     stream: true,
     temperature: settings.temperature / 100,

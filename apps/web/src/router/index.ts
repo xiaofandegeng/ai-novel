@@ -64,6 +64,26 @@ const router = createRouter({
       component: () => import('@/views/ProjectSettingsView.vue'),
     },
     {
+      path: '/persona',
+      name: 'persona-library',
+      component: () => import('@/views/PersonaLibraryView.vue'),
+    },
+    {
+      path: '/persona/training-set/:id',
+      name: 'training-set-detail',
+      component: () => import('@/views/TrainingSetDetailView.vue'),
+    },
+    {
+      path: '/persona/work/:workId',
+      name: 'reference-work-detail',
+      component: () => import('@/views/ReferenceWorkDetailView.vue'),
+    },
+    {
+      path: '/persona/:id',
+      name: 'persona-detail',
+      component: () => import('@/views/PersonaDetailView.vue'),
+    },
+    {
       path: '/debug',
       name: 'debug',
       component: () => import('@/views/DataViewer.vue'),

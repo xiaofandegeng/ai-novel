@@ -132,12 +132,18 @@ function handleRunAI(type: 'continue' | 'polish' | 'expand' | 'shorten') {
     expand: '扩写',
     shorten: '精简',
   }
+  const sceneMap = {
+    continue: 'draft' as const,
+    expand: 'draft' as const,
+    polish: 'polish' as const,
+    shorten: 'polish' as const,
+  }
   const prompt = buildAIPrompt(type)
   toast.add(`AI ${actionLabels[type]}已开始`, 'info')
   initPendingResult(type)
 
   if (contextPanelRef.value) {
-    contextPanelRef.value.sendMessageToAI(prompt)
+    contextPanelRef.value.sendMessageToAI(prompt, sceneMap[type])
   }
 }
 

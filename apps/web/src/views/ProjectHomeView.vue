@@ -18,6 +18,7 @@ import {
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { exportProject } from '../api/export'
 import AppSidebar from '../components/AppSidebar.vue'
 import {
   useChapterStore,
@@ -78,18 +79,15 @@ const isExporting = ref(false)
 async function handleExport() {
   isExporting.value = true
   try {
-    const res = await fetch(`/api/projects/${projectId}/export`)
-    const data = await res.json()
-    if (data.success) {
-      const blob = new Blob([data.data.content], { type: 'text/markdown' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = data.data.filename
-      a.click()
-      URL.revokeObjectURL(url)
-      toast.add('项目导出成功！', 'success')
-    }
+    const data = await exportProject(projectId)
+    const blob = new Blob([data.content], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = data.filename
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.add('项目导出成功！', 'success')
   }
   catch {
     toast.add('导出失败，请稍后重试', 'error')

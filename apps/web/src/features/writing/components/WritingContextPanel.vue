@@ -6,6 +6,8 @@ import { computed, ref } from 'vue'
 import AIAssistantSidebar from '../../../components/AIAssistantSidebar.vue'
 import { getCharacterRoleLabel } from '../../../utils/character-labels'
 
+type AIScene = 'outline' | 'draft' | 'polish' | 'quality' | 'chat'
+
 const props = defineProps<{
   chapter: Chapter | undefined
   characters: Character[]
@@ -27,6 +29,7 @@ const tabs = [
 ]
 
 const aiSidebarRef = ref<InstanceType<typeof AIAssistantSidebar> | null>(null)
+const pendingScene = ref<AIScene>('chat')
 
 const presentCharacters = computed(() => {
   if (!props.chapter?.characters)
@@ -42,7 +45,8 @@ const aiContext = computed(() =>
   `Setting: ${props.storyBible?.worldview || ''}. Current Chapter Outline: ${props.chapter?.goals || ''}`,
 )
 
-function sendMessageToAI(prompt: string) {
+function sendMessageToAI(prompt: string, scene: AIScene = 'chat') {
+  pendingScene.value = scene
   if (activeContextTab.value !== 'ai') {
     activeContextTab.value = 'ai'
   }
@@ -174,6 +178,7 @@ defineExpose({
           ref="aiSidebarRef"
           :project-id="projectId"
           :context="aiContext"
+          :scene="pendingScene"
           @apply="emit('applyAI', $event)"
         />
       </div>

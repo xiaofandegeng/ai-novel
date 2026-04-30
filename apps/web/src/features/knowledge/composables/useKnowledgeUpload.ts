@@ -1,11 +1,10 @@
 import type { KnowledgeSource } from '@ai-novel/shared'
 import { ref } from 'vue'
-import { useApi } from '../../../composables/useApi'
+import * as knowledgeApi from '../../../api/knowledge'
 import { useKnowledgeStore } from '../../../stores/knowledge.store'
 
 export function useKnowledgeUpload(projectId: string) {
   const uploading = ref(false)
-  const api = useApi()
   const knowledgeStore = useKnowledgeStore()
 
   function readFileAsText(file: File): Promise<string> {
@@ -32,7 +31,7 @@ export function useKnowledgeUpload(projectId: string) {
       const content = await readFileAsText(file)
 
       // 3. Trigger analysis
-      await api.post(`/api/projects/${projectId}/knowledge/sources/${source.id}/analyze`, { content })
+      await knowledgeApi.analyzeSource(projectId, source.id, { content })
 
       // 4. Refresh source list
       await knowledgeStore.fetchSources(projectId)

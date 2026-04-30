@@ -2,6 +2,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { chapters, qualityReports } from '../db/schema'
 import { fail, generateId } from '../utils'
+import { createOpenAIClient, getEffectiveAISettings } from './ai.service'
 
 export async function listReports(projectId: string) {
   return db
@@ -25,25 +26,79 @@ export async function runChapterQualityCheck(projectId: string, chapterId: strin
     return fail('Chapter has no draft')
   }
 
-  // Mock AI Analysis (Step 8.1 says Score 0-100)
-  // Normally we'd call an LLM here with a specific quality prompt
-  const mockReport = {
-    id: generateId(),
-    projectId,
-    chapterId,
-    scope: 'chapter' as const,
-    score: Math.floor(Math.random() * 30) + 70, // 70-100
-    rhythmScore: Math.floor(Math.random() * 5) + 5, // 5-10
-    conflictScore: Math.floor(Math.random() * 5) + 5,
-    logicScore: Math.floor(Math.random() * 5) + 5,
-    characterScore: Math.floor(Math.random() * 5) + 5,
-    styleScore: Math.floor(Math.random() * 5) + 5,
-    issues: JSON.stringify(['Rhythm starts slow', 'Character motivation slightly unclear in middle']),
-    suggestions: JSON.stringify(['Try shorter sentences near the peak', 'Add a bit more sensory detail to the mirror scene']),
+  const settings = await getEffectiveAISettings()
+
+  if (!settings.apiKey) {
+    return fail('AI 服务未配置，请先在项目设置中完成 AI 配置检测')
   }
 
-  await db.insert(qualityReports).values(mockReport)
-  return mockReport
+  const prompt = `你是一位专业的中文小说编辑。请对以下章节进行质量评估，返回严格的 JSON 格式。
+
+章节标题：${chapter.title}
+章节正文：
+${chapter.draft}
+
+请返回以下 JSON 格式（不要包含 markdown 代码块标记）：
+{
+  "score": 0-100的综合评分,
+  "rhythmScore": 0-10的节奏密度评分,
+  "conflictScore": 0-10的冲突强度评分,
+  "logicScore": 0-10的逻辑连续性评分,
+  "characterScore": 0-10的人物一致性评分,
+  "styleScore": 0-10的文风评分,
+  "issues": ["具体问题1", "具体问题2"],
+  "suggestions": ["具体建议1", "具体建议2"]
+}
+
+注意：
+- issues 和 suggestions 必须是中文
+- issues 列出 2-4 个具体问题
+- suggestions 列出 2-4 个可落地的修改建议
+- 评分应基于章节内容的具体质量，不是随机分值`
+
+  try {
+    const client = createOpenAIClient(settings)
+    const response = await client.chat.completions.create({
+      model: settings.model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.3,
+      response_format: { type: 'json_object' },
+    })
+
+    const content = response.choices[0]?.message?.content
+    if (!content) {
+      return fail('AI 返回内容为空')
+    }
+
+    let parsed: any
+    try {
+      parsed = JSON.parse(content)
+    }
+    catch {
+      return fail('AI 返回的 JSON 无法解析，请重试')
+    }
+
+    const report = {
+      id: generateId(),
+      projectId,
+      chapterId,
+      scope: 'chapter' as const,
+      score: Math.min(100, Math.max(0, Number(parsed.score) || 0)),
+      rhythmScore: Math.min(10, Math.max(0, Number(parsed.rhythmScore) || 0)),
+      conflictScore: Math.min(10, Math.max(0, Number(parsed.conflictScore) || 0)),
+      logicScore: Math.min(10, Math.max(0, Number(parsed.logicScore) || 0)),
+      characterScore: Math.min(10, Math.max(0, Number(parsed.characterScore) || 0)),
+      styleScore: Math.min(10, Math.max(0, Number(parsed.styleScore) || 0)),
+      issues: JSON.stringify(Array.isArray(parsed.issues) ? parsed.issues : []),
+      suggestions: JSON.stringify(Array.isArray(parsed.suggestions) ? parsed.suggestions : []),
+    }
+
+    await db.insert(qualityReports).values(report)
+    return report
+  }
+  catch (e: any) {
+    return fail(`质量评估失败: ${e.message || '未知错误'}`)
+  }
 }
 
 export async function getReport(projectId: string, reportId: string) {

@@ -1,7 +1,8 @@
-import { and, eq, like } from 'drizzle-orm'
+import { and, eq, like, or } from 'drizzle-orm'
 import { db } from '../db'
 import { knowledgeChunks, knowledgeNotes, knowledgeSources } from '../db/schema'
 import { fail, generateId, now } from '../utils'
+import { createOpenAIClient, getEffectiveAISettings } from './ai.service'
 
 export async function listSources(projectId: string) {
   return db.select().from(knowledgeSources).where(eq(knowledgeSources.projectId, projectId))
@@ -46,6 +47,56 @@ export async function getSourceDetail(projectId: string, sourceId: string) {
   return { ...source, chunks }
 }
 
+async function analyzeChunkWithAI(chunkContent: string, chunkTitle: string): Promise<{ summary: string, techniques: string }> {
+  const settings = await getEffectiveAISettings()
+
+  if (!settings.apiKey) {
+    throw new Error('AI 服务未配置，请先在项目设置中完成 AI 配置检测')
+  }
+
+  const truncatedContent = chunkContent.length > 3000
+    ? `${chunkContent.substring(0, 3000)}...(内容过长已截断)`
+    : chunkContent
+
+  const prompt = `你是一位专业的文学编辑。请分析以下文本片段，返回严格的 JSON 格式。
+
+片段标题：${chunkTitle}
+内容：
+${truncatedContent}
+
+请返回以下 JSON 格式（不要包含 markdown 代码块标记）：
+{
+  "summary": "100-200字的中文摘要，概括该片段的核心内容、情节推进和人物发展",
+  "techniques": "100-200字的中文分析，提取该片段使用的写作技巧、叙事手法和可复用的结构建议"
+}`
+
+  const client = createOpenAIClient(settings)
+  const response = await client.chat.completions.create({
+    model: settings.model,
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.3,
+    response_format: { type: 'json_object' },
+  })
+
+  const content = response.choices[0]?.message?.content
+  if (!content) {
+    throw new Error('AI 返回内容为空')
+  }
+
+  let parsed: any
+  try {
+    parsed = JSON.parse(content)
+  }
+  catch {
+    throw new Error('AI 返回的 JSON 无法解析')
+  }
+
+  return {
+    summary: parsed.summary || '',
+    techniques: parsed.techniques || '',
+  }
+}
+
 export async function analyzeSource(projectId: string, sourceId: string, content: string) {
   if (!content) {
     return fail('No content to analyze')
@@ -68,7 +119,7 @@ export async function analyzeSource(projectId: string, sourceId: string, content
     .where(and(eq(knowledgeSources.id, sourceId), eq(knowledgeSources.projectId, projectId)))
 
   try {
-    // Basic chapter splitting by regex (Chapter/第X章/第X卷)
+    // Basic chapter splitting by regex
     const chapterPattern = /(第[一二三四五六七八九十百千万\d]+[章节卷篇]).*/g
     const matches = [...content.matchAll(chapterPattern)]
 
@@ -81,6 +132,8 @@ export async function analyzeSource(projectId: string, sourceId: string, content
         const endIndex = i < matches.length - 1 ? matches[i + 1].index! : content.length
         const chapterContent = content.substring(startIndex, endIndex).trim()
 
+        const analysis = await analyzeChunkWithAI(chapterContent, title)
+
         chunksData.push({
           id: generateId(),
           sourceId,
@@ -88,23 +141,46 @@ export async function analyzeSource(projectId: string, sourceId: string, content
           chunkType: 'chapter',
           title,
           content: chapterContent,
-          summary: `Summary of ${title}`, // Mock summary for MVP
+          summary: analysis.summary,
+          techniques: analysis.techniques,
           orderIndex: i + 1,
         })
       }
     }
     else {
-      // Just one big chunk if no chapters found
-      chunksData.push({
-        id: generateId(),
-        sourceId,
-        projectId,
-        chunkType: 'full',
-        title: 'Full Text',
-        content,
-        summary: 'Full text summary',
-        orderIndex: 1,
-      })
+      // Split by approximate 3000-char segments for long texts
+      const segmentSize = 3000
+      const segments: { title: string, content: string }[] = []
+
+      if (content.length <= segmentSize) {
+        segments.push({ title: '全文', content })
+      }
+      else {
+        for (let i = 0; i < content.length; i += segmentSize) {
+          const segmentContent = content.substring(i, i + segmentSize)
+          segments.push({
+            title: `片段 ${Math.floor(i / segmentSize) + 1}`,
+            content: segmentContent,
+          })
+        }
+      }
+
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i]
+        const analysis = await analyzeChunkWithAI(seg.content, seg.title)
+
+        chunksData.push({
+          id: generateId(),
+          sourceId,
+          projectId,
+          chunkType: 'full',
+          title: seg.title,
+          content: seg.content,
+          summary: analysis.summary,
+          techniques: analysis.techniques,
+          orderIndex: i + 1,
+        })
+      }
     }
 
     // Insert chunks
@@ -130,13 +206,27 @@ export async function analyzeSource(projectId: string, sourceId: string, content
 }
 
 export async function searchKnowledge(projectId: string, query: string) {
+  if (!query.trim()) {
+    return db
+      .select()
+      .from(knowledgeChunks)
+      .where(eq(knowledgeChunks.projectId, projectId))
+      .limit(10)
+  }
+
+  const keyword = `%${query}%`
   return db
     .select()
     .from(knowledgeChunks)
     .where(
       and(
         eq(knowledgeChunks.projectId, projectId),
-        like(knowledgeChunks.content, `%${query}%`),
+        or(
+          like(knowledgeChunks.title, keyword),
+          like(knowledgeChunks.content, keyword),
+          like(knowledgeChunks.summary, keyword),
+          like(knowledgeChunks.techniques, keyword),
+        ),
       ),
     )
     .limit(10)
@@ -144,4 +234,36 @@ export async function searchKnowledge(projectId: string, query: string) {
 
 export async function listNotes(projectId: string) {
   return db.select().from(knowledgeNotes).where(eq(knowledgeNotes.projectId, projectId))
+}
+
+export async function createNote(
+  projectId: string,
+  input: {
+    title: string
+    content: string
+    sourceId?: string
+    tags?: string
+  },
+) {
+  if (input.sourceId) {
+    const [source] = await db
+      .select({ id: knowledgeSources.id })
+      .from(knowledgeSources)
+      .where(and(eq(knowledgeSources.id, input.sourceId), eq(knowledgeSources.projectId, projectId)))
+    if (!source) {
+      return fail('关联的知识源不属于当前项目')
+    }
+  }
+
+  const note = {
+    id: generateId(),
+    projectId,
+    sourceId: input.sourceId || null,
+    title: input.title,
+    content: input.content,
+    tags: input.tags || null,
+  }
+
+  await db.insert(knowledgeNotes).values(note)
+  return note
 }

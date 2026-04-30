@@ -204,7 +204,7 @@ async function handleAIBrainstorm() {
          Please provide: 1. Core Conflict, 2. Three Key Events, 3. An Ending Hook.
          Keep it concise and dramatic.`,
       }],
-      { projectId, context },
+      { projectId, context, scene: 'outline' },
     )
 
     aiSuggestion.value = await readChatStream(response)

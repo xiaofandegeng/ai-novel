@@ -22,19 +22,19 @@ import {
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
-import { useApi } from '../composables/useApi'
 import {
   useChapterStore,
   useProjectStore,
 } from '../stores/projects'
+import { useQualityStore } from '../stores/quality.store'
 
 const route = useRoute()
 const projectId = route.params.id as string
 const toast = useToast()
-const api = useApi()
 
 const projectStore = useProjectStore()
 const chapterStore = useChapterStore()
+const qualityStore = useQualityStore()
 
 const loading = ref(true)
 const evaluating = ref(false)
@@ -60,13 +60,9 @@ onMounted(async () => {
 })
 
 async function fetchReports() {
-  const res = await api.get<{ success: boolean, data: QualityReport[] }>(`/api/projects/${projectId}/quality/reports`)
-  if (res && res.success) {
-    reports.value = res.data
-    if (reports.value.length > 0 && !selectedReport.value) {
-      selectedReport.value = reports.value[0]
-    }
-  }
+  await qualityStore.fetchReports(projectId)
+  reports.value = qualityStore.reports
+  selectedReport.value ||= reports.value[0] || null
 }
 
 async function runQualityCheck() {
@@ -74,15 +70,10 @@ async function runQualityCheck() {
     return
   evaluating.value = true
   try {
-    const res = await api.post<{ success: boolean, data: QualityReport }>(
-      `/api/projects/${projectId}/chapters/${selectedChapterId.value}/quality-check`,
-      {},
-    )
-    if (res && res.success) {
-      selectedReport.value = res.data
-      toast.add('质量报告已成功生成', 'success')
-      await fetchReports()
-    }
+    const report = await qualityStore.runQualityCheck(projectId, selectedChapterId.value)
+    selectedReport.value = report
+    reports.value = qualityStore.reports
+    toast.add('质量报告已成功生成', 'success')
   }
   catch {
     toast.add('运行质量检测失败，请稍后重试', 'error')

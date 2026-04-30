@@ -10,6 +10,7 @@ import { registerConflictRoutes } from './routes/conflicts'
 import { registerExportRoutes } from './routes/export'
 import { registerHealthRoutes } from './routes/health'
 import { registerKnowledgeRoutes } from './routes/knowledge'
+import { registerPersonaRoutes } from './routes/persona'
 import { registerProjectRoutes } from './routes/projects'
 import { registerQualityRoutes } from './routes/quality'
 import { registerRelationshipRoutes } from './routes/relationships'
@@ -40,6 +41,7 @@ registerExportRoutes(app)
 registerKnowledgeRoutes(app)
 registerQualityRoutes(app)
 registerSettingsRoutes(app)
+registerPersonaRoutes(app)
 
 app.notFound((c) => {
   return c.json({ error: 'Not Found' }, 404)

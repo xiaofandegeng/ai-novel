@@ -1,7 +1,8 @@
 import type { Hono } from 'hono'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import { db } from '../db'
 import { chapters } from '../db/schema'
+import { assertVolumeBelongsToProject } from '../services/ownership.service'
 import { fail, generateId, now, success, updatedFields } from '../utils'
 
 export function registerChapterRoutes(app: Hono) {
@@ -25,6 +26,26 @@ export function registerChapterRoutes(app: Hono) {
   app.post('/api/projects/:projectId/chapters', async (c) => {
     const projectId = c.req.param('projectId')
     const body = await c.req.json()
+    if (body.volumeId) {
+      try {
+        await assertVolumeBelongsToProject(projectId, body.volumeId)
+      }
+      catch {
+        return c.json(fail('卷不属于当前项目'), 400)
+      }
+    }
+    // Check chapter number uniqueness within the same volume
+    if (body.volumeId && body.chapterNumber != null) {
+      const [existing] = await db.select({ id: chapters.id }).from(chapters).where(
+        and(
+          eq(chapters.projectId, projectId),
+          eq(chapters.volumeId, body.volumeId),
+          eq(chapters.chapterNumber, body.chapterNumber),
+        ),
+      )
+      if (existing)
+        return c.json(fail(`第 ${body.chapterNumber} 章已存在，请使用不同的章节序号`), 400)
+    }
     const id = generateId()
     const timestamp = now()
     const [row] = await db.insert(chapters).values({
@@ -54,6 +75,40 @@ export function registerChapterRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
     const body = await c.req.json()
+
+    // Read current chapter first
+    const [current] = await db.select().from(chapters).where(
+      and(eq(chapters.id, id), eq(chapters.projectId, projectId)),
+    )
+    if (!current)
+      return c.json(fail('Chapter not found'), 404)
+
+    const targetVolumeId = body.volumeId ?? current.volumeId
+    const targetChapterNumber = body.chapterNumber ?? current.chapterNumber
+
+    if (body.volumeId) {
+      try {
+        await assertVolumeBelongsToProject(projectId, body.volumeId)
+      }
+      catch {
+        return c.json(fail('卷不属于当前项目'), 400)
+      }
+    }
+
+    // Check chapter number uniqueness within the same volume (exclude self)
+    if (targetVolumeId && targetChapterNumber != null) {
+      const [existing] = await db.select({ id: chapters.id }).from(chapters).where(
+        and(
+          eq(chapters.projectId, projectId),
+          eq(chapters.volumeId, targetVolumeId),
+          eq(chapters.chapterNumber, targetChapterNumber),
+          ne(chapters.id, id),
+        ),
+      )
+      if (existing)
+        return c.json(fail(`第 ${targetChapterNumber} 章已存在，请使用不同的章节序号`), 400)
+    }
+
     const fields = updatedFields({
       volumeId: body.volumeId,
       chapterNumber: body.chapterNumber,
