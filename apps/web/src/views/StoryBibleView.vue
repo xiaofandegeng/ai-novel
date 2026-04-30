@@ -73,11 +73,13 @@ async function handleAIBrainstorm(customPrompt?: string) {
       },
     )
 
-    aiSuggestion.value = await readChatStream(response)
+    await readChatStream(response, (text) => {
+      aiSuggestion.value = text
+    })
   }
   catch (error: any) {
+    aiSuggestion.value = `Error: ${error.message || 'AI 辅助构思失败'}`
     toast.add(error.message || 'AI 辅助构思失败', 'error')
-    aiSuggestion.value = null
   }
   finally {
     isBrainstorming.value = false
@@ -237,7 +239,7 @@ async function handleSave() {
                     </NButton>
                   </div>
 
-                  <div v-if="aiSuggestion" class="animate-in fade-in slide-in-from-top-2 border border-ai/20 rounded-lg bg-ai-soft/50 p-4 shadow-sm space-y-4">
+                  <div v-if="isBrainstorming || aiSuggestion !== null" class="animate-in fade-in slide-in-from-top-2 border border-ai/20 rounded-lg bg-ai-soft/50 p-4 shadow-sm space-y-4">
                     <div class="flex items-center justify-between">
                       <div class="flex items-center gap-2">
                         <Sparkles :size="18" class="text-ai" />
@@ -249,10 +251,13 @@ async function handleSave() {
                         放弃
                       </NButton>
                     </div>
-                    <div class="max-h-60 overflow-y-auto whitespace-pre-wrap text-sm text-text-primary leading-relaxed italic">
+                    <div v-if="isBrainstorming && !aiSuggestion" class="flex items-center gap-2 py-4 text-sm text-text-muted">
+                      <NLoadingState size="sm" /> 正在思考并构思建议...
+                    </div>
+                    <div v-else class="max-h-60 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed italic" :class="aiSuggestion?.startsWith('Error:') ? 'text-error font-medium not-italic' : 'text-text-primary'">
                       {{ aiSuggestion }}
                     </div>
-                    <div class="flex gap-2">
+                    <div v-if="aiSuggestion && !aiSuggestion.startsWith('Error:')" class="flex gap-2">
                       <NButton size="sm" variant="ai" @click="handleApplyAI('append')">
                         在末尾追加
                       </NButton>
@@ -260,6 +265,9 @@ async function handleSave() {
                         全部替换
                       </NButton>
                     </div>
+                    <NButton v-if="aiSuggestion?.startsWith('Error:')" size="sm" variant="ghost" class="w-full text-xs" @click="handleAIBrainstorm()">
+                      重试
+                    </NButton>
                   </div>
 
                   <NTextArea

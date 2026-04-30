@@ -71,8 +71,10 @@ const isAnalyzing = ref(false)
 const aiSuggestion = ref<string | null>(null)
 
 async function handleAIAnalyze() {
-  if (!selectedCharId.value)
+  if (!selectedCharId.value) {
+    toast.add('请先选择一个角色', 'warning')
     return
+  }
 
   isAnalyzing.value = true
   aiSuggestion.value = ''
@@ -89,11 +91,13 @@ async function handleAIAnalyze() {
       },
     )
 
-    aiSuggestion.value = await readChatStream(response)
+    await readChatStream(response, (text) => {
+      aiSuggestion.value = text
+    })
   }
   catch (error: any) {
+    aiSuggestion.value = `Error: ${error.message || 'AI 分析失败'}`
     toast.add(error.message || 'AI 分析失败', 'error')
-    aiSuggestion.value = null
   }
   finally {
     isAnalyzing.value = false
@@ -430,19 +434,25 @@ const activeTab = ref('profile')
               分析并充实角色
             </NButton>
 
-            <div v-if="aiSuggestion" class="animate-in fade-in slide-in-from-top-2 mt-4 border border-ai/20 rounded-lg bg-white p-3 shadow-sm space-y-3">
+            <div v-if="isAnalyzing || aiSuggestion !== null" class="animate-in fade-in slide-in-from-top-2 mt-4 border border-ai/20 rounded-lg bg-white p-3 shadow-sm space-y-3">
               <div class="flex items-center justify-between">
                 <span class="text-[10px] text-ai font-bold uppercase">AI 建议</span>
                 <button class="text-[10px] text-text-muted hover:text-ai" @click="aiSuggestion = null">
                   清除
                 </button>
               </div>
-              <div class="max-h-60 overflow-y-auto text-xs text-text-secondary leading-relaxed italic">
+              <div v-if="isAnalyzing && !aiSuggestion" class="flex items-center gap-2 py-2 text-xs text-text-muted">
+                <NLoadingState size="sm" /> 正在分析并生成构思...
+              </div>
+              <div v-else class="max-h-60 overflow-y-auto text-xs leading-relaxed italic" :class="aiSuggestion?.startsWith('Error:') ? 'text-error font-medium not-italic' : 'text-text-secondary'">
                 {{ aiSuggestion }}
               </div>
-              <p class="text-[10px] text-text-muted">
+              <p v-if="aiSuggestion && !aiSuggestion.startsWith('Error:')" class="text-[10px] text-text-muted">
                 复制并手动更新到左侧表单中。
               </p>
+              <NButton v-if="aiSuggestion?.startsWith('Error:')" size="sm" variant="ghost" class="w-full text-xs" @click="handleAIAnalyze">
+                重试
+              </NButton>
             </div>
           </div>
 

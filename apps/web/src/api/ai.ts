@@ -28,7 +28,7 @@ export async function chatStream(messages: AIMessage[], options?: ChatStreamOpti
   return response
 }
 
-export async function readChatStream(response: Response): Promise<string> {
+export async function readChatStream(response: Response, onChunk?: (text: string) => void): Promise<string> {
   if (!response.body)
     throw new Error('AI response body is empty')
 
@@ -40,7 +40,10 @@ export async function readChatStream(response: Response): Promise<string> {
     const { done, value } = await reader.read()
     if (done)
       break
-    result += decoder.decode(value)
+    const chunk = decoder.decode(value)
+    result += chunk
+    if (onChunk)
+      onChunk(result)
   }
 
   return result

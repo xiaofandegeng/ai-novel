@@ -96,6 +96,13 @@ async function handleExport() {
     isExporting.value = false
   }
 }
+
+const showAISuggestion = ref(true)
+
+function handleExploreCharacters() {
+  router.push(`/project/${projectId}/characters`)
+  toast.add('正在为您前往角色库，您可以使用右侧 AI 助手进行构思', 'info')
+}
 </script>
 
 <template>
@@ -291,7 +298,7 @@ async function handleExport() {
         </div>
 
         <!-- AI Assistant Suggestion -->
-        <div class="flex items-start gap-6 border border-ai/20 rounded-xl bg-ai-soft p-6">
+        <div v-if="showAISuggestion" class="flex items-start gap-6 border border-ai/20 rounded-xl bg-ai-soft p-6">
           <div class="h-12 w-12 flex shrink-0 items-center justify-center border border-ai/10 rounded-lg bg-white shadow-sm">
             <Sparkles class="text-ai" :size="24" />
           </div>
@@ -303,10 +310,10 @@ async function handleExport() {
               根据你的故事设定集，我建议可以尝试三个新角色类型，以在你目前的设定中制造自然的剧情冲突。想要探索一下吗？
             </p>
             <div class="flex gap-2">
-              <NButton variant="ai" size="sm" class="border-none bg-ai text-white">
+              <NButton variant="ai" size="sm" class="border-none bg-ai text-white" @click="handleExploreCharacters">
                 探索角色
               </NButton>
-              <NButton variant="ghost" size="sm" class="text-text-muted">
+              <NButton variant="ghost" size="sm" class="text-text-muted" @click="showAISuggestion = false">
                 忽略
               </NButton>
             </div>
