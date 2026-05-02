@@ -1,10 +1,33 @@
-import type { AIMessage } from '@ai-novel/shared'
+import type { AIMessage, AIScene } from '@ai-novel/shared'
 
 export interface ChatStreamOptions {
   projectId?: string
   context?: string
   model?: string
-  scene?: 'outline' | 'draft' | 'polish' | 'quality' | 'chat'
+  scene?: AIScene
+}
+
+export interface GenerateAIOptions {
+  projectId: string
+  scene: AIScene
+  chapterId?: string
+  selectedText?: string
+  userInstruction?: string
+}
+
+export async function generateAIStream(options: GenerateAIOptions): Promise<Response> {
+  const response = await fetch(`/api/projects/${options.projectId}/ai/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options),
+  })
+
+  if (!response.ok) {
+    const json = await response.json().catch(() => null)
+    throw new Error(json?.error || 'AI 生成失败')
+  }
+
+  return response
 }
 
 export async function chatStream(messages: AIMessage[], options?: ChatStreamOptions): Promise<Response> {

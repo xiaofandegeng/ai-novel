@@ -24,7 +24,7 @@ import {
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { chatStream, readChatStream } from '../api/ai'
+import { generateAIStream, readChatStream } from '../api/ai'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useCharacterStore, useProjectStore } from '../stores/projects'
 import { characterRoleOptions, getCharacterRoleLabel } from '../utils/character-labels'
@@ -82,14 +82,11 @@ async function handleAIAnalyze() {
   const prompt = `基于角色的基本信息（姓名：${charForm.value.name}，身份：${getCharacterRoleLabel(charForm.value.role)}），以及现有的性格描述："${charForm.value.personality || '无'}"，请深入分析该角色的行为动机，为其建议一些具有冲突性的恐惧、秘密与欲望。`
 
   try {
-    const response = await chatStream(
-      [{ role: 'user', content: prompt }],
-      {
-        projectId,
-        context: `项目背景: ${projectStore.currentProject?.description || '未定义'}`,
-        scene: 'chat',
-      },
-    )
+    const response = await generateAIStream({
+      projectId,
+      scene: 'chat',
+      userInstruction: prompt,
+    })
 
     await readChatStream(response, (text) => {
       aiSuggestion.value = text

@@ -20,7 +20,7 @@ import {
 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { chatStream, readChatStream } from '../api/ai'
+import { generateAIStream, readChatStream } from '@/api/ai'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useProjectStore, useStoryBibleStore } from '../stores/projects'
 
@@ -64,14 +64,11 @@ async function handleAIBrainstorm(customPrompt?: string) {
   const prompt = customPrompt || `基于当前项目主题"${projectStore.currentProject?.theme || '未定义'}"，为作品的"${section?.label}"部分提供一些深入的构思建议。`
 
   try {
-    const response = await chatStream(
-      [{ role: 'user', content: prompt }],
-      {
-        projectId,
-        context: `当前设定: ${form.value[section?.field as keyof typeof form.value]}`,
-        scene: 'chat',
-      },
-    )
+    const response = await generateAIStream({
+      projectId,
+      scene: 'story_bible',
+      userInstruction: prompt,
+    })
 
     await readChatStream(response, (text) => {
       aiSuggestion.value = text

@@ -11,14 +11,15 @@ import {
 } from 'lucide-vue-next'
 import { nextTick, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { chatStream } from '../api/ai'
+import { chatStream, generateAIStream } from '../api/ai'
 
-type AIScene = 'outline' | 'draft' | 'polish' | 'quality' | 'chat'
+type AIScene = 'outline' | 'draft' | 'polish' | 'quality' | 'chat' | 'story_bible' | 'knowledge' | 'persona_training' | 'persona_drift'
 
 const props = defineProps<{
   projectId: string
   context?: string
   scene?: AIScene
+  chapterId?: string
 }>()
 
 const emit = defineEmits<{
@@ -56,10 +57,21 @@ async function handleSend() {
   const lastIndex = messages.value.length - 1
 
   try {
-    const response = await chatStream(
-      [{ role: 'user', content: userMsg }],
-      { projectId: props.projectId, context: props.context, model: selectedModel.value, scene: props.scene || 'chat' },
-    )
+    let response: Response
+    if (props.scene && props.scene !== 'chat') {
+      response = await generateAIStream({
+        projectId: props.projectId,
+        scene: props.scene,
+        chapterId: props.chapterId,
+        userInstruction: userMsg,
+      })
+    }
+    else {
+      response = await chatStream(
+        [{ role: 'user', content: userMsg }],
+        { projectId: props.projectId, context: props.context, model: selectedModel.value, scene: props.scene || 'chat' },
+      )
+    }
 
     if (!response.body)
       throw new Error('No response body')

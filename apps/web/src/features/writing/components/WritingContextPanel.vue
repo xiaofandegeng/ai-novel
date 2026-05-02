@@ -177,6 +177,7 @@ defineExpose({
         <AIAssistantSidebar
           ref="aiSidebarRef"
           :project-id="projectId"
+          :chapter-id="chapter?.id"
           :context="aiContext"
           :scene="pendingScene"
           @apply="emit('applyAI', $event)"

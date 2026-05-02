@@ -1,3 +1,4 @@
+import type { AIScene } from '@ai-novel/shared'
 import { eq } from 'drizzle-orm'
 import { db } from '../db'
 import { projectPersonaConfigs } from '../db/schema'
@@ -5,7 +6,7 @@ import * as personaService from './persona.service'
 
 export async function buildPersonaPromptForProject(
   projectId: string,
-  scene: 'outline' | 'draft' | 'polish' | 'quality' | 'chat',
+  scene: AIScene,
 ): Promise<string | null> {
   const [config] = await db
     .select()

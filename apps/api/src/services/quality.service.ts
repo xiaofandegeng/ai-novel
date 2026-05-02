@@ -32,14 +32,15 @@ export async function runChapterQualityCheck(projectId: string, chapterId: strin
     return fail('AI 服务未配置，请先在项目设置中完成 AI 配置检测')
   }
 
-  const prompt = `你是一位专业的中文小说编辑。请对以下章节进行质量评估，返回严格的 JSON 格式。
+  const { buildProjectAIContext, renderAIContext } = await import('./ai-context.service')
+  const context = await buildProjectAIContext({
+    projectId,
+    scene: 'quality',
+    chapterId,
+  })
+  const contextPrompt = renderAIContext(context)
 
-章节标题：${chapter.title}
-章节正文：
-${chapter.draft}
-
-请返回以下 JSON 格式（不要包含 markdown 代码块标记）：
-{
+  const fullPrompt = `${contextPrompt}\n\n你是一位专业的中文小说编辑。请对以上章节进行质量评估，返回严格的 JSON 格式。\n\n章节正文：\n${chapter.draft}\n\n请返回以下 JSON 格式（不要包含 markdown 代码块标记）：\n{
   "score": 0-100的综合评分,
   "rhythmScore": 0-10的节奏密度评分,
   "conflictScore": 0-10的冲突强度评分,
@@ -48,19 +49,13 @@ ${chapter.draft}
   "styleScore": 0-10的文风评分,
   "issues": ["具体问题1", "具体问题2"],
   "suggestions": ["具体建议1", "具体建议2"]
-}
-
-注意：
-- issues 和 suggestions 必须是中文
-- issues 列出 2-4 个具体问题
-- suggestions 列出 2-4 个可落地的修改建议
-- 评分应基于章节内容的具体质量，不是随机分值`
+}\n\n注意：\n- issues 和 suggestions 必须是中文\n- issues 列出 2-4 个具体问题\n- suggestions 列出 2-4 个可落地的修改建议\n- 评分应基于章节内容的具体质量，不是随机分值`
 
   try {
     const client = createOpenAIClient(settings)
     const response = await client.chat.completions.create({
       model: settings.model,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: fullPrompt }],
       temperature: 0.3,
       response_format: { type: 'json_object' },
     })

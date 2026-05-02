@@ -24,7 +24,7 @@ import {
 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { chatStream, readChatStream } from '../api/ai'
+import { generateAIStream, readChatStream } from '@/api/ai'
 import AppSidebar from '../components/AppSidebar.vue'
 import ChapterTitleField from '../features/outline/components/ChapterTitleField.vue'
 import {
@@ -43,7 +43,6 @@ const projectStore = useProjectStore()
 const characterStore = useCharacterStore()
 const volumeStore = useVolumeStore()
 const chapterStore = useChapterStore()
-const getCharName = (id: string) => characterStore.characters.find(c => c.id === id)?.name || ''
 
 const loading = ref(true)
 const saving = ref(false)
@@ -190,24 +189,18 @@ async function handleAIBrainstorm() {
   aiSuggestion.value = ''
 
   try {
-    const context = `
-      Project: ${projectStore.currentProject?.title}
-      Theme: ${projectStore.currentProject?.theme}
-      Current Chapter: ${outlineForm.value.title}
-      Characters Involved: ${outlineForm.value.characterIds.map(id => getCharName(id)).join(', ')}
-    `
-
-    const response = await chatStream(
-      [{
-        role: 'user',
-        content: `Based on the context, brainstorm a detailed outline for this chapter.
+    const response = await generateAIStream({
+      projectId,
+      scene: 'outline',
+      chapterId: selectedChapterId.value,
+      userInstruction: `Based on the context, brainstorm a detailed outline for this chapter.
          Please provide: 1. Core Conflict, 2. Three Key Events, 3. An Ending Hook.
          Keep it concise and dramatic.`,
-      }],
-      { projectId, context, scene: 'outline' },
-    )
+    })
 
-    aiSuggestion.value = await readChatStream(response)
+    await readChatStream(response, (text) => {
+      aiSuggestion.value = text
+    })
   }
   catch (error: any) {
     toast.add(error.message || 'AI 灵感风暴失败', 'error')
