@@ -22,6 +22,35 @@ import {
 } from '../db/schema'
 import { buildPersonaPromptForProject } from './persona-prompt.service'
 
+function buildKnowledgeSearchTerms(input: {
+  userInstruction?: string
+  chapterTitle?: string
+  projectTheme?: string
+  projectGenre?: string
+  currentChapterConflicts?: string
+  characterNames: string[]
+  conflictTitles: string[]
+}) {
+  const terms = [
+    input.chapterTitle,
+    input.projectTheme,
+    input.projectGenre,
+    input.currentChapterConflicts,
+    ...input.characterNames.slice(0, 5),
+    ...input.conflictTitles.slice(0, 5),
+    ...(input.userInstruction || '')
+      .split(/[\s,，。！？、:：；;]+/)
+      .filter(term => term.length >= 2 && term.length <= 12)
+      .slice(0, 8),
+  ]
+
+  return Array.from(new Set(
+    terms
+      .map(term => term?.trim())
+      .filter((term): term is string => Boolean(term)),
+  )).slice(0, 12)
+}
+
 export async function buildProjectAIContext(input: AIContextRequest): Promise<BuiltAIContext> {
   const { projectId, scene, chapterId, selectedText, userInstruction } = input
 
@@ -116,29 +145,45 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     }
   }
 
-  // 6. Knowledge Snippets (Basic Keyword Search)
+  // 6. Knowledge Snippets (Improved Keyword Search)
   let knowledgeSnippets: KnowledgeContextSnippet[] = []
-  if (userInstruction || currentChapterData?.title) {
-    const keyword = userInstruction || currentChapterData?.title
+  const terms = buildKnowledgeSearchTerms({
+    userInstruction,
+    chapterTitle: currentChapterData?.title,
+    projectTheme: project.theme || undefined,
+    projectGenre: project.genre || undefined,
+    currentChapterConflicts: currentChapterData?.conflicts || undefined,
+    characterNames: allCharacters.map(c => c.name),
+    conflictTitles: conflictSummaries.map(c => c.title),
+  })
+
+  if (terms.length > 0) {
+    const predicates = terms.flatMap((term) => {
+      const pattern = `%${term}%`
+      return [
+        sql`${knowledgeChunks.title} ILIKE ${pattern}`,
+        sql`${knowledgeChunks.summary} ILIKE ${pattern}`,
+        sql`${knowledgeChunks.techniques} ILIKE ${pattern}`,
+        sql`${knowledgeChunks.content} ILIKE ${pattern}`,
+      ]
+    })
+
     const chunks = await db
       .select()
       .from(knowledgeChunks)
       .where(and(
         eq(knowledgeChunks.projectId, projectId),
-        or(
-          sql`${knowledgeChunks.title} ILIKE ${`%${keyword}%`}`,
-          sql`${knowledgeChunks.summary} ILIKE ${`%${keyword}%`}`,
-          sql`${knowledgeChunks.techniques} ILIKE ${`%${keyword}%`}`,
-          sql`${knowledgeChunks.content} ILIKE ${`%${keyword}%`}`,
-        ),
+        or(...predicates),
       ))
       .limit(3)
 
-    knowledgeSnippets = chunks.map(c => ({
-      title: c.title || 'Knowledge Piece',
-      summary: c.summary || c.content.substring(0, 200),
-      techniques: c.techniques || undefined,
-    }))
+    knowledgeSnippets = chunks
+      .filter(c => c.summary)
+      .map(c => ({
+        title: c.title || 'Knowledge Piece',
+        summary: c.summary as string,
+        techniques: c.techniques || undefined,
+      }))
   }
 
   // 7. Assemble Nearby Chapters
@@ -249,7 +294,19 @@ export function renderAIContext(context: BuiltAIContext): string {
   }
 
   if (context.currentChapter) {
-    sections.push(`【当前章节】\n标题: ${context.currentChapter.title}\n章节目标: ${context.currentChapter.goals || '未定义'}\n核心冲突: ${context.currentChapter.conflicts || '未定义'}\n草稿片段: \n${context.currentChapter.draftExcerpt || '暂无草稿'}`)
+    const chapterLines = [
+      `标题: ${context.currentChapter.title}`,
+      context.currentChapter.volumeTitle ? `所属分卷: ${context.currentChapter.volumeTitle}` : null,
+      `章节目标: ${context.currentChapter.goals || '未定义'}`,
+      `核心冲突: ${context.currentChapter.conflicts || '未定义'}`,
+      context.currentChapter.events ? `关键事件: ${context.currentChapter.events}` : null,
+      context.currentChapter.emotionalArc ? `情绪曲线: ${context.currentChapter.emotionalArc}` : null,
+      context.currentChapter.foreshadowing ? `伏笔: ${context.currentChapter.foreshadowing}` : null,
+      context.currentChapter.endingHook ? `结尾钩子: ${context.currentChapter.endingHook}` : null,
+      context.currentChapter.draftExcerpt ? `草稿片段:\n${context.currentChapter.draftExcerpt}` : '草稿片段: 暂无草稿',
+    ].filter(Boolean)
+
+    sections.push(`【当前章节】\n${chapterLines.join('\n')}`)
   }
 
   if (context.nearbyChapters?.previous || context.nearbyChapters?.next) {
@@ -257,7 +314,21 @@ export function renderAIContext(context: BuiltAIContext): string {
   }
 
   if (context.characters.length > 0) {
-    const charList = context.characters.map(c => `- ${c.name} (${c.role || '无身份'}): ${c.personality || '无性格描述'}`).join('\n')
+    const charList = context.characters.map((c) => {
+      const details = [
+        `身份: ${c.role || '无身份'}`,
+        `性格: ${c.personality || '无性格描述'}`,
+        c.goal ? `目标: ${c.goal}` : null,
+        c.desire ? `欲望: ${c.desire}` : null,
+        c.fear ? `恐惧: ${c.fear}` : null,
+        c.secret ? `秘密: ${c.secret}` : null,
+        c.weakness ? `弱点: ${c.weakness}` : null,
+        c.arc ? `成长线: ${c.arc}` : null,
+      ].filter(Boolean)
+
+      return `- ${c.name}\n  ${details.join('\n  ')}`
+    }).join('\n')
+
     sections.push(`【登场人物】\n${charList}`)
   }
 

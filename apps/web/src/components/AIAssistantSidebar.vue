@@ -1,17 +1,22 @@
 <script setup lang="ts">
+import type { ConsistencyGuardReport } from '@ai-novel/shared'
 import { NButton } from '@ai-novel/ui'
 import {
+  AlertTriangle,
   Bot,
+  CheckCircle2,
+  Info,
   Loader2,
   Send,
   Settings,
   Sparkles,
   Trash2,
   User,
+  XCircle,
 } from 'lucide-vue-next'
 import { nextTick, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { chatStream, generateAIStream } from '../api/ai'
+import { chatStream, checkConsistency, generateAIStream } from '../api/ai'
 
 type AIScene = 'outline' | 'draft' | 'polish' | 'quality' | 'chat' | 'story_bible' | 'knowledge' | 'persona_training' | 'persona_drift'
 
@@ -27,7 +32,14 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
-const messages = ref<{ role: 'user' | 'assistant', content: string, model?: string, error?: boolean }[]>([])
+const messages = ref<{
+  role: 'user' | 'assistant'
+  content: string
+  model?: string
+  error?: boolean
+  consistencyReport?: ConsistencyGuardReport
+  isCheckingConsistency?: boolean
+}[]>([])
 const inputMessage = ref('')
 const selectedModel = ref('gpt-4o-mini')
 const isStreaming = ref(false)
@@ -87,6 +99,26 @@ async function handleSend() {
       const chunk = decoder.decode(value)
       messages.value[lastIndex].content += chunk
       scrollToBottom()
+    }
+
+    // Trigger consistency check if appropriate
+    if (props.scene && ['draft', 'outline', 'polish', 'quality'].includes(props.scene)) {
+      messages.value[lastIndex].isCheckingConsistency = true
+      try {
+        const report = await checkConsistency(props.projectId, {
+          chapterId: props.chapterId,
+          scene: props.scene,
+          generatedText: messages.value[lastIndex].content,
+          sourceInstruction: userMsg,
+        })
+        messages.value[lastIndex].consistencyReport = report
+      }
+      catch (e) {
+        console.error('Consistency check failed', e)
+      }
+      finally {
+        messages.value[lastIndex].isCheckingConsistency = false
+      }
     }
   }
   catch (error: any) {
@@ -193,15 +225,60 @@ defineExpose({
             <div class="h-1.5 w-1.5 animate-bounce rounded-full bg-ai" style="animation-delay: 0.2s" />
             <div class="h-1.5 w-1.5 animate-bounce rounded-full bg-ai" style="animation-delay: 0.4s" />
           </div>
+
+          <!-- Consistency Guard Report -->
+          <div v-if="msg.role === 'assistant' && (msg.consistencyReport || msg.isCheckingConsistency)" class="mt-3 border-t border-border-light pt-2">
+            <div class="mb-2 flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <Loader2 v-if="msg.isCheckingConsistency" :size="12" class="animate-spin text-ai" />
+                <CheckCircle2 v-else-if="msg.consistencyReport?.overallStatus === 'pass'" :size="12" class="text-semantic-success" />
+                <AlertTriangle v-else-if="msg.consistencyReport?.overallStatus === 'warning'" :size="12" class="text-semantic-warning" />
+                <XCircle v-else :size="12" class="text-semantic-error" />
+                <span
+                  class="text-[10px] font-bold tracking-wider uppercase" :class="{
+                    'text-ai': msg.isCheckingConsistency,
+                    'text-semantic-success': msg.consistencyReport?.overallStatus === 'pass',
+                    'text-semantic-warning': msg.consistencyReport?.overallStatus === 'warning',
+                    'text-semantic-error': msg.consistencyReport?.overallStatus === 'blocked',
+                  }"
+                >
+                  {{ msg.isCheckingConsistency ? '正在进行一致性审查...' : `一致性守卫: ${msg.consistencyReport?.overallStatus === 'pass' ? '通过' : msg.consistencyReport?.overallStatus === 'warning' ? '提醒' : '阻断'}` }}
+                </span>
+              </div>
+              <span v-if="msg.consistencyReport" class="text-[10px] text-text-muted font-mono">{{ msg.consistencyReport.score }}分</span>
+            </div>
+
+            <div v-if="msg.consistencyReport?.risks.length" class="mb-2 space-y-1.5">
+              <div v-for="(risk, j) in msg.consistencyReport.risks" :key="j" class="group flex items-start gap-1.5 rounded bg-bg-page/50 p-1.5 text-[11px] leading-snug transition-colors hover:bg-bg-page">
+                <Info
+                  :size="12"
+                  class="mt-0.5 shrink-0 cursor-help text-text-muted"
+                  :title="risk.evidence || '无具体证据'"
+                />
+                <div class="flex-1">
+                  <span class="mr-1 font-bold" :class="risk.severity === 'high' ? 'text-semantic-error' : risk.severity === 'medium' ? 'text-semantic-warning' : 'text-text-muted'">
+                    [{{ risk.type }}]
+                  </span>
+                  <span class="text-text-secondary">{{ risk.message }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="msg.consistencyReport?.suggestedFixes.length" class="mt-1 px-1 text-[11px] text-ai italic">
+              建议: {{ msg.consistencyReport.suggestedFixes[0] }}
+            </div>
+          </div>
         </div>
-        <div v-if="msg.role === 'assistant' && msg.content && !msg.error && !isStreaming" class="mt-1.5 flex justify-end">
+
+        <div v-if="msg.role === 'assistant' && msg.content && !msg.error && !isStreaming && !msg.isCheckingConsistency" class="mt-1.5 flex justify-end gap-2">
           <NButton
             variant="secondary"
             size="sm"
             aria-label="应用 AI 回复到编辑器"
+            :disabled="msg.consistencyReport?.overallStatus === 'blocked'"
             @click="emit('apply', msg.content)"
           >
-            应用到编辑器
+            {{ msg.consistencyReport?.overallStatus === 'blocked' ? '检查未通过' : '应用到编辑器' }}
           </NButton>
         </div>
       </div>

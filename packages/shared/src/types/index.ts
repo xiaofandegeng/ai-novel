@@ -1,6 +1,7 @@
 export * from './ai'
 export * from './ai-context'
 export * from './api'
+export * from './consistency'
 export * from './inputs'
 export * from './knowledge'
 export * from './novel'

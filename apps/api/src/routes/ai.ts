@@ -2,8 +2,9 @@ import type { Hono } from 'hono'
 import { streamText } from 'hono/streaming'
 import { buildProjectAIContext, renderAIContext } from '../services/ai-context.service'
 import { assertAIConfigured, streamChat } from '../services/ai.service'
+import { runConsistencyGuard } from '../services/consistency-guard.service'
 import { buildPersonaPromptForProject } from '../services/persona-prompt.service'
-import { fail } from '../utils'
+import { fail, success } from '../utils'
 
 export function registerAiRoutes(app: Hono) {
   // 统一 AI 生成接口 (基于上下文工程)
@@ -38,6 +39,20 @@ export function registerAiRoutes(app: Hono) {
     }
     catch (e: any) {
       return c.json(fail(e.message), 400)
+    }
+  })
+
+  // 一致性守卫接口
+  app.post('/api/projects/:projectId/consistency/check', async (c) => {
+    const projectId = c.req.param('projectId')
+    const input = await c.req.json()
+
+    try {
+      const report = await runConsistencyGuard(projectId, input)
+      return c.json(success(report))
+    }
+    catch (e: any) {
+      return c.json(fail(e.message), 500)
     }
   })
 

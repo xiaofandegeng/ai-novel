@@ -71,3 +71,23 @@ export async function readChatStream(response: Response, onChunk?: (text: string
 
   return result
 }
+
+export async function checkConsistency(projectId: string, input: {
+  chapterId?: string
+  scene: AIScene
+  generatedText: string
+  sourceInstruction?: string
+}) {
+  const response = await fetch(`/api/projects/${projectId}/consistency/check`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+
+  const json = await response.json()
+  if (!response.ok) {
+    throw new Error(json.error || '一致性检查失败')
+  }
+
+  return json.data
+}
