@@ -39,6 +39,8 @@ const messages = ref<{
   error?: boolean
   consistencyReport?: ConsistencyGuardReport
   isCheckingConsistency?: boolean
+  consistencyCheckFailed?: boolean
+  consistencyCheckError?: string
 }[]>([])
 const inputMessage = ref('')
 const selectedModel = ref('gpt-4o-mini')
@@ -113,8 +115,10 @@ async function handleSend() {
         })
         messages.value[lastIndex].consistencyReport = report
       }
-      catch (e) {
+      catch (e: any) {
         console.error('Consistency check failed', e)
+        messages.value[lastIndex].consistencyCheckFailed = true
+        messages.value[lastIndex].consistencyCheckError = e.message || '一致性审查失败'
       }
       finally {
         messages.value[lastIndex].isCheckingConsistency = false
@@ -268,6 +272,20 @@ defineExpose({
               建议: {{ msg.consistencyReport.suggestedFixes[0] }}
             </div>
           </div>
+
+          <!-- Consistency Guard Failure -->
+          <div
+            v-if="msg.role === 'assistant' && msg.consistencyCheckFailed"
+            class="mt-3 border border-semantic-error/20 rounded-lg bg-semantic-error/10 p-2 text-xs text-semantic-error"
+          >
+            <div class="mb-1 flex items-center gap-1.5 font-bold">
+              <XCircle :size="12" />
+              <span>一致性审查失败</span>
+            </div>
+            <p class="text-[11px] leading-relaxed">
+              {{ msg.consistencyCheckError || '请稍后重试' }}。为避免内容偏离设定，当前结果不可直接应用。
+            </p>
+          </div>
         </div>
 
         <div v-if="msg.role === 'assistant' && msg.content && !msg.error && !isStreaming && !msg.isCheckingConsistency" class="mt-1.5 flex justify-end gap-2">
@@ -275,10 +293,16 @@ defineExpose({
             variant="secondary"
             size="sm"
             aria-label="应用 AI 回复到编辑器"
-            :disabled="msg.consistencyReport?.overallStatus === 'blocked'"
+            :disabled="msg.consistencyReport?.overallStatus === 'blocked' || msg.consistencyCheckFailed"
             @click="emit('apply', msg.content)"
           >
-            {{ msg.consistencyReport?.overallStatus === 'blocked' ? '检查未通过' : '应用到编辑器' }}
+            {{
+              msg.consistencyCheckFailed
+                ? '审查失败'
+                : msg.consistencyReport?.overallStatus === 'blocked'
+                  ? '检查未通过'
+                  : '应用到编辑器'
+            }}
           </NButton>
         </div>
       </div>

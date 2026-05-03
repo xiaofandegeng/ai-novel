@@ -1,4 +1,5 @@
 import type {
+  AIProviderPreset,
   AIProviderSettings,
   AIProviderTestResult,
   UpdateAIProviderSettingsInput,
@@ -7,6 +8,10 @@ import { apiGet, apiPost, apiPut } from './client'
 
 export function fetchAISettings() {
   return apiGet<AIProviderSettings>('/api/settings/ai')
+}
+
+export function fetchAIProviderPresets() {
+  return apiGet<AIProviderPreset[]>('/api/settings/ai/providers')
 }
 
 export function updateAISettings(data: UpdateAIProviderSettingsInput) {

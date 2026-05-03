@@ -3,7 +3,7 @@ import { buildProjectAIContext, renderAIContext } from './ai-context.service'
 import { createOpenAIClient, getEffectiveAISettings } from './ai.service'
 
 export async function runConsistencyGuard(projectId: string, input: RunConsistencyCheckInput): Promise<ConsistencyGuardReport> {
-  const { chapterId, generatedText, sourceInstruction } = input
+  const { chapterId, generatedText, sourceInstruction, scene } = input
   const settings = await getEffectiveAISettings()
   if (!settings.apiKey) {
     throw new Error('AI 服务未配置')
@@ -11,13 +11,16 @@ export async function runConsistencyGuard(projectId: string, input: RunConsisten
 
   const context = await buildProjectAIContext({
     projectId,
-    scene: 'quality', // Use quality scene to get deep context
+    scene,
     chapterId,
     userInstruction: sourceInstruction,
   })
   const contextPrompt = renderAIContext(context)
 
   const fullPrompt = `你是一位严谨的小说一致性守卫。你的任务是审查 AI 生成的内容是否偏离了作品的已有设定、人物性格、剧情逻辑和文风。
+
+【审查任务】
+你正在审查场景 scene=${scene} 的 AI 生成结果。请根据该场景的具体上下文判断生成内容是否违背主题、人物、设定、前后文和风格。
 
 ${contextPrompt}
 

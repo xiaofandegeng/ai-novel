@@ -1,6 +1,7 @@
-import type { UpdateAIProviderSettingsInput } from '@ai-novel/shared'
+import type { AIProviderId, UpdateAIProviderSettingsInput } from '@ai-novel/shared'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import process from 'node:process'
+import { AI_PROVIDER_PRESETS } from '@ai-novel/shared'
 import { eq } from 'drizzle-orm'
 import OpenAI from 'openai'
 import { db } from '../db'
@@ -10,7 +11,7 @@ import { now } from '../utils'
 const GLOBAL_AI_SETTINGS_ID = 'global'
 
 interface EffectiveAISettings {
-  provider: string
+  provider: AIProviderId | string
   baseUrl: string
   model: string
   apiKey?: string | null
@@ -19,10 +20,11 @@ interface EffectiveAISettings {
 }
 
 function defaultAISettings(): EffectiveAISettings {
+  const fallbackPreset = AI_PROVIDER_PRESETS.find(p => p.id === 'openai') || AI_PROVIDER_PRESETS[0]
   return {
-    provider: process.env.AI_PROVIDER || 'openai-compatible',
-    baseUrl: process.env.AI_BASE_URL || 'https://api.openai.com/v1',
-    model: process.env.AI_MODEL || 'gpt-4o-mini',
+    provider: process.env.AI_PROVIDER || fallbackPreset.id,
+    baseUrl: process.env.AI_BASE_URL || fallbackPreset.baseUrl,
+    model: process.env.AI_MODEL || fallbackPreset.defaultModel,
     apiKey: process.env.AI_API_KEY,
     temperature: Number(process.env.AI_TEMPERATURE || 70),
   }
@@ -60,14 +62,28 @@ export async function getAISettings() {
   return sanitizeAISettings(await getEffectiveAISettings())
 }
 
+export function listAIProviderPresets() {
+  return AI_PROVIDER_PRESETS
+}
+
+function normalizeAISettingsInput(input: UpdateAIProviderSettingsInput, current: EffectiveAISettings) {
+  const provider = input.provider?.trim() || current.provider
+  const preset = AI_PROVIDER_PRESETS.find(p => p.id === provider)
+  const baseUrl = input.baseUrl?.trim() || preset?.baseUrl || current.baseUrl
+  const model = input.model?.trim() || preset?.defaultModel || current.model
+
+  return { provider, baseUrl, model }
+}
+
 export async function updateAISettings(input: UpdateAIProviderSettingsInput) {
   const current = await getEffectiveAISettings()
   const timestamp = now()
+  const normalized = normalizeAISettingsInput(input, current)
   const next = {
     id: GLOBAL_AI_SETTINGS_ID,
-    provider: input.provider?.trim() || current.provider,
-    baseUrl: input.baseUrl?.trim() || current.baseUrl,
-    model: input.model?.trim() || current.model,
+    provider: normalized.provider,
+    baseUrl: normalized.baseUrl,
+    model: normalized.model,
     apiKey: input.clearApiKey ? null : input.apiKey?.trim() || current.apiKey || null,
     temperature: typeof input.temperature === 'number'
       ? Math.min(100, Math.max(0, Math.round(input.temperature)))
@@ -104,11 +120,12 @@ export function createOpenAIClient(settings: EffectiveAISettings) {
 
 export async function testAIConnection(input?: UpdateAIProviderSettingsInput) {
   const saved = await getEffectiveAISettings()
+  const normalized = input ? normalizeAISettingsInput(input, saved) : saved
   const settings: EffectiveAISettings = {
     ...saved,
-    provider: input?.provider?.trim() || saved.provider,
-    baseUrl: input?.baseUrl?.trim() || saved.baseUrl,
-    model: input?.model?.trim() || saved.model,
+    provider: normalized.provider,
+    baseUrl: normalized.baseUrl,
+    model: normalized.model,
     apiKey: input?.apiKey?.trim() || saved.apiKey,
     temperature: typeof input?.temperature === 'number' ? input.temperature : saved.temperature,
   }

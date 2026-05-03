@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ProjectStatus, UpdateProjectInput } from '@ai-novel/shared'
+import type { AIProviderPreset, ProjectStatus, UpdateProjectInput } from '@ai-novel/shared'
 import {
   NAppLayout,
   NButton,
@@ -58,6 +58,39 @@ const aiForm = ref({
 })
 
 const aiTestMessage = ref('')
+const aiProviderPresets = ref<AIProviderPreset[]>([])
+
+const aiProviderOptions = computed(() =>
+  aiProviderPresets.value.map(provider => ({
+    label: provider.label,
+    value: provider.id,
+  })),
+)
+
+const currentAIProviderPreset = computed(() =>
+  aiProviderPresets.value.find(provider => provider.id === aiForm.value.provider),
+)
+
+const aiModelOptions = computed(() =>
+  currentAIProviderPreset.value?.models.map(model => ({
+    label: model.label,
+    value: model.value,
+  })) || [],
+)
+
+const aiProviderModel = computed<string | number>({
+  get: () => aiForm.value.provider,
+  set: (value) => {
+    applyAIProviderPreset(String(value))
+  },
+})
+
+const aiModelSelectModel = computed<string | number>({
+  get: () => aiForm.value.model,
+  set: (value) => {
+    aiForm.value.model = String(value)
+  },
+})
 
 // ─── Persona Config ───
 const publishedPersonas = ref<any[]>([])
@@ -182,10 +215,12 @@ function syncFormFromProject() {
 
 onMounted(async () => {
   try {
-    const [, aiSettings] = await Promise.all([
+    const [, aiSettings, providers] = await Promise.all([
       projectStore.fetchProject(projectId),
       settingsApi.fetchAISettings(),
+      settingsApi.fetchAIProviderPresets(),
     ])
+    aiProviderPresets.value = providers
     syncFormFromProject()
     loadPersonaConfig()
     aiForm.value = {
@@ -205,6 +240,17 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+function applyAIProviderPreset(providerId: string) {
+  aiForm.value.provider = providerId
+  const preset = aiProviderPresets.value.find(provider => provider.id === providerId)
+  if (!preset)
+    return
+
+  aiForm.value.baseUrl = preset.baseUrl
+  aiForm.value.model = preset.defaultModel
+  aiTestMessage.value = ''
+}
 
 function buildPayload(): UpdateProjectInput | null {
   titleError.value = ''
@@ -499,18 +545,20 @@ async function handleTestAI() {
             </template>
           </NPanel>
 
-          <NPanel title="AI 服务配置" description="配置 OpenAI 兼容接口，并检测当前模型是否可用。">
+          <NPanel title="AI 服务配置" description="选择常用 AI 服务源，或使用 OpenAI 兼容接口自定义接入。">
             <div class="grid gap-4 md:grid-cols-2">
-              <NInput
-                v-model="aiForm.provider"
+              <NSelect
+                v-model="aiProviderModel"
                 label="服务类型"
-                placeholder="openai-compatible"
+                :options="aiProviderOptions"
+                placeholder="选择 AI 服务源"
               />
 
-              <NInput
-                v-model="aiForm.model"
-                label="模型名称"
-                placeholder="例如：gpt-4o-mini / deepseek-chat"
+              <NSelect
+                v-model="aiModelSelectModel"
+                label="模型建议"
+                :options="aiModelOptions"
+                placeholder="选择推荐模型"
               />
 
               <div class="md:col-span-2">
@@ -518,6 +566,14 @@ async function handleTestAI() {
                   v-model="aiForm.baseUrl"
                   label="API Base URL"
                   placeholder="例如：https://api.openai.com/v1"
+                />
+              </div>
+
+              <div class="md:col-span-2">
+                <NInput
+                  v-model="aiForm.model"
+                  label="实际模型名"
+                  placeholder="例如：gpt-4o-mini / kimi-latest / glm-5.1 / 方舟 endpoint id"
                 />
               </div>
 
@@ -534,6 +590,21 @@ async function handleTestAI() {
                 type="number"
                 placeholder="0-100"
               />
+            </div>
+
+            <div v-if="currentAIProviderPreset" class="mt-4 border border-border-light rounded-lg bg-bg-subtle p-3">
+              <p class="text-sm text-text-primary font-semibold">
+                {{ currentAIProviderPreset.label }}
+              </p>
+              <p class="mt-1 text-xs text-text-secondary leading-relaxed">
+                {{ currentAIProviderPreset.description }}
+              </p>
+              <p class="mt-2 text-xs text-text-muted">
+                {{ currentAIProviderPreset.apiKeyHint }}
+              </p>
+              <p v-if="currentAIProviderPreset.requiresCustomModel" class="mt-1 text-xs text-semantic-warning font-medium">
+                该服务的模型名可能需要填写控制台中的实际模型 ID 或 endpoint id。
+              </p>
             </div>
 
             <template #footer>

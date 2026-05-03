@@ -8,6 +8,10 @@ export function registerSettingsRoutes(app: Hono) {
     return c.json(success(settings))
   })
 
+  app.get('/api/settings/ai/providers', async (c) => {
+    return c.json(success(aiService.listAIProviderPresets()))
+  })
+
   app.put('/api/settings/ai', async (c) => {
     const body = await c.req.json()
     const settings = await aiService.updateAISettings(body)
