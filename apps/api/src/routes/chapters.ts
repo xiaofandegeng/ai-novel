@@ -2,6 +2,7 @@ import type { Hono } from 'hono'
 import { and, eq, ne } from 'drizzle-orm'
 import { db } from '../db'
 import { chapters } from '../db/schema'
+import * as postprocessService from '../services/chapter-postprocess.service'
 import { assertVolumeBelongsToProject } from '../services/ownership.service'
 import { fail, generateId, now, success, updatedFields } from '../utils'
 
@@ -130,6 +131,17 @@ export function registerChapterRoutes(app: Hono) {
     ).returning()
     if (!row)
       return c.json(fail('Chapter not found'), 404)
+
+    // Auto-trigger postprocess on chapter completion
+    if (body.status === 'completed' && current.status !== 'completed' && row.draft) {
+      postprocessService.runChapterPostprocess({
+        projectId,
+        chapterId: id,
+        content: row.draft,
+        trigger: 'mark_completed',
+      }).catch(e => console.error('Auto postprocess failed:', e))
+    }
+
     return c.json(success(row))
   })
 
@@ -142,5 +154,48 @@ export function registerChapterRoutes(app: Hono) {
     if (!row)
       return c.json(fail('Chapter not found'), 404)
     return c.json(success(row, 'Chapter deleted'))
+  })
+
+  // ─── Chapter Memory ───
+
+  app.get('/api/projects/:projectId/chapters/:id/memory', async (c) => {
+    const projectId = c.req.param('projectId')
+    const id = c.req.param('id')
+    const memory = await postprocessService.getChapterMemory(projectId, id)
+    return c.json(success(memory))
+  })
+
+  app.get('/api/projects/:projectId/memories', async (c) => {
+    const projectId = c.req.param('projectId')
+    const memories = await postprocessService.getProjectMemories(projectId)
+    return c.json(success(memories))
+  })
+
+  app.get('/api/projects/:projectId/chapters/:id/postprocess-runs', async (c) => {
+    const projectId = c.req.param('projectId')
+    const id = c.req.param('id')
+    const runs = await postprocessService.getPostprocessRuns(projectId, id)
+    return c.json(success(runs))
+  })
+
+  app.post('/api/projects/:projectId/chapters/:id/postprocess', async (c) => {
+    const projectId = c.req.param('projectId')
+    const chapterId = c.req.param('id')
+    const body = await c.req.json()
+    if (!body.content)
+      return c.json(fail('章节正文不能为空'), 400)
+
+    try {
+      const result = await postprocessService.runChapterPostprocess({
+        projectId,
+        chapterId,
+        content: body.content,
+        trigger: body.trigger || 'manual_save',
+      })
+      return c.json(success(result))
+    }
+    catch (e: any) {
+      return c.json(fail(e.message), 500)
+    }
   })
 }

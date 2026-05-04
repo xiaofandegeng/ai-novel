@@ -99,5 +99,9 @@ export interface BuiltAIContext {
     prompt: string
   }
   knowledgeSnippets: KnowledgeContextSnippet[]
+  chapterMemories: string[]
+  chapterElements: string[]
+  foreshadowingItems: string[]
+  factTriples: string[]
   constraints: string[]
 }

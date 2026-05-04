@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ChapterStatus } from '@ai-novel/shared'
+import type { ChapterStatus, CreateChapterElementInput } from '@ai-novel/shared'
 import {
   NAppLayout,
   NButton,
@@ -21,6 +21,7 @@ import {
   Save,
   Sparkles,
   Users,
+  X,
 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -28,6 +29,7 @@ import { generateAIStream, readChatStream } from '@/api/ai'
 import AppSidebar from '../components/AppSidebar.vue'
 import ChapterTitleField from '../features/outline/components/ChapterTitleField.vue'
 import {
+  useChapterElementStore,
   useChapterStore,
   useCharacterStore,
   useProjectStore,
@@ -43,6 +45,7 @@ const projectStore = useProjectStore()
 const characterStore = useCharacterStore()
 const volumeStore = useVolumeStore()
 const chapterStore = useChapterStore()
+const chapterElementStore = useChapterElementStore()
 
 const loading = ref(true)
 const saving = ref(false)
@@ -61,6 +64,9 @@ const outlineForm = ref({
   status: 'planning' as ChapterStatus,
   characterIds: [] as string[],
 })
+
+// Chapter element drafts
+const chapterElementDrafts = ref<CreateChapterElementInput[]>([])
 
 onMounted(async () => {
   try {
@@ -86,7 +92,7 @@ onMounted(async () => {
   }
 })
 
-function selectChapter(id: string) {
+async function selectChapter(id: string) {
   selectedChapterId.value = id
   const ch = chapterStore.chapters.find(c => c.id === id)
   if (ch) {
@@ -102,6 +108,21 @@ function selectChapter(id: string) {
       characterIds: ch.characters ? JSON.parse(ch.characters) : [],
     }
   }
+  try {
+    await chapterElementStore.fetchElements(projectId, id)
+    chapterElementDrafts.value = chapterElementStore.elements.map(e => ({
+      elementType: e.elementType,
+      elementId: e.elementId || undefined,
+      elementName: e.elementName,
+      relationType: e.relationType,
+      importance: e.importance,
+      appearanceOrder: e.appearanceOrder || undefined,
+      notes: e.notes || undefined,
+    }))
+  }
+  catch {
+    chapterElementDrafts.value = []
+  }
 }
 
 async function handleSave() {
@@ -114,6 +135,9 @@ async function handleSave() {
       characters: JSON.stringify(outlineForm.value.characterIds),
     }
     await chapterStore.updateChapter(projectId, selectedChapterId.value, data)
+    await chapterElementStore.replaceElements(projectId, selectedChapterId.value, {
+      elements: chapterElementDrafts.value,
+    })
     toast.add('大纲已保存', 'success')
   }
   catch {
@@ -176,6 +200,44 @@ function toggleCharacter(charId: string) {
   else {
     outlineForm.value.characterIds.splice(index, 1)
   }
+}
+
+// --- Chapter element helpers ---
+const newEventName = ref('')
+
+function addCharacterElement(charId: string) {
+  const char = characterStore.characters.find(c => c.id === charId)
+  if (!char)
+    return
+  const exists = chapterElementDrafts.value.some(
+    e => e.elementType === 'character' && e.elementId === charId,
+  )
+  if (exists)
+    return
+  chapterElementDrafts.value.push({
+    elementType: 'character',
+    elementId: char.id,
+    elementName: char.name,
+    relationType: 'appears',
+    importance: 'major',
+  })
+}
+
+function removeElement(index: number) {
+  chapterElementDrafts.value.splice(index, 1)
+}
+
+function addEventElement() {
+  const name = newEventName.value.trim()
+  if (!name)
+    return
+  chapterElementDrafts.value.push({
+    elementType: 'event',
+    elementName: name,
+    relationType: 'occurs',
+    importance: 'major',
+  })
+  newEventName.value = ''
 }
 
 const isBrainstorming = ref(false)
@@ -402,6 +464,66 @@ function confirmOutlineAIResult(action: 'insert' | 'replace' | 'backup' | 'disca
               <NButton v-if="characterStore.characters.length === 0" variant="ghost" size="sm" @click="router.push(`/project/${projectId}/characters`)">
                 请先创建角色
               </NButton>
+            </div>
+          </section>
+
+          <!-- Chapter Structured Elements -->
+          <section class="space-y-4">
+            <h3 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
+              <Layers :size="16" /> 本章结构化元素
+            </h3>
+
+            <!-- Must-appear characters -->
+            <div>
+              <label class="mb-2 block text-xs text-text-muted font-semibold">必须出场人物</label>
+              <div class="flex flex-wrap gap-2">
+                <span
+                  v-for="(el, idx) in chapterElementDrafts.filter(e => e.elementType === 'character')"
+                  :key="idx"
+                  class="flex items-center gap-1 border border-primary/30 rounded-full bg-primary-soft px-3 py-1 text-xs text-primary"
+                >
+                  {{ el.elementName }}
+                  <button class="text-primary/60 hover:text-primary" @click="removeElement(chapterElementDrafts.indexOf(el))">
+                    <X :size="12" />
+                  </button>
+                </span>
+                <button
+                  v-for="char in characterStore.characters.filter(c => !chapterElementDrafts.some(e => e.elementType === 'character' && e.elementId === c.id))"
+                  :key="char.id"
+                  class="flex items-center gap-1 border border-border-light rounded-full bg-bg-surface px-3 py-1 text-xs text-text-muted transition-colors hover:border-primary hover:text-primary"
+                  @click="addCharacterElement(char.id)"
+                >
+                  <Plus :size="10" /> {{ char.name }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Key events -->
+            <div>
+              <label class="mb-2 block text-xs text-text-muted font-semibold">关键事件</label>
+              <div class="flex flex-wrap gap-2">
+                <span
+                  v-for="(el, idx) in chapterElementDrafts.filter(e => e.elementType === 'event')"
+                  :key="idx"
+                  class="flex items-center gap-1 border border-ai/30 rounded-full bg-ai-soft px-3 py-1 text-xs text-ai"
+                >
+                  {{ el.elementName }}
+                  <button class="text-ai/60 hover:text-ai" @click="removeElement(chapterElementDrafts.indexOf(el))">
+                    <X :size="12" />
+                  </button>
+                </span>
+              </div>
+              <div class="mt-2 flex gap-2">
+                <input
+                  v-model="newEventName"
+                  class="flex-1 border border-border-light rounded-md bg-bg-surface px-3 py-1.5 text-xs"
+                  placeholder="输入关键事件名称"
+                  @keydown.enter="addEventElement"
+                >
+                <NButton size="sm" variant="ghost" :disabled="!newEventName.trim()" @click="addEventElement">
+                  <Plus :size="14" class="mr-1" /> 添加事件
+                </NButton>
+              </div>
             </div>
           </section>
 

@@ -91,3 +91,27 @@ export async function checkConsistency(projectId: string, input: {
 
   return json.data
 }
+
+export async function triggerChapterPostprocess(projectId: string, chapterId: string, content: string) {
+  const response = await fetch(`/api/projects/${projectId}/chapters/${chapterId}/postprocess`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, trigger: 'manual_save' }),
+  })
+
+  const json = await response.json()
+  if (!response.ok) {
+    throw new Error(json.error || '章节记忆更新失败')
+  }
+
+  return json.data
+}
+
+export async function getChapterMemory(projectId: string, chapterId: string) {
+  const response = await fetch(`/api/projects/${projectId}/chapters/${chapterId}/memory`)
+  const json = await response.json()
+  if (!response.ok) {
+    throw new Error(json.error || '获取章节记忆失败')
+  }
+  return json.data
+}

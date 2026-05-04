@@ -22,6 +22,27 @@
       "when": 1777555811077,
       "tag": "0002_milky_sage",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777816455728,
+      "tag": "0003_even_nebula",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777818570098,
+      "tag": "0004_harsh_supreme_intelligence",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777821336494,
+      "tag": "0005_typical_changeling",
+      "breakpoints": true
     }
   ]
 }

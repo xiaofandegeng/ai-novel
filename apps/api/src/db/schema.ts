@@ -1,4 +1,4 @@
-import { integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
+import { integer, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
 const timestamps = {
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().$defaultFn(() => new Date().toISOString()),
@@ -93,6 +93,131 @@ export const chapterVersions = pgTable('chapter_versions', {
   wordCount: integer('word_count').notNull(),
   note: text('note'),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().$defaultFn(() => new Date().toISOString()),
+})
+
+export const chapterMemories = pgTable('chapter_memories', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  summary: text('summary'),
+  keyEvents: text('key_events'),
+  newFacts: text('new_facts'),
+  characterStateChanges: text('character_state_changes'),
+  relationshipChanges: text('relationship_changes'),
+  conflictProgress: text('conflict_progress'),
+  foreshadowingAdded: text('foreshadowing_added'),
+  foreshadowingResolved: text('foreshadowing_resolved'),
+  themeProgress: text('theme_progress'),
+  styleNotes: text('style_notes'),
+  ...timestamps,
+}, table => ({
+  projectChapterUnique: uniqueIndex('chapter_memories_project_chapter_unique')
+    .on(table.projectId, table.chapterId),
+}))
+
+export const chapterElements = pgTable('chapter_elements', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  elementType: text('element_type').$type<'character' | 'location' | 'item' | 'organization' | 'event'>().notNull(),
+  elementId: text('element_id'),
+  elementName: text('element_name').notNull(),
+  relationType: text('relation_type').$type<'appears' | 'mentioned' | 'scene' | 'uses' | 'involved' | 'occurs'>().notNull(),
+  importance: text('importance').$type<'major' | 'normal' | 'minor'>().notNull().default('normal'),
+  appearanceOrder: integer('appearance_order'),
+  notes: text('notes'),
+  ...timestamps,
+}, table => ({
+  elementUnique: uniqueIndex('chapter_elements_unique')
+    .on(table.projectId, table.chapterId, table.elementType, table.elementName, table.relationType),
+}))
+
+export const chapterPostprocessRuns = pgTable('chapter_postprocess_runs', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  status: text('status').$type<'pending' | 'running' | 'completed' | 'failed'>().notNull().default('pending'),
+  trigger: text('trigger').notNull(),
+  errorMessage: text('error_message'),
+  startedAt: timestamp('started_at', { mode: 'string' }),
+  finishedAt: timestamp('finished_at', { mode: 'string' }),
+  ...timestamps,
+})
+
+export const foreshadowingItems = pgTable('foreshadowing_items', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  description: text('description'),
+  setupChapterId: text('setup_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
+  expectedPayoffChapterId: text('expected_payoff_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
+  payoffChapterId: text('payoff_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
+  status: text('status').$type<'open' | 'progressing' | 'paid_off' | 'abandoned'>().notNull().default('open'),
+  importance: text('importance').$type<'major' | 'normal' | 'minor'>().notNull().default('normal'),
+  relatedCharacters: text('related_characters'),
+  relatedEvents: text('related_events'),
+  notes: text('notes'),
+  ...timestamps,
+})
+
+export const storyFactTriples = pgTable('story_fact_triples', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  subjectType: text('subject_type').notNull(),
+  subjectName: text('subject_name').notNull(),
+  predicate: text('predicate').notNull(),
+  objectType: text('object_type').notNull(),
+  objectName: text('object_name').notNull(),
+  confidence: integer('confidence').notNull().default(70),
+  sourceType: text('source_type').$type<'manual' | 'ai_extracted' | 'auto_inferred'>().notNull().default('manual'),
+  sourceChapterId: text('source_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
+  status: text('status').$type<'pending' | 'confirmed' | 'rejected'>().notNull().default('pending'),
+  relatedChapters: text('related_chapters'),
+  notes: text('notes'),
+  ...timestamps,
+}, table => ({
+  tripleUnique: uniqueIndex('story_fact_triples_unique')
+    .on(table.projectId, table.subjectType, table.subjectName, table.predicate, table.objectType, table.objectName),
+}))
+
+export const acts = pgTable('acts', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  volumeId: text('volume_id').references(() => volumes.id, { onDelete: 'set null' }),
+  title: text('title').notNull(),
+  description: text('description'),
+  theme: text('theme'),
+  keyEvents: text('key_events'),
+  targetChapterCount: integer('target_chapter_count'),
+  orderIndex: integer('order_index').notNull(),
+  ...timestamps,
+})
+
+export const chapterScenes = pgTable('chapter_scenes', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  sceneNumber: integer('scene_number').notNull(),
+  title: text('title'),
+  location: text('location'),
+  timeline: text('timeline'),
+  purpose: text('purpose'),
+  summary: text('summary'),
+  characters: text('characters'),
+  targetWords: integer('target_words'),
+  content: text('content'),
+  orderIndex: integer('order_index').notNull(),
+  ...timestamps,
+})
+
+export const writingJobs = pgTable('writing_jobs', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  currentChapterId: text('current_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
+  mode: text('mode').$type<'outline_only' | 'draft_only' | 'outline_then_draft'>().notNull(),
+  status: text('status').$type<'idle' | 'running' | 'waiting_review' | 'paused' | 'completed' | 'failed'>().notNull().default('idle'),
+  lastError: text('last_error'),
+  ...timestamps,
 })
 
 export const conflicts = pgTable('conflicts', {

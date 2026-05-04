@@ -44,6 +44,21 @@ const router = createRouter({
       component: () => import('@/views/ConflictMatrixView.vue'),
     },
     {
+      path: '/project/:id/foreshadowing',
+      name: 'foreshadowing',
+      component: () => import('@/views/ForeshadowingLedgerView.vue'),
+    },
+    {
+      path: '/project/:id/health',
+      name: 'project-health',
+      component: () => import('@/views/ProjectHealthView.vue'),
+    },
+    {
+      path: '/project/:id/autopilot',
+      name: 'writing-job',
+      component: () => import('@/views/WritingJobView.vue'),
+    },
+    {
       path: '/project/:id/knowledge',
       name: 'knowledge',
       component: () => import('@/views/KnowledgeBaseView.vue'),

@@ -54,7 +54,13 @@ out/
 *.sublime-project
 *.sublime-workspace
 .DS_Store
+.AppleDouble
+.LSOverride
 Thumbs.db
+
+# Cursor
+.cursor/*
+!.cursor/rules/
 
 # Project-specific AI tools
 # 建议提交 .claude 文件夹以保持 AI 规则同步，但忽略本地个人配置
@@ -90,6 +96,10 @@ docs/temp/
 .python-version
 venv/
 .venv/
+
+# Temp & Backups
+*.tmp
+*.bak
 
 # Testing
 /coverage

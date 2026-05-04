@@ -27,3 +27,15 @@ export async function assertCharactersBelongToProject(projectId: string, ids: st
       throw new Error(`角色 ${id} 不属于当前项目`)
   }
 }
+
+export async function assertOptionalChapterBelongsToProject(projectId: string, chapterId?: string | null) {
+  if (!chapterId)
+    return
+  await assertChapterBelongsToProject(projectId, chapterId)
+}
+
+export async function assertOptionalVolumeBelongsToProject(projectId: string, volumeId?: string | null) {
+  if (!volumeId)
+    return
+  await assertVolumeBelongsToProject(projectId, volumeId)
+}

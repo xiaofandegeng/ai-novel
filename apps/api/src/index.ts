@@ -3,21 +3,28 @@ import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
+import { registerActRoutes } from './routes/acts'
 import { registerAiRoutes } from './routes/ai'
+import { registerChapterElementRoutes } from './routes/chapter-elements'
 import { registerChapterRoutes } from './routes/chapters'
 import { registerCharacterRoutes } from './routes/characters'
 import { registerConflictRoutes } from './routes/conflicts'
 import { registerExportRoutes } from './routes/export'
+import { registerForeshadowingRoutes } from './routes/foreshadowing'
 import { registerHealthRoutes } from './routes/health'
+import { registerHealthMetricsRoutes } from './routes/health-metrics'
 import { registerKnowledgeRoutes } from './routes/knowledge'
 import { registerPersonaRoutes } from './routes/persona'
 import { registerProjectRoutes } from './routes/projects'
 import { registerQualityRoutes } from './routes/quality'
 import { registerRelationshipRoutes } from './routes/relationships'
+import { registerSceneRoutes } from './routes/scenes'
 import { registerSettingsRoutes } from './routes/settings'
 import { registerStoryBibleRoutes } from './routes/story-bibles'
+import { registerTripleRoutes } from './routes/triples'
 import { registerVersionRoutes } from './routes/versions'
 import { registerVolumeRoutes } from './routes/volumes'
+import { registerWritingJobRoutes } from './routes/writing-jobs'
 
 const app = new Hono()
 
@@ -32,16 +39,23 @@ registerProjectRoutes(app)
 registerStoryBibleRoutes(app)
 registerCharacterRoutes(app)
 registerVolumeRoutes(app)
+registerActRoutes(app)
 registerChapterRoutes(app)
+registerChapterElementRoutes(app)
+registerSceneRoutes(app)
 registerAiRoutes(app)
 registerRelationshipRoutes(app)
 registerConflictRoutes(app)
+registerForeshadowingRoutes(app)
+registerTripleRoutes(app)
 registerVersionRoutes(app)
 registerExportRoutes(app)
 registerKnowledgeRoutes(app)
 registerQualityRoutes(app)
+registerHealthMetricsRoutes(app)
 registerSettingsRoutes(app)
 registerPersonaRoutes(app)
+registerWritingJobRoutes(app)
 
 app.notFound((c) => {
   return c.json({ error: 'Not Found' }, 404)

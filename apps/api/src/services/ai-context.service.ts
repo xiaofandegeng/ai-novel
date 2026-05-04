@@ -6,17 +6,21 @@ import type {
   KnowledgeContextSnippet,
   RelationshipContextSummary,
 } from '@ai-novel/shared'
-import { and, eq, or, sql } from 'drizzle-orm'
+import { and, desc, eq, lt, or, sql } from 'drizzle-orm'
 import { db } from '../db'
 import {
+  chapterElements,
+  chapterMemories,
   chapters,
   characterRelationships,
   characters,
   conflicts,
+  foreshadowingItems,
   knowledgeChunks,
   novelProjects,
   projectPersonaConfigs,
   storyBibles,
+  storyFactTriples,
   volumes,
   writingPersonas,
 } from '../db/schema'
@@ -216,11 +220,106 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     }
   }
 
-  // 8. Determine Draft Excerpt based on scene
+  // 8. Fetch recent chapter memories for continuity
+  const recentMemories: string[] = []
+  if (currentChapterData) {
+    const memoryRows = await db
+      .select({
+        memory: chapterMemories,
+        chapterTitle: chapters.title,
+        chapterNumber: chapters.chapterNumber,
+      })
+      .from(chapterMemories)
+      .innerJoin(chapters, eq(chapterMemories.chapterId, chapters.id))
+      .where(and(
+        eq(chapterMemories.projectId, projectId),
+        eq(chapters.projectId, projectId),
+        currentChapterData.volumeId
+          ? eq(chapters.volumeId, currentChapterData.volumeId)
+          : sql`1=1`,
+        lt(chapters.chapterNumber, currentChapterData.chapterNumber),
+      ))
+      .orderBy(desc(chapters.chapterNumber))
+      .limit(3)
+
+    for (const row of memoryRows.reverse()) {
+      const m = row.memory
+      const parts = [`章节 ${row.chapterNumber}. ${row.chapterTitle}:`]
+      if (m.summary) {
+        parts.push(`  摘要: ${m.summary}`)
+      }
+      if (m.keyEvents) {
+        parts.push(`  关键事件: ${m.keyEvents}`)
+      }
+      if (m.characterStateChanges) {
+        parts.push(`  人物变化: ${m.characterStateChanges}`)
+      }
+      if (m.relationshipChanges) {
+        parts.push(`  关系变化: ${m.relationshipChanges}`)
+      }
+      if (m.foreshadowingAdded) {
+        parts.push(`  新增伏笔: ${m.foreshadowingAdded}`)
+      }
+      if (m.foreshadowingResolved) {
+        parts.push(`  回收伏笔: ${m.foreshadowingResolved}`)
+      }
+      recentMemories.push(parts.join('\n'))
+    }
+  }
+
+  // 9. Fetch chapter elements for current chapter
+  let chapterElementSummaries: string[] = []
+  if (currentChapterData) {
+    const elements = await db.select().from(chapterElements).where(
+      and(eq(chapterElements.projectId, projectId), eq(chapterElements.chapterId, currentChapterData.id)),
+    )
+    if (elements.length > 0) {
+      chapterElementSummaries = elements
+        .sort((a, b) => (a.appearanceOrder || 0) - (b.appearanceOrder || 0))
+        .map(e => `- ${e.elementName} (${e.elementType}/${e.relationType}) 重要性:${e.importance}${e.notes ? ` 备注:${e.notes}` : ''}`)
+    }
+  }
+
+  // 10. Fetch foreshadowing items for current chapter + all open items
+  let foreshadowingContext: string[] = []
+  if (currentChapterData) {
+    const chapterItems = await db.select().from(foreshadowingItems).where(
+      and(
+        eq(foreshadowingItems.projectId, projectId),
+        or(
+          eq(foreshadowingItems.setupChapterId, currentChapterData.id),
+          eq(foreshadowingItems.expectedPayoffChapterId, currentChapterData.id),
+        ),
+      ),
+    )
+    const openItems = await db.select().from(foreshadowingItems).where(
+      and(eq(foreshadowingItems.projectId, projectId), eq(foreshadowingItems.status, 'open')),
+    )
+    const allItems = [...new Map([...chapterItems, ...openItems].map(i => [i.id, i])).values()]
+    foreshadowingContext = allItems.map(i =>
+      `- ${i.title} (${i.status}/${i.importance})${i.description ? `: ${i.description}` : ''}`,
+    )
+  }
+
+  // 11. Fetch confirmed fact triples relevant to current chapter
+  let factTripleContext: string[] = []
+  if (currentChapterData) {
+    const triples = await db.select().from(storyFactTriples).where(
+      and(
+        eq(storyFactTriples.projectId, projectId),
+        eq(storyFactTriples.status, 'confirmed'),
+      ),
+    ).limit(20)
+    factTripleContext = triples.map(t =>
+      `- ${t.subjectName}(${t.subjectType}) --[${t.predicate}]--> ${t.objectName}(${t.objectType}) [置信度:${t.confidence}%]`,
+    )
+  }
+
+  // 12. Determine Draft Excerpt based on scene
   let draftExcerpt = selectedText
   if (!draftExcerpt && currentChapterData?.draft) {
     if (scene === 'polish' || scene === 'quality') {
-      draftExcerpt = currentChapterData.draft.substring(0, 5000) // Quality/Polish needs more context
+      draftExcerpt = currentChapterData.draft.substring(0, 5000)
     }
     else if (scene === 'draft') {
       draftExcerpt = currentChapterData.draft.length > 3000
@@ -274,6 +373,10 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     conflicts: conflictSummaries,
     persona,
     knowledgeSnippets,
+    chapterMemories: recentMemories,
+    chapterElements: chapterElementSummaries,
+    foreshadowingItems: foreshadowingContext,
+    factTriples: factTripleContext,
     constraints: [
       '保持已有设定一致性',
       '不得让角色做出违背既定动机的行为',
@@ -351,6 +454,22 @@ export function renderAIContext(context: BuiltAIContext): string {
       .map(k => `- ${k.title}\n  摘要: ${k.summary}\n  技巧: ${k.techniques || '无'}`)
       .join('\n')
     sections.push(`【参考技巧库】\n${knowledgeList}\n\n注意：只能借鉴抽象技巧和结构经验，不得复刻参考作品桥段、专名或连续表达。`)
+  }
+
+  if (context.chapterMemories.length > 0) {
+    sections.push(`【前序章节记忆】\n以下是最近章节的结构化记忆，请确保连贯性：\n${context.chapterMemories.join('\n\n')}`)
+  }
+
+  if (context.chapterElements.length > 0) {
+    sections.push(`【本章元素】\n${context.chapterElements.join('\n')}\n注意：必须让标记为 appears 的角色实际出场，必须让 scene 地点成为本章场景。`)
+  }
+
+  if (context.foreshadowingItems.length > 0) {
+    sections.push(`【伏笔台账】\n${context.foreshadowingItems.join('\n')}\n约束：不得无故回收未到时机的伏笔。如果新增重大伏笔，必须在章后管线登记。`)
+  }
+
+  if (context.factTriples.length > 0) {
+    sections.push(`【事实图谱】\n${context.factTriples.join('\n')}\n注意：必须遵守已确认的事实，不得与既有设定矛盾。`)
   }
 
   if (context.persona) {

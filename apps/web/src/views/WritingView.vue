@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { NAppLayout, NButton, useToast } from '@ai-novel/ui'
 import {
+  Brain,
   Clock,
   History,
   Maximize2,
@@ -8,6 +9,7 @@ import {
 } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { triggerChapterPostprocess } from '../api/ai'
 import AIPendingResultPanel from '../features/writing/components/AIPendingResultPanel.vue'
 import ChapterNavigator from '../features/writing/components/ChapterNavigator.vue'
 import EditorPane from '../features/writing/components/EditorPane.vue'
@@ -15,6 +17,7 @@ import WritingContextPanel from '../features/writing/components/WritingContextPa
 import { useAIResultConfirm } from '../features/writing/composables/useAIResultConfirm'
 import { useWritingDraft } from '../features/writing/composables/useWritingDraft'
 import {
+  useChapterElementStore,
   useChapterStore,
   useCharacterStore,
   useProjectStore,
@@ -32,6 +35,7 @@ const characterStore = useCharacterStore()
 const chapterStore = useChapterStore()
 const bibleStore = useStoryBibleStore()
 const versionStore = useVersionStore()
+const chapterElementStore = useChapterElementStore()
 
 const loading = ref(true)
 const fullScreen = ref(false)
@@ -96,6 +100,13 @@ watch(currentChapter, (newCh) => {
     loadChapter(newCh)
 }, { immediate: true })
 
+watch(currentChapterId, async (id) => {
+  if (id)
+    await chapterElementStore.fetchElements(projectId, id)
+  else
+    chapterElementStore.clear()
+}, { immediate: true })
+
 // --- Event handlers ---
 function switchChapter(id: string) {
   handleSave()
@@ -155,6 +166,29 @@ function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discard') {
     toast,
   })
 }
+
+const updatingMemory = ref(false)
+
+async function handleUpdateMemory() {
+  if (!currentChapterId.value || !draft.value)
+    return
+  updatingMemory.value = true
+  try {
+    const result = await triggerChapterPostprocess(projectId, currentChapterId.value, draft.value)
+    if (result.warnings.length > 0) {
+      toast.add(`章节记忆已更新（${result.warnings.join('；')}）`, 'warning')
+    }
+    else {
+      toast.add('章节记忆已更新', 'success')
+    }
+  }
+  catch (e: any) {
+    toast.add(e.message || '章节记忆更新失败', 'error')
+  }
+  finally {
+    updatingMemory.value = false
+  }
+}
 </script>
 
 <template>
@@ -191,6 +225,16 @@ function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discard') {
           @click="handleSnapshot"
         >
           <History :size="16" class="mr-1.5" /> 保存快照
+        </NButton>
+        <NButton
+          variant="ghost"
+          size="sm"
+          :disabled="!draft || updatingMemory"
+          :loading="updatingMemory"
+          class="text-text-muted hover:text-ai"
+          @click="handleUpdateMemory"
+        >
+          <Brain :size="16" class="mr-1.5" /> 更新记忆
         </NButton>
         <div class="h-4 w-px bg-border-light" />
         <div class="text-xs text-text-muted font-medium">
@@ -240,6 +284,7 @@ function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discard') {
         :chapter="currentChapter"
         :characters="characterStore.characters"
         :story-bible="bibleStore.storyBible"
+        :chapter-elements="chapterElementStore.elements"
         :project-id="projectId"
         @apply-a-i="applyAIResult"
       />

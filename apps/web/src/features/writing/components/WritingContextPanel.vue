@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Chapter, Character, StoryBible } from '@ai-novel/shared'
+import type { Chapter, ChapterElement, Character, StoryBible } from '@ai-novel/shared'
 import { NTag } from '@ai-novel/ui'
 import { BookOpen, ChevronRight, ScrollText, Sparkles, Users } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
@@ -12,6 +12,7 @@ const props = defineProps<{
   chapter: Chapter | undefined
   characters: Character[]
   storyBible: StoryBible | null | undefined
+  chapterElements: ChapterElement[]
   projectId: string
 }>()
 
@@ -40,6 +41,21 @@ const presentCharacters = computed(() => {
   }
   catch { return [] }
 })
+
+const mustAppearCharacters = computed(() =>
+  props.chapterElements.filter(e => e.elementType === 'character' && e.relationType === 'appears'),
+)
+
+const keyEvents = computed(() =>
+  props.chapterElements.filter(e => e.elementType === 'event' && e.relationType === 'occurs'),
+)
+
+const otherElements = computed(() =>
+  props.chapterElements.filter(e =>
+    !(e.elementType === 'character' && e.relationType === 'appears')
+    && !(e.elementType === 'event' && e.relationType === 'occurs'),
+  ),
+)
 
 const aiContext = computed(() =>
   `Setting: ${props.storyBible?.worldview || ''}. Current Chapter Outline: ${props.chapter?.goals || ''}`,
@@ -106,6 +122,40 @@ defineExpose({
           <p class="whitespace-pre-wrap text-sm text-primary leading-relaxed italic">
             {{ chapter.endingHook }}
           </p>
+        </div>
+
+        <!-- Chapter Elements (hard constraints) -->
+        <div v-if="chapterElements.length > 0" class="space-y-3">
+          <h4 class="border-b border-border-light pb-1 text-[10px] text-text-muted font-bold tracking-widest uppercase">
+            本章硬约束
+          </h4>
+          <div v-if="mustAppearCharacters.length > 0">
+            <span class="mb-1 block text-[9px] text-text-muted font-bold uppercase">必须出场人物</span>
+            <div class="flex flex-wrap gap-1.5">
+              <NTag v-for="el in mustAppearCharacters" :key="el.id" size="sm" variant="primary">
+                {{ el.elementName }}
+              </NTag>
+            </div>
+          </div>
+          <div v-if="keyEvents.length > 0">
+            <span class="mb-1 block text-[9px] text-text-muted font-bold uppercase">关键事件</span>
+            <div class="flex flex-wrap gap-1.5">
+              <NTag v-for="el in keyEvents" :key="el.id" size="sm" variant="ai">
+                {{ el.elementName }}
+              </NTag>
+            </div>
+          </div>
+          <div v-if="otherElements.length > 0">
+            <span class="mb-1 block text-[9px] text-text-muted font-bold uppercase">其他元素</span>
+            <div class="flex flex-wrap gap-1.5">
+              <NTag v-for="el in otherElements" :key="el.id" size="sm">
+                {{ el.elementName }}
+              </NTag>
+            </div>
+          </div>
+        </div>
+        <div v-else class="rounded-md bg-bg-subtle px-3 py-2 text-xs text-text-muted italic">
+          本章尚未配置结构化元素
         </div>
       </div>
 

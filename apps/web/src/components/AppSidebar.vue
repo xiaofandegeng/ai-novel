@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import {
+  Activity,
   BarChart3,
   BookOpen,
+  Bot,
   History,
   LayoutDashboard,
+  Lightbulb,
   ListTree,
   PenLine,
   Search,
@@ -52,6 +55,12 @@ const menuItems = [
     activeMatch: /conflicts/,
   },
   {
+    name: '伏笔台账',
+    path: `/project/${props.projectId}/foreshadowing`,
+    icon: Lightbulb,
+    activeMatch: /foreshadowing/,
+  },
+  {
     name: '知识库',
     path: `/project/${props.projectId}/knowledge`,
     icon: Search,
@@ -80,6 +89,18 @@ const menuItems = [
     path: `/project/${props.projectId}/quality`,
     icon: BarChart3,
     activeMatch: /quality/,
+  },
+  {
+    name: '项目健康',
+    path: `/project/${props.projectId}/health`,
+    icon: Activity,
+    activeMatch: /health/,
+  },
+  {
+    name: '自动写作',
+    path: `/project/${props.projectId}/autopilot`,
+    icon: Bot,
+    activeMatch: /autopilot/,
   },
   {
     name: '项目设置',
