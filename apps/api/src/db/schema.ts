@@ -413,3 +413,97 @@ export const projectPersonaConfigs = pgTable('project_persona_configs', {
   disabledRules: text('disabled_rules'),
   ...timestamps,
 })
+
+// ─── Phase 1: Post-chapter Suggestions ───
+
+export const chapterPostprocessSuggestions = pgTable('chapter_postprocess_suggestions', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  runId: text('run_id').references(() => chapterPostprocessRuns.id, { onDelete: 'cascade' }),
+  suggestionType: text('suggestion_type').$type<'fact_triple' | 'foreshadowing_add' | 'foreshadowing_payoff' | 'chapter_element' | 'character_state' | 'continuity_note' | 'style_note'>().notNull(),
+  payload: text('payload').notNull(),
+  confidence: integer('confidence').notNull().default(70),
+  status: text('status').$type<'pending' | 'accepted' | 'rejected' | 'applied'>().notNull().default('pending'),
+  reason: text('reason'),
+  ...timestamps,
+})
+
+// ─── Phase 2: AI Context Snapshots ───
+
+export const aiContextSnapshots = pgTable('ai_context_snapshots', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'cascade' }),
+  scene: text('scene'),
+  requestId: text('request_id').notNull(),
+  modelProvider: text('model_provider'),
+  modelName: text('model_name'),
+  contextPayload: text('context_payload'),
+  renderedPromptPreview: text('rendered_prompt_preview'),
+  tokenEstimate: integer('token_estimate'),
+  createdAt: timestamp('created_at', { mode: 'string' }).notNull().$defaultFn(() => new Date().toISOString()),
+})
+
+// ─── Phase 4: Knowledge Embeddings ───
+
+export const knowledgeEmbeddings = pgTable('knowledge_embeddings', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  sourceType: text('source_type').notNull(),
+  sourceId: text('source_id').notNull(),
+  embedding: text('embedding'),
+  summary: text('summary'),
+  tags: text('tags'),
+  createdAt: timestamp('created_at', { mode: 'string' }).notNull().$defaultFn(() => new Date().toISOString()),
+})
+
+// ─── Phase 5: Writing Job Steps ───
+
+export const writingJobSteps = pgTable('writing_job_steps', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id').notNull().references(() => writingJobs.id, { onDelete: 'cascade' }),
+  stepType: text('step_type').$type<'prepare_context' | 'generate_plan' | 'confirm_plan' | 'generate_draft' | 'consistency_check' | 'confirm_apply' | 'save_version' | 'postprocess' | 'confirm_suggestions' | 'update_health'>().notNull(),
+  status: text('status').$type<'pending' | 'running' | 'completed' | 'failed' | 'skipped'>().notNull().default('pending'),
+  input: text('input'),
+  output: text('output'),
+  error: text('error'),
+  startedAt: timestamp('started_at', { mode: 'string' }),
+  finishedAt: timestamp('finished_at', { mode: 'string' }),
+  ...timestamps,
+})
+
+// ─── Phase 6: Story Structure Templates ───
+
+export const storyStructureTemplates = pgTable('story_structure_templates', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),
+  genre: text('genre'),
+  structureType: text('structure_type').$type<'three_act' | 'five_act' | 'hero_journey' | 'custom'>().notNull(),
+  actsJson: text('acts_json'),
+  chapterCountEstimate: integer('chapter_count_estimate'),
+  isBuiltin: integer('is_builtin').notNull().default(0),
+  ...timestamps,
+})
+
+export const projectAppliedTemplates = pgTable('project_applied_templates', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  templateId: text('template_id').notNull().references(() => storyStructureTemplates.id, { onDelete: 'cascade' }),
+  appliedAt: timestamp('applied_at', { mode: 'string' }).notNull().$defaultFn(() => new Date().toISOString()),
+  status: text('status').$type<'applied' | 'modified'>().notNull().default('applied'),
+})
+
+// ─── Phase 8: Persona Memory Fragments ───
+
+export const personaMemoryFragments = pgTable('persona_memory_fragments', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  fragmentType: text('fragment_type').$type<'style_pattern' | 'dialogue_pattern' | 'narrative_preference' | 'vocabulary_tendency' | 'pacing_preference'>().notNull(),
+  content: text('content').notNull(),
+  confidence: integer('confidence').notNull().default(70),
+  sourceType: text('source_type').$type<'manual' | 'ai_extracted' | 'accumulated'>().notNull().default('ai_extracted'),
+  sourceChapterIds: text('source_chapter_ids'),
+  ...timestamps,
+})

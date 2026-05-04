@@ -4,6 +4,7 @@ import {
   BarChart3,
   BookOpen,
   Bot,
+  ClipboardList,
   History,
   LayoutDashboard,
   Lightbulb,
@@ -101,6 +102,12 @@ const menuItems = [
     path: `/project/${props.projectId}/autopilot`,
     icon: Bot,
     activeMatch: /autopilot/,
+  },
+  {
+    name: '章后分析',
+    path: `/project/${props.projectId}/suggestions`,
+    icon: ClipboardList,
+    activeMatch: /suggestions/,
   },
   {
     name: '项目设置',

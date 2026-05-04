@@ -59,6 +59,11 @@ const router = createRouter({
       component: () => import('@/views/WritingJobView.vue'),
     },
     {
+      path: '/project/:id/suggestions',
+      name: 'postprocess-suggestions',
+      component: () => import('@/views/PostChapterAnalysisView.vue'),
+    },
+    {
       path: '/project/:id/knowledge',
       name: 'knowledge',
       component: () => import('@/views/KnowledgeBaseView.vue'),
