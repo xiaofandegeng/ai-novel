@@ -1,24 +1,35 @@
 <script setup lang="ts">
-import type { ChapterStatus, Character } from '@ai-novel/shared'
+import type { ChapterStatus, Character, CreateChapterElementInput } from '@ai-novel/shared'
 import {
   NButton,
   NTextArea,
 } from '@ai-novel/ui'
 import {
   Info,
+  Layers,
   Plus,
+  Sparkles,
   Users,
+  X,
 } from 'lucide-vue-next'
 import ChapterTitleField from './ChapterTitleField.vue'
 
 defineProps<{
   characters: Character[]
   saving: boolean
+  isBrainstorming: boolean
+  chapterElementDrafts: CreateChapterElementInput[]
+  newEventName: string
 }>()
 
 const emit = defineEmits<{
-  save: []
-  toggleCharacter: [charId: string]
+  'save': []
+  'toggleCharacter': [charId: string]
+  'brainstorm': []
+  'addCharacterElement': [charId: string]
+  'removeElement': [index: number]
+  'addEventElement': []
+  'update:newEventName': [value: string]
 }>()
 
 const form = defineModel<{
@@ -49,6 +60,9 @@ const statusOptions = [
           <ChapterTitleField v-model="form.title" />
         </div>
         <div class="flex items-center gap-4">
+          <NButton variant="ai" size="sm" :loading="isBrainstorming" @click="emit('brainstorm')">
+            <Sparkles :size="16" class="mr-1.5" /> AI 灵感风暴
+          </NButton>
           <div class="h-6 w-px bg-border-light" />
           <div class="flex items-center gap-2">
             <span class="mr-2 text-xs text-text-muted font-bold">状态</span>
@@ -83,6 +97,63 @@ const statusOptions = [
           {{ char.name }}
           <Plus v-if="!form.characterIds.includes(char.id)" :size="10" />
         </button>
+      </div>
+    </section>
+
+    <!-- Chapter Structured Elements -->
+    <section class="space-y-4">
+      <h3 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
+        <Layers :size="16" /> 本章结构化元素
+      </h3>
+      <div>
+        <label class="mb-2 block text-xs text-text-muted font-semibold">必须出场人物</label>
+        <div class="flex flex-wrap gap-2">
+          <span
+            v-for="(el, idx) in chapterElementDrafts.filter(e => e.elementType === 'character')"
+            :key="idx"
+            class="flex items-center gap-1 border border-primary/30 rounded-full bg-primary-soft px-3 py-1 text-xs text-primary"
+          >
+            {{ el.elementName }}
+            <button class="text-primary/60 hover:text-primary" @click="emit('removeElement', chapterElementDrafts.indexOf(el))">
+              <X :size="12" />
+            </button>
+          </span>
+          <button
+            v-for="char in characters.filter(c => !chapterElementDrafts.some(e => e.elementType === 'character' && e.elementId === c.id))"
+            :key="char.id"
+            class="flex items-center gap-1 border border-border-light rounded-full bg-bg-surface px-3 py-1 text-xs text-text-muted transition-colors hover:border-primary hover:text-primary"
+            @click="emit('addCharacterElement', char.id)"
+          >
+            <Plus :size="10" /> {{ char.name }}
+          </button>
+        </div>
+      </div>
+      <div>
+        <label class="mb-2 block text-xs text-text-muted font-semibold">关键事件</label>
+        <div class="flex flex-wrap gap-2">
+          <span
+            v-for="(el, idx) in chapterElementDrafts.filter(e => e.elementType === 'event')"
+            :key="idx"
+            class="flex items-center gap-1 border border-ai/30 rounded-full bg-ai-soft px-3 py-1 text-xs text-ai"
+          >
+            {{ el.elementName }}
+            <button class="text-ai/60 hover:text-ai" @click="emit('removeElement', chapterElementDrafts.indexOf(el))">
+              <X :size="12" />
+            </button>
+          </span>
+        </div>
+        <div class="mt-2 flex gap-2">
+          <input
+            :value="newEventName"
+            class="flex-1 border border-border-light rounded-md bg-bg-surface px-3 py-1.5 text-xs"
+            placeholder="输入关键事件名称"
+            @input="emit('update:newEventName', ($event.target as HTMLInputElement).value)"
+            @keydown.enter="emit('addEventElement')"
+          >
+          <NButton size="sm" variant="ghost" :disabled="!newEventName.trim()" @click="emit('addEventElement')">
+            <Plus :size="14" class="mr-1" /> 添加事件
+          </NButton>
+        </div>
       </div>
     </section>
 

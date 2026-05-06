@@ -10,8 +10,7 @@ defineProps<{
 
 const emit = defineEmits<{
   brainstorm: []
-  apply: []
-  discard: []
+  confirm: [action: 'insert' | 'replace' | 'backup' | 'discard']
 }>()
 </script>
 
@@ -28,9 +27,6 @@ const emit = defineEmits<{
           <p class="flex items-center gap-2 text-sm text-text-primary font-bold">
             <Sparkles :size="14" class="text-ai" /> AI 建议方案
           </p>
-          <NButton v-if="aiSuggestion" variant="ghost" size="sm" @click="emit('discard')">
-            放弃
-          </NButton>
         </div>
         <div v-if="isBrainstorming && !aiSuggestion" class="py-4 space-y-2">
           <div class="h-2 w-3/4 animate-pulse rounded-full bg-ai/20" />
@@ -39,15 +35,20 @@ const emit = defineEmits<{
         <div v-else class="mb-4 max-h-60 overflow-y-auto whitespace-pre-wrap text-xs text-text-secondary leading-relaxed italic">
           {{ aiSuggestion }}
         </div>
-        <NButton
-          v-if="aiSuggestion"
-          variant="ai"
-          size="sm"
-          class="w-full border-none bg-ai text-white shadow-ai/20 shadow-sm"
-          @click="emit('apply')"
-        >
-          应用到大纲
-        </NButton>
+        <div v-if="aiSuggestion" class="grid grid-cols-2 gap-2">
+          <NButton size="sm" variant="ai" @click="emit('confirm', 'insert')">
+            插入
+          </NButton>
+          <NButton size="sm" variant="ghost" @click="emit('confirm', 'replace')">
+            替换
+          </NButton>
+          <NButton size="sm" variant="ghost" @click="emit('confirm', 'backup')">
+            存为备选
+          </NButton>
+          <NButton size="sm" variant="ghost" @click="emit('confirm', 'discard')">
+            丢弃
+          </NButton>
+        </div>
       </div>
 
       <div v-else class="group border border-border-light rounded-xl bg-bg-surface p-4 transition-colors hover:border-ai/30">

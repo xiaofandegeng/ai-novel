@@ -4,6 +4,7 @@ import { NButton } from '@ai-novel/ui'
 import {
   ChevronDown,
   ChevronRight,
+  Layers,
   Library,
   Plus,
 } from 'lucide-vue-next'
@@ -29,7 +30,7 @@ const emit = defineEmits<{
       <h2 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
         <Layers :size="16" /> 故事结构
       </h2>
-      <NButton variant="ghost" size="sm" @click="emit('addVolume')">
+      <NButton variant="ghost" size="sm" aria-label="添加分卷" @click="emit('addVolume')">
         <Plus :size="16" />
       </NButton>
     </div>
