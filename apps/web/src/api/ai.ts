@@ -1,19 +1,6 @@
-import type { AIMessage, AIScene } from '@ai-novel/shared'
+import type { AIMessage, AIScene, ChatStreamOptions, GenerateAIOptions } from '@ai-novel/shared'
 
-export interface ChatStreamOptions {
-  projectId?: string
-  context?: string
-  model?: string
-  scene?: AIScene
-}
-
-export interface GenerateAIOptions {
-  projectId: string
-  scene: AIScene
-  chapterId?: string
-  selectedText?: string
-  userInstruction?: string
-}
+export type { ChatStreamOptions, GenerateAIOptions }
 
 export async function generateAIStream(options: GenerateAIOptions): Promise<Response> {
   const response = await fetch(`/api/projects/${options.projectId}/ai/generate`, {

@@ -11,7 +11,7 @@ for (const envPath of [resolve(process.cwd(), '.env'), resolve(process.cwd(), '.
 }
 
 export default defineConfig({
-  schema: './src/db/schema.ts',
+  schema: './src/db/schema',
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {

@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { foreshadowingItems } from '../db/schema'
 import { assertOptionalChapterBelongsToProject } from '../services/ownership.service'
-import { fail, generateId, success } from '../utils'
+import { fail, generateId, success, updatedFields } from '../utils'
 
 export function registerForeshadowingRoutes(app: Hono) {
   app.get('/api/projects/:projectId/foreshadowing', async (c) => {
@@ -43,10 +43,19 @@ export function registerForeshadowingRoutes(app: Hono) {
     await assertOptionalChapterBelongsToProject(projectId, body.setupChapterId)
     await assertOptionalChapterBelongsToProject(projectId, body.expectedPayoffChapterId)
     await assertOptionalChapterBelongsToProject(projectId, body.payoffChapterId)
-    const [row] = await db.update(foreshadowingItems).set({
-      ...body,
-      updatedAt: new Date().toISOString(),
-    }).where(and(eq(foreshadowingItems.id, id), eq(foreshadowingItems.projectId, projectId))).returning()
+    const fields = updatedFields({
+      title: body.title,
+      description: body.description,
+      setupChapterId: body.setupChapterId,
+      expectedPayoffChapterId: body.expectedPayoffChapterId,
+      payoffChapterId: body.payoffChapterId,
+      status: body.status,
+      importance: body.importance,
+      relatedCharacters: body.relatedCharacters,
+      relatedEvents: body.relatedEvents,
+      notes: body.notes,
+    })
+    const [row] = await db.update(foreshadowingItems).set(fields).where(and(eq(foreshadowingItems.id, id), eq(foreshadowingItems.projectId, projectId))).returning()
     if (!row)
       return c.json(fail('Foreshadowing item not found'), 404)
     return c.json(success(row))

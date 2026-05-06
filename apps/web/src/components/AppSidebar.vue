@@ -4,6 +4,7 @@ import {
   BarChart3,
   BookOpen,
   Bot,
+  Bug,
   ClipboardList,
   History,
   LayoutDashboard,
@@ -108,6 +109,12 @@ const menuItems = [
     path: `/project/${props.projectId}/suggestions`,
     icon: ClipboardList,
     activeMatch: /suggestions/,
+  },
+  {
+    name: '上下文调试',
+    path: `/project/${props.projectId}/context-snapshots`,
+    icon: Bug,
+    activeMatch: /context-snapshots/,
   },
   {
     name: '项目设置',

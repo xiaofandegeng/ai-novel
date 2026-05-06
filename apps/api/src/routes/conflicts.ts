@@ -2,7 +2,7 @@ import type { Hono } from 'hono'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { conflicts } from '../db/schema'
-import { fail, generateId, success } from '../utils'
+import { fail, generateId, success, updatedFields } from '../utils'
 
 export function registerConflictRoutes(app: Hono) {
   app.get('/api/projects/:projectId/conflicts', async (c) => {
@@ -18,7 +18,13 @@ export function registerConflictRoutes(app: Hono) {
     const [row] = await db.insert(conflicts).values({
       id,
       projectId,
-      ...body,
+      title: body.title,
+      type: body.type,
+      intensity: body.intensity,
+      status: body.status,
+      participants: body.participants,
+      description: body.description,
+      resolution: body.resolution,
     }).returning()
     return c.json(success(row))
   })
@@ -27,10 +33,16 @@ export function registerConflictRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
     const body = await c.req.json()
-    const [row] = await db.update(conflicts).set({
-      ...body,
-      updatedAt: new Date().toISOString(),
-    }).where(and(eq(conflicts.id, id), eq(conflicts.projectId, projectId))).returning()
+    const fields = updatedFields({
+      title: body.title,
+      type: body.type,
+      intensity: body.intensity,
+      status: body.status,
+      participants: body.participants,
+      description: body.description,
+      resolution: body.resolution,
+    })
+    const [row] = await db.update(conflicts).set(fields).where(and(eq(conflicts.id, id), eq(conflicts.projectId, projectId))).returning()
 
     if (!row)
       return c.json(fail('Conflict not found'), 404)

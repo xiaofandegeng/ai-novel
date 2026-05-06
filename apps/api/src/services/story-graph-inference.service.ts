@@ -47,11 +47,19 @@ export async function runGraphInference(projectId: string) {
   }
 
   // Rule 2: Transitive inference — A->B, B->C suggests A->C
-  const tripleMap = new Map<string, Array<{ predicate: string, objectName: string }>>()
+  const tripleMap = new Map<string, Array<{
+    predicate: string
+    objectName: string
+    sourceChapterId: string | null
+  }>>()
   for (const t of triples) {
     if (!tripleMap.has(t.subjectName))
       tripleMap.set(t.subjectName, [])
-    tripleMap.get(t.subjectName)!.push({ predicate: t.predicate, objectName: t.objectName })
+    tripleMap.get(t.subjectName)!.push({
+      predicate: t.predicate,
+      objectName: t.objectName,
+      sourceChapterId: t.sourceChapterId,
+    })
   }
 
   const existingTripleKeys = new Set(triples.map(t => `${t.subjectName}:${t.predicate}:${t.objectName}`))
@@ -64,7 +72,11 @@ export async function runGraphInference(projectId: string) {
       for (const t2 of indirectTargets) {
         const key = `${subject}:${t1.predicate}→${t2.predicate}:${t2.objectName}`
         if (!existingTripleKeys.has(key)) {
-          await createSuggestion(projectId, '', null, 'fact_triple', {
+          const sourceChapterId = t1.sourceChapterId || t2.sourceChapterId
+          if (!sourceChapterId)
+            continue
+
+          await createSuggestion(projectId, sourceChapterId, null, 'fact_triple', {
             subjectType: 'inferred',
             subjectName: subject,
             predicate: `${t1.predicate}→${t2.predicate}`,

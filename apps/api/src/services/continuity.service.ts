@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { db } from '../db'
 import { chapterMemories, chapters, foreshadowingItems, storyFactTriples } from '../db/schema'
-import { assertAIConfigured, createOpenAIClient } from './ai.service'
+import { callAIJSON } from './ai.service'
 
 interface ContinuityIssue {
   type: string
@@ -12,8 +12,6 @@ interface ContinuityIssue {
 }
 
 export async function runContinuityAnalysis(projectId: string) {
-  await assertAIConfigured()
-
   const allChapters = await db.select().from(chapters).where(eq(chapters.projectId, projectId))
   const completedChapters = allChapters.filter(c => c.status === 'completed').sort((a, b) => a.chapterNumber - b.chapterNumber)
 
@@ -50,18 +48,10 @@ ${openPlots}
 
 如果没有问题，返回 {"issues": []}`
 
-  const settings = await assertAIConfigured()
-  const client = createOpenAIClient(settings)
-
-  const response = await client.chat.completions.create({
-    model: settings.model,
-    messages: [{ role: 'user', content: prompt }],
-    response_format: { type: 'json_object' },
-    temperature: 0.3,
-  })
-
-  const content = response.choices[0]?.message?.content || '{"issues":[]}'
-  const parsed = JSON.parse(content) as { issues: ContinuityIssue[] }
+  const parsed = await callAIJSON<{ issues: ContinuityIssue[] }>(
+    [{ role: 'user', content: prompt }],
+    { temperature: 30 },
+  )
 
   return {
     issues: parsed.issues || [],

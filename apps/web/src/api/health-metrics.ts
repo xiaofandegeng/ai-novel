@@ -1,18 +1,6 @@
-export interface HealthMetrics {
-  totalChapters: number
-  completedChapters: number
-  totalWords: number
-  averageChapterWords: number
-  activeConflicts: number
-  conflictIntensityAvg: number
-  conflictIntensityTrend: { chapter: number, avgIntensity: number }[]
-  openForeshadowingCount: number
-  foreshadowingByStatus: Record<string, number>
-  confirmedTriples: number
-  pendingTriples: number
-  elementFrequency: { name: string, type: string, count: number }[]
-  qualityTrend: { chapter: number, score: number }[]
-}
+import type { HealthMetrics } from '@ai-novel/shared'
+
+export type { HealthMetrics }
 
 export async function fetchHealthMetrics(projectId: string): Promise<HealthMetrics> {
   const res = await fetch(`/api/projects/${projectId}/health-metrics`)

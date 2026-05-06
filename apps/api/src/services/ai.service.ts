@@ -163,6 +163,33 @@ export async function assertAIConfigured() {
   return settings
 }
 
+export async function callAIJSON<T = Record<string, unknown>>(
+  messages: ChatCompletionMessageParam[],
+  options?: {
+    model?: string
+    temperature?: number
+    responseFormat?: { type: 'json_object' }
+  },
+): Promise<T> {
+  const settings = await assertAIConfigured()
+  const client = createOpenAIClient(settings)
+  const response = await client.chat.completions.create({
+    model: options?.model || settings.model,
+    messages,
+    temperature: (options?.temperature ?? settings.temperature) / 100,
+    response_format: options?.responseFormat || { type: 'json_object' },
+  })
+  const content = response.choices[0]?.message?.content
+  if (!content)
+    throw new Error('AI 返回内容为空')
+  try {
+    return JSON.parse(content) as T
+  }
+  catch {
+    throw new Error('AI 返回的 JSON 无法解析')
+  }
+}
+
 export async function* streamChat(
   messages: ChatCompletionMessageParam[],
   options?: {

@@ -1,4 +1,5 @@
 import type { Hono } from 'hono'
+import type { ApplyResult } from '../services/postprocess-suggestion.service'
 import { acceptSuggestion, applyAcceptedSuggestions, getSuggestions, rejectSuggestion } from '../services/postprocess-suggestion.service'
 import { runGraphInference } from '../services/story-graph-inference.service'
 import { fail, success } from '../utils'
@@ -33,8 +34,8 @@ export function registerPostprocessSuggestionRoutes(app: Hono) {
   app.post('/api/projects/:projectId/chapters/:chapterId/suggestions/apply-accepted', async (c) => {
     const projectId = c.req.param('projectId')
     const chapterId = c.req.param('chapterId')
-    const count = await applyAcceptedSuggestions(projectId, chapterId)
-    return c.json(success({ applied: count }))
+    const result: ApplyResult = await applyAcceptedSuggestions(projectId, chapterId)
+    return c.json(success(result))
   })
 
   app.post('/api/projects/:projectId/inference/run', async (c) => {

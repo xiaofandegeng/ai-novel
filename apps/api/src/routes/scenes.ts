@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { chapterScenes } from '../db/schema'
 import { assertChapterBelongsToProject } from '../services/ownership.service'
-import { fail, generateId, success } from '../utils'
+import { fail, generateId, success, updatedFields } from '../utils'
 
 export function registerSceneRoutes(app: Hono) {
   app.get('/api/projects/:projectId/chapters/:chapterId/scenes', async (c) => {
@@ -46,10 +46,19 @@ export function registerSceneRoutes(app: Hono) {
     const id = c.req.param('id')
     await assertChapterBelongsToProject(projectId, chapterId)
     const body = await c.req.json()
-    const [row] = await db.update(chapterScenes).set({
-      ...body,
-      updatedAt: new Date().toISOString(),
-    }).where(and(
+    const fields = updatedFields({
+      sceneNumber: body.sceneNumber,
+      title: body.title,
+      location: body.location,
+      timeline: body.timeline,
+      purpose: body.purpose,
+      summary: body.summary,
+      characters: body.characters,
+      targetWords: body.targetWords,
+      content: body.content,
+      orderIndex: body.orderIndex,
+    })
+    const [row] = await db.update(chapterScenes).set(fields).where(and(
       eq(chapterScenes.id, id),
       eq(chapterScenes.projectId, projectId),
       eq(chapterScenes.chapterId, chapterId),

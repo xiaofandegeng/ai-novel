@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { chapterElements } from '../db/schema'
 import { assertChapterBelongsToProject } from '../services/ownership.service'
-import { fail, generateId, success } from '../utils'
+import { fail, generateId, success, updatedFields } from '../utils'
 
 interface NormalizedElement {
   elementType: 'character' | 'location' | 'item' | 'organization' | 'event'
@@ -117,10 +117,16 @@ export function registerChapterElementRoutes(app: Hono) {
     const id = c.req.param('id')
     await assertChapterBelongsToProject(projectId, chapterId)
     const body = await c.req.json()
-    const [row] = await db.update(chapterElements).set({
-      ...body,
-      updatedAt: new Date().toISOString(),
-    }).where(and(
+    const fields = updatedFields({
+      elementType: body.elementType,
+      elementId: body.elementId,
+      elementName: body.elementName,
+      relationType: body.relationType,
+      importance: body.importance,
+      appearanceOrder: body.appearanceOrder,
+      notes: body.notes,
+    })
+    const [row] = await db.update(chapterElements).set(fields).where(and(
       eq(chapterElements.id, id),
       eq(chapterElements.projectId, projectId),
       eq(chapterElements.chapterId, chapterId),

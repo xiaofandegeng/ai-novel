@@ -12,7 +12,7 @@ import { registerCharacterRoutes } from './routes/characters'
 import { registerConflictRoutes } from './routes/conflicts'
 import { registerContinuityRoutes } from './routes/continuity'
 import { registerDataPortabilityRoutes } from './routes/data-portability'
-import { registerExportRoutes } from './routes/export'
+
 import { registerForeshadowingRoutes } from './routes/foreshadowing'
 import { registerHealthRoutes } from './routes/health'
 import { registerHealthMetricsRoutes } from './routes/health-metrics'
@@ -55,7 +55,6 @@ registerConflictRoutes(app)
 registerForeshadowingRoutes(app)
 registerTripleRoutes(app)
 registerVersionRoutes(app)
-registerExportRoutes(app)
 registerKnowledgeRoutes(app)
 registerQualityRoutes(app)
 registerHealthMetricsRoutes(app)

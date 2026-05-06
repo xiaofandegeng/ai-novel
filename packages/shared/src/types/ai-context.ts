@@ -52,6 +52,7 @@ export interface KnowledgeContextSnippet {
   title: string
   summary: string
   techniques?: string
+  reasons?: string[]
 }
 
 export interface BuiltAIContext {

@@ -41,3 +41,17 @@ export interface RunConsistencyCheckInput {
   generatedText: string
   sourceInstruction?: string
 }
+
+export interface ContinuityIssue {
+  type: string
+  severity: 'low' | 'medium' | 'high'
+  description: string
+  evidence: string[]
+  suggestion: string
+}
+
+export interface ContinuityReport {
+  issues: ContinuityIssue[]
+  chapterCount: number
+  analyzedAt: string
+}

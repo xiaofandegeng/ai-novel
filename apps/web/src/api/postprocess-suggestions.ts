@@ -15,7 +15,7 @@ export function rejectSuggestion(projectId: string, id: string) {
 }
 
 export function applyAcceptedSuggestions(projectId: string, chapterId: string) {
-  return apiPost<{ applied: number }>(`/api/projects/${projectId}/chapters/${chapterId}/suggestions/apply-accepted`, {})
+  return apiPost<{ applied: number, acknowledged: number, failed: number, skipped: number }>(`/api/projects/${projectId}/chapters/${chapterId}/suggestions/apply-accepted`, {})
 }
 
 export function runInference(projectId: string) {

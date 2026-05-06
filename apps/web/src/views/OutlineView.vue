@@ -25,7 +25,7 @@ import {
 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { generateAIStream, readChatStream } from '@/api/ai'
+import { useAIStream } from '@/composables/useAIStream'
 import AppSidebar from '../components/AppSidebar.vue'
 import ChapterTitleField from '../features/outline/components/ChapterTitleField.vue'
 import {
@@ -240,18 +240,16 @@ function addEventElement() {
   newEventName.value = ''
 }
 
-const isBrainstorming = ref(false)
+const { isStreaming: isBrainstorming, stream: streamAI } = useAIStream()
 const aiSuggestion = ref<string | null>(null)
 const outlineAlternatives = ref<string[]>([])
 
 async function handleAIBrainstorm() {
   if (!selectedChapterId.value)
     return
-  isBrainstorming.value = true
-  aiSuggestion.value = ''
 
   try {
-    const response = await generateAIStream({
+    aiSuggestion.value = await streamAI({
       projectId,
       scene: 'outline',
       chapterId: selectedChapterId.value,
@@ -259,17 +257,10 @@ async function handleAIBrainstorm() {
          Please provide: 1. Core Conflict, 2. Three Key Events, 3. An Ending Hook.
          Keep it concise and dramatic.`,
     })
-
-    await readChatStream(response, (text) => {
-      aiSuggestion.value = text
-    })
   }
   catch (error: any) {
     toast.add(error.message || 'AI 灵感风暴失败', 'error')
     aiSuggestion.value = null
-  }
-  finally {
-    isBrainstorming.value = false
   }
 }
 

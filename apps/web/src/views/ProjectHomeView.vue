@@ -79,14 +79,7 @@ const isExporting = ref(false)
 async function handleExport() {
   isExporting.value = true
   try {
-    const data = await exportProject(projectId)
-    const blob = new Blob([data.content], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = data.filename
-    a.click()
-    URL.revokeObjectURL(url)
+    await exportProject(projectId)
     toast.add('项目导出成功！', 'success')
   }
   catch {

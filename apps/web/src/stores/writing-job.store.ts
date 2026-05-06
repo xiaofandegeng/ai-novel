@@ -1,17 +1,27 @@
-import type { CreateWritingJobInput, WritingJob } from '@ai-novel/shared'
+import type { CreateWritingJobInput, WritingJob, WritingJobStep } from '@ai-novel/shared'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import * as api from '../api/writing-jobs'
 
 export const useWritingJobStore = defineStore('writingJob', () => {
   const job = ref<WritingJob | null>(null)
+  const steps = ref<WritingJobStep[]>([])
 
   async function fetchJob(projectId: string) {
     job.value = await api.fetchWritingJob(projectId)
+    if (job.value) {
+      steps.value = await api.fetchJobSteps(projectId, job.value.id)
+    }
+    else {
+      steps.value = []
+    }
   }
 
   async function createJob(projectId: string, data: CreateWritingJobInput) {
     job.value = await api.createWritingJob(projectId, data)
+    if (job.value) {
+      steps.value = await api.fetchJobSteps(projectId, job.value.id)
+    }
     return job.value
   }
 
@@ -19,6 +29,7 @@ export const useWritingJobStore = defineStore('writingJob', () => {
     if (!job.value)
       return
     job.value = await api.startWritingJob(projectId, job.value.id)
+    steps.value = await api.fetchJobSteps(projectId, job.value.id)
   }
 
   async function pauseJob(projectId: string) {
@@ -38,7 +49,44 @@ export const useWritingJobStore = defineStore('writingJob', () => {
       return
     await api.deleteWritingJob(projectId, job.value.id)
     job.value = null
+    steps.value = []
   }
 
-  return { job, fetchJob, createJob, startJob, pauseJob, continueJob, deleteJob }
+  async function approveStep(projectId: string, stepId: string) {
+    if (!job.value)
+      return
+    const result = await api.approveStep(projectId, job.value.id, stepId)
+    job.value = result.job
+    steps.value = result.steps
+  }
+
+  async function rejectStep(projectId: string, stepId: string, reason?: string) {
+    if (!job.value)
+      return
+    const result = await api.rejectStep(projectId, job.value.id, stepId, reason)
+    job.value = result.job
+    steps.value = result.steps
+  }
+
+  async function retryStep(projectId: string, stepId: string) {
+    if (!job.value)
+      return
+    const result = await api.retryStep(projectId, job.value.id, stepId)
+    job.value = result.job
+    steps.value = result.steps
+  }
+
+  return {
+    job,
+    steps,
+    fetchJob,
+    createJob,
+    startJob,
+    pauseJob,
+    continueJob,
+    deleteJob,
+    approveStep,
+    rejectStep,
+    retryStep,
+  }
 })

@@ -2,7 +2,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { chapters, qualityReports } from '../db/schema'
 import { fail, generateId } from '../utils'
-import { createOpenAIClient, getEffectiveAISettings } from './ai.service'
+import { callAIJSON, getEffectiveAISettings } from './ai.service'
 
 export async function listReports(projectId: string) {
   return db
@@ -32,7 +32,8 @@ export async function runChapterQualityCheck(projectId: string, chapterId: strin
     return fail('AI 服务未配置，请先在项目设置中完成 AI 配置检测')
   }
 
-  const { buildProjectAIContext, renderAIContext } = await import('./ai-context.service')
+  const { buildProjectAIContext } = await import('./ai-context.service')
+  const { renderAIContext } = await import('./ai-context-renderer')
   const context = await buildProjectAIContext({
     projectId,
     scene: 'quality',
@@ -52,26 +53,10 @@ export async function runChapterQualityCheck(projectId: string, chapterId: strin
 }\n\n注意：\n- issues 和 suggestions 必须是中文\n- issues 列出 2-4 个具体问题\n- suggestions 列出 2-4 个可落地的修改建议\n- 评分应基于章节内容的具体质量，不是随机分值`
 
   try {
-    const client = createOpenAIClient(settings)
-    const response = await client.chat.completions.create({
-      model: settings.model,
-      messages: [{ role: 'user', content: fullPrompt }],
-      temperature: 0.3,
-      response_format: { type: 'json_object' },
-    })
-
-    const content = response.choices[0]?.message?.content
-    if (!content) {
-      return fail('AI 返回内容为空')
-    }
-
-    let parsed: any
-    try {
-      parsed = JSON.parse(content)
-    }
-    catch {
-      return fail('AI 返回的 JSON 无法解析，请重试')
-    }
+    const parsed = await callAIJSON<Record<string, any>>(
+      [{ role: 'user', content: fullPrompt }],
+      { temperature: 30 },
+    )
 
     const report = {
       id: generateId(),

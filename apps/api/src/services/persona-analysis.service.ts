@@ -4,150 +4,12 @@ import {
   chapterAnalyses,
   referenceChapterAnalysisErrors,
   referenceChapters,
-  referenceTrainingSets,
   referenceWorks,
   workStyleReports,
-  writingPersonas,
 } from '../db/schema'
 import { fail, generateId, now } from '../utils'
-import { assertAIConfigured, createOpenAIClient } from './ai.service'
-
-// ─── Training Sets ───
-
-export async function listTrainingSets() {
-  return db.select().from(referenceTrainingSets)
-}
-
-export async function getTrainingSet(id: string) {
-  const [row] = await db.select().from(referenceTrainingSets).where(eq(referenceTrainingSets.id, id))
-  return row || null
-}
-
-export async function createTrainingSet(input: { name: string, description?: string, genre?: string, targetPersonaType?: string }) {
-  const row = {
-    id: generateId(),
-    name: input.name,
-    description: input.description || null,
-    genre: input.genre || null,
-    targetPersonaType: input.targetPersonaType || null,
-    status: 'draft' as const,
-  }
-  await db.insert(referenceTrainingSets).values(row)
-  return row
-}
-
-export async function updateTrainingSet(id: string, input: Record<string, unknown>) {
-  const fields: Record<string, unknown> = { updatedAt: now() }
-  for (const key of ['name', 'description', 'genre', 'targetPersonaType', 'status']) {
-    if (input[key] !== undefined)
-      fields[key] = input[key]
-  }
-  const [row] = await db.update(referenceTrainingSets).set(fields).where(eq(referenceTrainingSets.id, id)).returning()
-  return row
-}
-
-export async function deleteTrainingSet(id: string) {
-  const [row] = await db.delete(referenceTrainingSets).where(eq(referenceTrainingSets.id, id)).returning()
-  return row
-}
-
-// ─── Reference Works ───
-
-export async function listWorks(trainingSetId: string) {
-  return db.select().from(referenceWorks).where(eq(referenceWorks.trainingSetId, trainingSetId))
-}
-
-export async function getWork(workId: string) {
-  const [row] = await db.select().from(referenceWorks).where(eq(referenceWorks.id, workId))
-  return row || null
-}
-
-export async function createWork(trainingSetId: string, input: { title: string, author?: string, sourceType?: 'webnovel' | 'reference' | 'sample', fileName?: string, fileSize?: number }) {
-  const row = {
-    id: generateId(),
-    trainingSetId,
-    title: input.title,
-    author: input.author || null,
-    sourceType: input.sourceType || 'webnovel' as const,
-    fileName: input.fileName || null,
-    fileSize: input.fileSize || null,
-    status: 'uploaded' as const,
-  }
-  await db.insert(referenceWorks).values(row)
-  return row
-}
-
-export async function deleteWork(workId: string) {
-  const [row] = await db.delete(referenceWorks).where(eq(referenceWorks.id, workId)).returning()
-  return row
-}
-
-// ─── Chapter Splitting ───
-
-export async function splitWorkChapters(workId: string, content: string) {
-  const work = await getWork(workId)
-  if (!work)
-    return fail('Work not found')
-
-  await db.update(referenceWorks).set({ status: 'splitting', updatedAt: now() }).where(eq(referenceWorks.id, workId))
-
-  try {
-    const chapterPattern = /(第[一二三四五六七八九十百千万\d]+[章节卷篇]).*/g
-    const matches = [...content.matchAll(chapterPattern)]
-
-    const chapters: any[] = []
-
-    if (matches.length > 0) {
-      for (let i = 0; i < matches.length; i++) {
-        const title = matches[i][0]
-        const startIndex = matches[i].index!
-        const endIndex = i < matches.length - 1 ? matches[i + 1].index! : content.length
-        const chapterContent = content.substring(startIndex, endIndex).trim()
-
-        chapters.push({
-          id: generateId(),
-          workId,
-          trainingSetId: work.trainingSetId,
-          title,
-          chapterNumber: i + 1,
-          content: chapterContent,
-          wordCount: chapterContent.length,
-        })
-      }
-    }
-    else {
-      chapters.push({
-        id: generateId(),
-        workId,
-        trainingSetId: work.trainingSetId,
-        title: '全文',
-        chapterNumber: 1,
-        content,
-        wordCount: content.length,
-      })
-    }
-
-    if (chapters.length > 0)
-      await db.insert(referenceChapters).values(chapters)
-
-    await db.update(referenceWorks).set({
-      status: 'completed',
-      wordCount: content.length,
-      chapterCount: chapters.length,
-      updatedAt: now(),
-    }).where(eq(referenceWorks.id, workId))
-
-    return { chapters: chapters.length }
-  }
-  catch (e: any) {
-    await db.update(referenceWorks).set({ status: 'failed', updatedAt: now() }).where(eq(referenceWorks.id, workId))
-    throw e
-  }
-}
-
-export async function listWorkChapters(workId: string) {
-  return db.select().from(referenceChapters).where(eq(referenceChapters.workId, workId))
-}
+import { callAIJSON } from './ai.service'
+import { getWork } from './persona-work.service'
 
 // ─── Chapter AI Analysis (Phase 3) ───
 
@@ -155,9 +17,6 @@ export async function analyzeChapter(chapterId: string) {
   const [chapter] = await db.select().from(referenceChapters).where(eq(referenceChapters.id, chapterId))
   if (!chapter)
     return fail('Chapter not found')
-
-  const settings = await assertAIConfigured()
-  const client = createOpenAIClient(settings)
 
   const truncatedContent = chapter.content.length > 3000
     ? `${chapter.content.substring(0, 3000)}...(内容过长已截断)`
@@ -190,24 +49,10 @@ ${truncatedContent}
   "riskNotes": "需要避免直接复刻的桥段或表达"
 }`
 
-  const response = await client.chat.completions.create({
-    model: settings.model,
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0.3,
-    response_format: { type: 'json_object' },
-  })
-
-  const content = response.choices[0]?.message?.content
-  if (!content)
-    throw new Error('AI 返回内容为空')
-
-  let parsed: any
-  try {
-    parsed = JSON.parse(content)
-  }
-  catch {
-    throw new Error('AI 返回的 JSON 无法解析')
-  }
+  const parsed = await callAIJSON<Record<string, any>>(
+    [{ role: 'user', content: prompt }],
+    { temperature: 30 },
+  )
 
   const analysis = {
     id: generateId(),
@@ -337,9 +182,6 @@ export async function generateWorkStyleReport(workId: string) {
   if (!work)
     return fail('Work not found')
 
-  const settings = await assertAIConfigured()
-  const client = createOpenAIClient(settings)
-
   // Get all chapter analyses for this work
   const analyses = await db.select().from(chapterAnalyses).where(eq(chapterAnalyses.workId, workId))
   if (analyses.length === 0)
@@ -372,24 +214,10 @@ ${analysesSummary}
   "avoidCopying": "禁止复刻的表达和桥段风险"
 }`
 
-  const response = await client.chat.completions.create({
-    model: settings.model,
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0.3,
-    response_format: { type: 'json_object' },
-  })
-
-  const content = response.choices[0]?.message?.content
-  if (!content)
-    throw new Error('AI 返回内容为空')
-
-  let parsed: any
-  try {
-    parsed = JSON.parse(content)
-  }
-  catch {
-    throw new Error('AI 返回的 JSON 无法解析')
-  }
+  const parsed = await callAIJSON<Record<string, any>>(
+    [{ role: 'user', content: prompt }],
+    { temperature: 30 },
+  )
 
   // Delete existing report
   await db.delete(workStyleReports).where(eq(workStyleReports.workId, workId))
@@ -413,138 +241,6 @@ ${analysesSummary}
 
   await db.insert(workStyleReports).values(report)
   return report
-}
-
-// ─── Writing Persona (Phase 5) ───
-
-export async function listPersonas() {
-  return db.select().from(writingPersonas)
-}
-
-export async function getPersona(personaId: string) {
-  const [row] = await db.select().from(writingPersonas).where(eq(writingPersonas.id, personaId))
-  return row || null
-}
-
-export async function createPersona(input: { name: string, description?: string, genre?: string }) {
-  const row = {
-    id: generateId(),
-    name: input.name,
-    description: input.description || null,
-    genre: input.genre || null,
-    status: 'draft' as const,
-  }
-  await db.insert(writingPersonas).values(row)
-  return row
-}
-
-export async function updatePersona(personaId: string, input: Record<string, unknown>) {
-  const fields: Record<string, unknown> = { updatedAt: now() }
-  for (const key of ['name', 'description', 'genre', 'status', 'coreAppeal', 'pacingRules', 'conflictRules', 'characterRules', 'languageRules', 'chapterRules', 'hookRules', 'forbiddenRules', 'similarityGuardrails']) {
-    if (input[key] !== undefined)
-      fields[key] = input[key]
-  }
-  const [row] = await db.update(writingPersonas).set(fields).where(eq(writingPersonas.id, personaId)).returning()
-  return row
-}
-
-export async function deletePersona(personaId: string) {
-  const [row] = await db.delete(writingPersonas).where(eq(writingPersonas.id, personaId)).returning()
-  return row
-}
-
-export async function generatePersonaFromTrainingSet(trainingSetId: string, input: { name: string, description?: string, genre?: string }) {
-  const trainingSet = await getTrainingSet(trainingSetId)
-  if (!trainingSet)
-    return fail('训练集不存在')
-
-  // Get all style reports for this training set
-  const reports = await db.select().from(workStyleReports).where(eq(workStyleReports.trainingSetId, trainingSetId))
-  if (reports.length === 0)
-    return fail('训练集尚无作品风格报告，请先分析作品')
-
-  const settings = await assertAIConfigured()
-  const client = createOpenAIClient(settings)
-
-  const reportsSummary = reports.map((r, i) => `作品${i + 1}: 核心爽点=${r.coreAppeal || '未知'}, 节奏=${r.pacingModel || '未知'}, 冲突=${r.conflictModel || '未知'}, 优点=${r.strengths || '未知'}`).join('\n')
-
-  const prompt = `你是一位专业的写作风格融合专家。请根据以下多本作品的风格报告，融合成一个可复用的写作人格。
-人格必须学习结构、节奏和技巧，但严禁复刻原文表达或桥段。
-返回严格 JSON，不要 markdown。
-
-训练集：${trainingSet.name}
-作品数：${reports.length}
-
-风格报告摘要：
-${reportsSummary}
-
-请返回以下 JSON 格式：
-{
-  "coreAppeal": "核心爽点",
-  "pacingRules": "节奏规则",
-  "conflictRules": "冲突规则",
-  "characterRules": "人物规则",
-  "languageRules": "语言规则",
-  "chapterRules": "章节结构规则",
-  "hookRules": "结尾钩子规则",
-  "forbiddenRules": "禁止事项",
-  "similarityGuardrails": "避免过度相似的规则"
-}`
-
-  const response = await client.chat.completions.create({
-    model: settings.model,
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0.3,
-    response_format: { type: 'json_object' },
-  })
-
-  const content = response.choices[0]?.message?.content
-  if (!content)
-    throw new Error('AI 返回内容为空')
-
-  let parsed: any
-  try {
-    parsed = JSON.parse(content)
-  }
-  catch {
-    throw new Error('AI 返回的 JSON 无法解析')
-  }
-
-  const persona = {
-    id: generateId(),
-    name: input.name,
-    description: input.description || null,
-    genre: input.genre || trainingSet.genre || null,
-    sourceTrainingSetId: trainingSetId,
-    status: 'draft' as const,
-    coreAppeal: parsed.coreAppeal || null,
-    pacingRules: parsed.pacingRules || null,
-    conflictRules: parsed.conflictRules || null,
-    characterRules: parsed.characterRules || null,
-    languageRules: parsed.languageRules || null,
-    chapterRules: parsed.chapterRules || null,
-    hookRules: parsed.hookRules || null,
-    forbiddenRules: parsed.forbiddenRules || null,
-    similarityGuardrails: parsed.similarityGuardrails || null,
-  }
-
-  await db.insert(writingPersonas).values(persona)
-
-  // Update training set status
-  await db.update(referenceTrainingSets).set({ status: 'ready', updatedAt: now() }).where(eq(referenceTrainingSets.id, trainingSetId))
-
-  return persona
-}
-
-export async function publishPersona(personaId: string) {
-  const persona = await getPersona(personaId)
-  if (!persona)
-    return fail('人格不存在')
-  if (!persona.coreAppeal)
-    return fail('人格内容不完整，请先生成人格规则')
-
-  const [row] = await db.update(writingPersonas).set({ status: 'published', updatedAt: now() }).where(eq(writingPersonas.id, personaId)).returning()
-  return row
 }
 
 // ─── Work Analysis Summary ───
@@ -643,8 +339,4 @@ export async function retryFailedChapterAnalyses(workId: string) {
     chapters: status.chapters,
     status: status.status,
   }
-}
-
-export async function listPublishedPersonas() {
-  return db.select().from(writingPersonas).where(eq(writingPersonas.status, 'published'))
 }

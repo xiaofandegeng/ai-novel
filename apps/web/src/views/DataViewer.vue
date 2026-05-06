@@ -15,6 +15,7 @@ import {
   useToast,
 } from '@ai-novel/ui'
 import { onMounted, ref } from 'vue'
+import { useProjectLabels } from '../composables/useProjectLabels'
 import { useChapterStore, useCharacterStore, useProjectStore, useStoryBibleStore, useVolumeStore } from '../stores/projects'
 import { getCharacterRoleLabel } from '../utils/character-labels'
 
@@ -36,20 +37,7 @@ const formGenre = ref('')
 const formTheme = ref('')
 const formTargetWords = ref('')
 
-const statusVariantMap: Record<string, 'default' | 'primary' | 'success' | 'warning' | 'error' | 'info'> = {
-  planning: 'info',
-  writing: 'primary',
-  paused: 'warning',
-  completed: 'success',
-  archived: 'default',
-}
-
-const chapterStatusVariantMap: Record<string, 'default' | 'primary' | 'success' | 'warning' | 'info'> = {
-  not_started: 'default',
-  planning: 'info',
-  writing: 'primary',
-  completed: 'success',
-}
+const { projectStatusVariants: statusVariantMap, chapterStatusVariants: chapterStatusVariantMap } = useProjectLabels()
 
 onMounted(async () => {
   try {

@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { chapters, personaMemoryFragments } from '../db/schema'
 import { generateId } from '../utils'
-import { assertAIConfigured, createOpenAIClient } from './ai.service'
+import { callAIJSON } from './ai.service'
 
 export async function getFragments(projectId: string, fragmentType?: string) {
   if (fragmentType) {
@@ -14,8 +14,6 @@ export async function getFragments(projectId: string, fragmentType?: string) {
 }
 
 export async function extractStylePatterns(projectId: string, chapterIds?: string[]) {
-  await assertAIConfigured()
-
   const allChapters = await db.select().from(chapters).where(eq(chapters.projectId, projectId))
   const targetChapters = chapterIds
     ? allChapters.filter(c => chapterIds.includes(c.id))
@@ -37,18 +35,10 @@ export async function extractStylePatterns(projectId: string, chapterIds?: strin
 章节数据:
 ${JSON.stringify(chaptersData)}`
 
-  const settings = await assertAIConfigured()
-  const client = createOpenAIClient(settings)
-
-  const response = await client.chat.completions.create({
-    model: settings.model,
-    messages: [{ role: 'user', content: prompt }],
-    response_format: { type: 'json_object' },
-    temperature: 0.3,
-  })
-
-  const content = response.choices[0]?.message?.content || '{"fragments":[]}'
-  const parsed = JSON.parse(content) as { fragments: Array<{ fragmentType: string, content: string, confidence: number }> }
+  const parsed = await callAIJSON<{ fragments: Array<{ fragmentType: string, content: string, confidence: number }> }>(
+    [{ role: 'user', content: prompt }],
+    { temperature: 30 },
+  )
 
   const created = []
   for (const f of parsed.fragments || []) {

@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { characterRelationships } from '../db/schema'
 import { assertCharactersBelongToProject } from '../services/ownership.service'
-import { fail, generateId, success } from '../utils'
+import { fail, generateId, success, updatedFields } from '../utils'
 
 export function registerRelationshipRoutes(app: Hono) {
   app.get('/api/projects/:projectId/relationships', async (c) => {
@@ -28,7 +28,12 @@ export function registerRelationshipRoutes(app: Hono) {
     const [row] = await db.insert(characterRelationships).values({
       id,
       projectId,
-      ...body,
+      characterAId: body.characterAId,
+      characterBId: body.characterBId,
+      type: body.type,
+      strength: body.strength,
+      status: body.status,
+      description: body.description,
     }).returning()
     return c.json(success(row))
   })
@@ -46,10 +51,15 @@ export function registerRelationshipRoutes(app: Hono) {
         return c.json(fail('角色不属于当前项目'), 400)
       }
     }
-    const [row] = await db.update(characterRelationships).set({
-      ...body,
-      updatedAt: new Date().toISOString(),
-    }).where(and(eq(characterRelationships.id, id), eq(characterRelationships.projectId, projectId))).returning()
+    const fields = updatedFields({
+      characterAId: body.characterAId,
+      characterBId: body.characterBId,
+      type: body.type,
+      strength: body.strength,
+      status: body.status,
+      description: body.description,
+    })
+    const [row] = await db.update(characterRelationships).set(fields).where(and(eq(characterRelationships.id, id), eq(characterRelationships.projectId, projectId))).returning()
 
     if (!row)
       return c.json(fail('Relationship not found'), 404)

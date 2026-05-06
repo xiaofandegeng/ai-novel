@@ -1,18 +1,7 @@
+import type { ContinuityIssue, ContinuityReport } from '@ai-novel/shared'
 import { apiPost } from './client'
 
-export interface ContinuityIssue {
-  type: string
-  severity: 'low' | 'medium' | 'high'
-  description: string
-  evidence: string[]
-  suggestion: string
-}
-
-export interface ContinuityReport {
-  issues: ContinuityIssue[]
-  chapterCount: number
-  analyzedAt: string
-}
+export type { ContinuityIssue, ContinuityReport }
 
 export function analyzeContinuity(projectId: string) {
   return apiPost<ContinuityReport>(`/api/projects/${projectId}/continuity/analyze`, {})

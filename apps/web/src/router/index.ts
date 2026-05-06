@@ -64,6 +64,11 @@ const router = createRouter({
       component: () => import('@/views/PostChapterAnalysisView.vue'),
     },
     {
+      path: '/project/:id/context-snapshots',
+      name: 'context-snapshots',
+      component: () => import('@/views/AIContextSnapshotsView.vue'),
+    },
+    {
       path: '/project/:id/knowledge',
       name: 'knowledge',
       component: () => import('@/views/KnowledgeBaseView.vue'),

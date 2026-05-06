@@ -1,6 +1,8 @@
 import type { Hono } from 'hono'
 import { streamText } from 'hono/streaming'
-import { buildProjectAIContext, renderAIContext } from '../services/ai-context.service'
+import { renderAIContext } from '../services/ai-context-renderer'
+import { createAIContextSnapshot, estimateTokens } from '../services/ai-context-snapshot.service'
+import { buildProjectAIContext } from '../services/ai-context.service'
 import { assertAIConfigured, streamChat } from '../services/ai.service'
 import { runConsistencyGuard } from '../services/consistency-guard.service'
 import { buildPersonaPromptForProject } from '../services/persona-prompt.service'
@@ -23,6 +25,20 @@ export function registerAiRoutes(app: Hono) {
       })
 
       const renderedPrompt = renderAIContext(context)
+
+      // Write context snapshot (don't block the stream on failure)
+      const requestId = crypto.randomUUID()
+      createAIContextSnapshot({
+        projectId,
+        chapterId,
+        scene,
+        requestId,
+        contextPayload: context,
+        renderedPromptPreview: renderedPrompt,
+        tokenEstimate: estimateTokens(renderedPrompt),
+      }).catch(() => {})
+
+      c.header('X-AI-Request-Id', requestId)
 
       return streamText(c, async (stream) => {
         try {

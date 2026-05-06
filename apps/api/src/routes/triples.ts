@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { storyFactTriples } from '../db/schema'
 import { assertOptionalChapterBelongsToProject } from '../services/ownership.service'
-import { fail, generateId, success } from '../utils'
+import { fail, generateId, success, updatedFields } from '../utils'
 
 export function registerTripleRoutes(app: Hono) {
   app.get('/api/projects/:projectId/triples', async (c) => {
@@ -40,10 +40,20 @@ export function registerTripleRoutes(app: Hono) {
     const id = c.req.param('id')
     const body = await c.req.json()
     await assertOptionalChapterBelongsToProject(projectId, body.sourceChapterId)
-    const [row] = await db.update(storyFactTriples).set({
-      ...body,
-      updatedAt: new Date().toISOString(),
-    }).where(and(eq(storyFactTriples.id, id), eq(storyFactTriples.projectId, projectId))).returning()
+    const fields = updatedFields({
+      subjectType: body.subjectType,
+      subjectName: body.subjectName,
+      predicate: body.predicate,
+      objectType: body.objectType,
+      objectName: body.objectName,
+      confidence: body.confidence,
+      sourceType: body.sourceType,
+      sourceChapterId: body.sourceChapterId,
+      status: body.status,
+      relatedChapters: body.relatedChapters,
+      notes: body.notes,
+    })
+    const [row] = await db.update(storyFactTriples).set(fields).where(and(eq(storyFactTriples.id, id), eq(storyFactTriples.projectId, projectId))).returning()
     if (!row)
       return c.json(fail('Triple not found'), 404)
     return c.json(success(row))

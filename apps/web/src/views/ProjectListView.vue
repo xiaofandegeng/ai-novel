@@ -18,6 +18,7 @@ import {
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useProjectLabels } from '../composables/useProjectLabels'
 import { useProjectStore } from '../stores/projects'
 
 const router = useRouter()
@@ -120,15 +121,10 @@ function formatDate(dateStr: string) {
   return date.toLocaleDateString('zh-CN')
 }
 
+const { projectStatusLabels } = useProjectLabels()
+
 function statusLabel(status: string) {
-  const map: Record<string, string> = {
-    planning: '规划中',
-    writing: '写作中',
-    paused: '已暂停',
-    completed: '已完成',
-    archived: '已归档',
-  }
-  return map[status] || '未设置'
+  return projectStatusLabels[status] || '未设置'
 }
 </script>
 

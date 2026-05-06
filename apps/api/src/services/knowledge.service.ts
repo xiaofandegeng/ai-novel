@@ -1,8 +1,8 @@
 import { and, eq, like, or } from 'drizzle-orm'
 import { db } from '../db'
-import { knowledgeChunks, knowledgeNotes, knowledgeSources } from '../db/schema'
+import { knowledgeChunks, knowledgeEmbeddings, knowledgeNotes, knowledgeSources } from '../db/schema'
 import { fail, generateId, now } from '../utils'
-import { createOpenAIClient, getEffectiveAISettings } from './ai.service'
+import { callAIJSON } from './ai.service'
 
 export async function listSources(projectId: string) {
   return db.select().from(knowledgeSources).where(eq(knowledgeSources.projectId, projectId))
@@ -48,12 +48,6 @@ export async function getSourceDetail(projectId: string, sourceId: string) {
 }
 
 async function analyzeChunkWithAI(chunkContent: string, chunkTitle: string): Promise<{ summary: string, techniques: string }> {
-  const settings = await getEffectiveAISettings()
-
-  if (!settings.apiKey) {
-    throw new Error('AI 服务未配置，请先在项目设置中完成 AI 配置检测')
-  }
-
   const truncatedContent = chunkContent.length > 3000
     ? `${chunkContent.substring(0, 3000)}...(内容过长已截断)`
     : chunkContent
@@ -70,26 +64,10 @@ ${truncatedContent}
   "techniques": "100-200字的中文分析，提取该片段使用的写作技巧、叙事手法和可复用的结构建议"
 }`
 
-  const client = createOpenAIClient(settings)
-  const response = await client.chat.completions.create({
-    model: settings.model,
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0.3,
-    response_format: { type: 'json_object' },
-  })
-
-  const content = response.choices[0]?.message?.content
-  if (!content) {
-    throw new Error('AI 返回内容为空')
-  }
-
-  let parsed: any
-  try {
-    parsed = JSON.parse(content)
-  }
-  catch {
-    throw new Error('AI 返回的 JSON 无法解析')
-  }
+  const parsed = await callAIJSON<{ summary?: string, techniques?: string }>(
+    [{ role: 'user', content: prompt }],
+    { temperature: 30 },
+  )
 
   return {
     summary: parsed.summary || '',
@@ -187,6 +165,22 @@ export async function analyzeSource(projectId: string, sourceId: string, content
     if (chunksData.length > 0) {
       await db.insert(knowledgeChunks).values(chunksData)
     }
+
+    // Insert embedding index rows
+    const embeddingRows = chunksData
+      .filter(chunk => chunk.summary || chunk.techniques)
+      .map(chunk => ({
+        id: generateId(),
+        projectId,
+        sourceType: 'knowledge_chunk',
+        sourceId: chunk.id,
+        embedding: null,
+        summary: chunk.summary || null,
+        tags: chunk.techniques || null,
+      }))
+
+    if (embeddingRows.length > 0)
+      await db.insert(knowledgeEmbeddings).values(embeddingRows)
 
     // Update source to completed
     await db

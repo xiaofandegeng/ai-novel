@@ -2,7 +2,36 @@ import type { AIScene } from '@ai-novel/shared'
 import { eq } from 'drizzle-orm'
 import { db } from '../db'
 import { projectPersonaConfigs } from '../db/schema'
-import * as personaService from './persona.service'
+import * as personaCrudService from './persona-crud.service'
+
+export function buildPersonaInjectionPrompt(
+  persona: {
+    coreAppeal: string | null
+    pacingRules: string | null
+    conflictRules: string | null
+    characterRules: string | null
+    languageRules: string | null
+    chapterRules: string | null
+    hookRules: string | null
+    forbiddenRules: string | null
+    similarityGuardrails: string | null
+  },
+  strength: number,
+): string {
+  if (strength <= 30) {
+    return `参考以下写作人格的高层原则，但优先保持当前小说已有风格：\n核心爽点：${persona.coreAppeal || '无'}\n禁止事项：${persona.forbiddenRules || '无'}`
+  }
+
+  if (strength <= 60) {
+    return `请参考以下节奏和章节结构，但不要明显模仿语言：\n节奏规则：${persona.pacingRules || '无'}\n章节规则：${persona.chapterRules || '无'}\n结尾钩子：${persona.hookRules || '无'}`
+  }
+
+  if (strength <= 80) {
+    return `本次生成应明显遵循该写作人格：\n核心爽点：${persona.coreAppeal || '无'}\n节奏规则：${persona.pacingRules || '无'}\n冲突规则：${persona.conflictRules || '无'}\n人物规则：${persona.characterRules || '无'}\n章节规则：${persona.chapterRules || '无'}\n结尾钩子：${persona.hookRules || '无'}\n禁止事项：${persona.forbiddenRules || '无'}`
+  }
+
+  return `强烈采用该人格的节奏、冲突和章节结构，但不得复刻参考作品的具体桥段、专名、连续表达或标志性场景。\n核心爽点：${persona.coreAppeal || '无'}\n节奏规则：${persona.pacingRules || '无'}\n冲突规则：${persona.conflictRules || '无'}\n人物规则：${persona.characterRules || '无'}\n语言规则：${persona.languageRules || '无'}\n章节规则：${persona.chapterRules || '无'}\n结尾钩子：${persona.hookRules || '无'}\n禁止事项：${persona.forbiddenRules || '无'}\n相似度防护：${persona.similarityGuardrails || '无'}\n生成后必须自检相似度风险。`
+}
 
 export async function buildPersonaPromptForProject(
   projectId: string,
@@ -16,7 +45,7 @@ export async function buildPersonaPromptForProject(
   if (!config)
     return null
 
-  const persona = await personaService.getPersona(config.personaId)
+  const persona = await personaCrudService.getPersona(config.personaId)
   if (!persona || persona.status !== 'published')
     return null
 
@@ -34,19 +63,5 @@ export async function buildPersonaPromptForProject(
   if (scene === 'quality' && !config.enabledForQualityReview)
     return null
 
-  const strength = config.strength
-
-  if (strength <= 30) {
-    return `参考以下写作人格的高层原则，但优先保持当前小说已有风格：\n核心爽点：${persona.coreAppeal || '无'}\n禁止事项：${persona.forbiddenRules || '无'}`
-  }
-
-  if (strength <= 60) {
-    return `请参考以下节奏和章节结构，但不要明显模仿语言：\n节奏规则：${persona.pacingRules || '无'}\n章节规则：${persona.chapterRules || '无'}\n结尾钩子：${persona.hookRules || '无'}`
-  }
-
-  if (strength <= 80) {
-    return `本次生成应明显遵循该写作人格：\n核心爽点：${persona.coreAppeal || '无'}\n节奏规则：${persona.pacingRules || '无'}\n冲突规则：${persona.conflictRules || '无'}\n人物规则：${persona.characterRules || '无'}\n章节规则：${persona.chapterRules || '无'}\n结尾钩子：${persona.hookRules || '无'}\n禁止事项：${persona.forbiddenRules || '无'}`
-  }
-
-  return `强烈采用该人格的节奏、冲突和章节结构，但不得复刻参考作品的具体桥段、专名、连续表达或标志性场景。\n核心爽点：${persona.coreAppeal || '无'}\n节奏规则：${persona.pacingRules || '无'}\n冲突规则：${persona.conflictRules || '无'}\n人物规则：${persona.characterRules || '无'}\n语言规则：${persona.languageRules || '无'}\n章节规则：${persona.chapterRules || '无'}\n结尾钩子：${persona.hookRules || '无'}\n禁止事项：${persona.forbiddenRules || '无'}\n相似度防护：${persona.similarityGuardrails || '无'}\n生成后必须自检相似度风险。`
+  return buildPersonaInjectionPrompt(persona, config.strength)
 }

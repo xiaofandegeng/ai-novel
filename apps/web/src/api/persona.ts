@@ -3,12 +3,14 @@ import type {
   CreatePersonaInput,
   CreateReferenceWorkInput,
   CreateTrainingSetInput,
+  DriftCheckResult,
   ProjectPersonaConfig,
   ReferenceChapter,
   ReferenceChapterAnalysisError,
   ReferenceTrainingSet,
   ReferenceWork,
   UpdateProjectPersonaConfigInput,
+  WorkAnalysisSummary,
   WorkStyleReport,
   WritingPersona,
 } from '@ai-novel/shared'
@@ -141,16 +143,7 @@ export function getPersonaPreview(projectId: string) {
   return apiPost<{ strength: number, injectionPrompt: string, personaName: string } | null>(`/api/projects/${projectId}/persona-preview`, {})
 }
 
-export interface DriftCheckResult {
-  personaFitScore: number
-  plotDriftScore: number
-  similarityRiskScore: number
-  hookStrengthScore: number
-  conflictDensityScore: number
-  issues: string[]
-  suggestions: string[]
-  riskLevel: 'low' | 'medium' | 'high'
-}
+export type { DriftCheckResult }
 
 export function checkPersonaDrift(projectId: string, content: string) {
   return apiPost<DriftCheckResult>(`/api/projects/${projectId}/persona-drift-check`, { content })
@@ -158,15 +151,7 @@ export function checkPersonaDrift(projectId: string, content: string) {
 
 // ─── Work Analysis Summary ───
 
-export interface WorkAnalysisSummary {
-  chapterCount: number
-  analyzedCount: number
-  failedCount: number
-  hasPartialFailure?: boolean
-  hasReport: boolean
-  canAnalyze: boolean
-  canGenerateReport: boolean
-}
+export type { WorkAnalysisSummary }
 
 export function getWorkAnalysisSummary(workId: string) {
   return apiGet<WorkAnalysisSummary>(`/api/persona/works/${workId}/analysis-summary`)

@@ -24,8 +24,8 @@ import {
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { generateAIStream, readChatStream } from '../api/ai'
 import AppSidebar from '../components/AppSidebar.vue'
+import { useAIStream } from '../composables/useAIStream'
 import { useCharacterStore, useProjectStore } from '../stores/projects'
 import { characterRoleOptions, getCharacterRoleLabel } from '../utils/character-labels'
 
@@ -67,7 +67,7 @@ const charForm = ref<CharForm>({
 })
 
 // --- AI Section ---
-const isAnalyzing = ref(false)
+const { isStreaming: isAnalyzing, stream: streamAI } = useAIStream()
 const aiSuggestion = ref<string | null>(null)
 
 async function handleAIAnalyze() {
@@ -76,28 +76,18 @@ async function handleAIAnalyze() {
     return
   }
 
-  isAnalyzing.value = true
-  aiSuggestion.value = ''
-
   const prompt = `基于角色的基本信息（姓名：${charForm.value.name}，身份：${getCharacterRoleLabel(charForm.value.role)}），以及现有的性格描述："${charForm.value.personality || '无'}"，请深入分析该角色的行为动机，为其建议一些具有冲突性的恐惧、秘密与欲望。`
 
   try {
-    const response = await generateAIStream({
+    aiSuggestion.value = await streamAI({
       projectId,
       scene: 'chat',
       userInstruction: prompt,
-    })
-
-    await readChatStream(response, (text) => {
-      aiSuggestion.value = text
     })
   }
   catch (error: any) {
     aiSuggestion.value = `Error: ${error.message || 'AI 分析失败'}`
     toast.add(error.message || 'AI 分析失败', 'error')
-  }
-  finally {
-    isAnalyzing.value = false
   }
 }
 

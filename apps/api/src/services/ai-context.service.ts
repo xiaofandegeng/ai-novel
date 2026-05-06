@@ -3,7 +3,6 @@ import type {
   BuiltAIContext,
   CharacterContextSummary,
   ConflictContextSummary,
-  KnowledgeContextSnippet,
   RelationshipContextSummary,
 } from '@ai-novel/shared'
 import { and, desc, eq, lt, or, sql } from 'drizzle-orm'
@@ -16,7 +15,6 @@ import {
   characters,
   conflicts,
   foreshadowingItems,
-  knowledgeChunks,
   novelProjects,
   projectPersonaConfigs,
   storyBibles,
@@ -24,6 +22,7 @@ import {
   volumes,
   writingPersonas,
 } from '../db/schema'
+import { retrieveKnowledgeForAI } from './knowledge-retrieval.service'
 import { buildPersonaPromptForProject } from './persona-prompt.service'
 
 function buildKnowledgeSearchTerms(input: {
@@ -149,9 +148,8 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     }
   }
 
-  // 6. Knowledge Snippets (Improved Keyword Search)
-  let knowledgeSnippets: KnowledgeContextSnippet[] = []
-  const terms = buildKnowledgeSearchTerms({
+  // 6. Knowledge Snippets (Hybrid Retrieval)
+  const searchTerms = buildKnowledgeSearchTerms({
     userInstruction,
     chapterTitle: currentChapterData?.title,
     projectTheme: project.theme || undefined,
@@ -161,34 +159,17 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     conflictTitles: conflictSummaries.map(c => c.title),
   })
 
-  if (terms.length > 0) {
-    const predicates = terms.flatMap((term) => {
-      const pattern = `%${term}%`
-      return [
-        sql`${knowledgeChunks.title} ILIKE ${pattern}`,
-        sql`${knowledgeChunks.summary} ILIKE ${pattern}`,
-        sql`${knowledgeChunks.techniques} ILIKE ${pattern}`,
-        sql`${knowledgeChunks.content} ILIKE ${pattern}`,
-      ]
-    })
-
-    const chunks = await db
-      .select()
-      .from(knowledgeChunks)
-      .where(and(
-        eq(knowledgeChunks.projectId, projectId),
-        or(...predicates),
-      ))
-      .limit(3)
-
-    knowledgeSnippets = chunks
-      .filter(c => c.summary)
-      .map(c => ({
-        title: c.title || 'Knowledge Piece',
-        summary: c.summary as string,
-        techniques: c.techniques || undefined,
-      }))
-  }
+  const factTripleSubjects = [...allCharacters.map(c => c.name), ...conflictSummaries.map(c => c.title)]
+  const knowledgeSnippets = searchTerms.length > 0
+    ? await retrieveKnowledgeForAI({
+        projectId,
+        terms: searchTerms,
+        characterNames: allCharacters.map(c => c.name),
+        conflictTitles: conflictSummaries.map(c => c.title),
+        factTripleSubjects,
+        limit: 5,
+      })
+    : []
 
   // 7. Assemble Nearby Chapters
   // 7. Assemble Nearby Chapters (Restricted to same volume if possible)
@@ -383,102 +364,4 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
       '不得复刻参考作品的具体桥段',
     ],
   }
-}
-
-export function renderAIContext(context: BuiltAIContext): string {
-  const sections: string[] = []
-
-  sections.push(`【本次任务】\n场景: ${context.scene}\n指令: ${context.task}`)
-
-  sections.push(`【作品档案】\n书名: ${context.project.title}\n类型: ${context.project.genre || '未定义'}\n主题: ${context.project.theme || '未定义'}\n简介: ${context.project.description || '未定义'}`)
-
-  if (context.storyBible) {
-    sections.push(`【故事设定】\n世界观: ${context.storyBible.worldview || '未定义'}\n主冲突: ${context.storyBible.mainConflict || '未定义'}\n规则: ${context.storyBible.rules || '未定义'}`)
-  }
-
-  if (context.currentChapter) {
-    const chapterLines = [
-      `标题: ${context.currentChapter.title}`,
-      context.currentChapter.volumeTitle ? `所属分卷: ${context.currentChapter.volumeTitle}` : null,
-      `章节目标: ${context.currentChapter.goals || '未定义'}`,
-      `核心冲突: ${context.currentChapter.conflicts || '未定义'}`,
-      context.currentChapter.events ? `关键事件: ${context.currentChapter.events}` : null,
-      context.currentChapter.emotionalArc ? `情绪曲线: ${context.currentChapter.emotionalArc}` : null,
-      context.currentChapter.foreshadowing ? `伏笔: ${context.currentChapter.foreshadowing}` : null,
-      context.currentChapter.endingHook ? `结尾钩子: ${context.currentChapter.endingHook}` : null,
-      context.currentChapter.draftExcerpt ? `草稿片段:\n${context.currentChapter.draftExcerpt}` : '草稿片段: 暂无草稿',
-    ].filter(Boolean)
-
-    sections.push(`【当前章节】\n${chapterLines.join('\n')}`)
-  }
-
-  if (context.nearbyChapters?.previous || context.nearbyChapters?.next) {
-    sections.push(`【前后章节】\n上一章: ${context.nearbyChapters.previous ? `${context.nearbyChapters.previous.chapterNumber}. ${context.nearbyChapters.previous.title} - ${context.nearbyChapters.previous.summary || '无摘要'}` : '无'}\n下一章: ${context.nearbyChapters.next ? `${context.nearbyChapters.next.chapterNumber}. ${context.nearbyChapters.next.title} - ${context.nearbyChapters.next.summary || '无摘要'}` : '无'}`)
-  }
-
-  if (context.characters.length > 0) {
-    const charList = context.characters.map((c) => {
-      const details = [
-        `身份: ${c.role || '无身份'}`,
-        `性格: ${c.personality || '无性格描述'}`,
-        c.goal ? `目标: ${c.goal}` : null,
-        c.desire ? `欲望: ${c.desire}` : null,
-        c.fear ? `恐惧: ${c.fear}` : null,
-        c.secret ? `秘密: ${c.secret}` : null,
-        c.weakness ? `弱点: ${c.weakness}` : null,
-        c.arc ? `成长线: ${c.arc}` : null,
-      ].filter(Boolean)
-
-      return `- ${c.name}\n  ${details.join('\n  ')}`
-    }).join('\n')
-
-    sections.push(`【登场人物】\n${charList}`)
-  }
-
-  if (context.relationships.length > 0) {
-    const relList = context.relationships
-      .map(r => `- ${r.characterAName} 与 ${r.characterBName}: ${r.type} / 强度 ${r.strength} / ${r.status || '未定义'}。${r.description || ''}`)
-      .join('\n')
-    sections.push(`【人物关系】\n${relList}`)
-  }
-
-  if (context.conflicts.length > 0) {
-    const conflictList = context.conflicts
-      .map(c => `- ${c.title}: ${c.type} / 强度 ${c.intensity} / 状态 ${c.status}。参与者: ${c.participants || '未定义'}。${c.description || ''}`)
-      .join('\n')
-    sections.push(`【核心矛盾】\n${conflictList}`)
-  }
-
-  if (context.knowledgeSnippets.length > 0) {
-    const knowledgeList = context.knowledgeSnippets
-      .map(k => `- ${k.title}\n  摘要: ${k.summary}\n  技巧: ${k.techniques || '无'}`)
-      .join('\n')
-    sections.push(`【参考技巧库】\n${knowledgeList}\n\n注意：只能借鉴抽象技巧和结构经验，不得复刻参考作品桥段、专名或连续表达。`)
-  }
-
-  if (context.chapterMemories.length > 0) {
-    sections.push(`【前序章节记忆】\n以下是最近章节的结构化记忆，请确保连贯性：\n${context.chapterMemories.join('\n\n')}`)
-  }
-
-  if (context.chapterElements.length > 0) {
-    sections.push(`【本章元素】\n${context.chapterElements.join('\n')}\n注意：必须让标记为 appears 的角色实际出场，必须让 scene 地点成为本章场景。`)
-  }
-
-  if (context.foreshadowingItems.length > 0) {
-    sections.push(`【伏笔台账】\n${context.foreshadowingItems.join('\n')}\n约束：不得无故回收未到时机的伏笔。如果新增重大伏笔，必须在章后管线登记。`)
-  }
-
-  if (context.factTriples.length > 0) {
-    sections.push(`【事实图谱】\n${context.factTriples.join('\n')}\n注意：必须遵守已确认的事实，不得与既有设定矛盾。`)
-  }
-
-  if (context.persona) {
-    sections.push(`【写作人格: ${context.persona.name} (强度: ${context.persona.strength})】\n${context.persona.prompt}`)
-  }
-
-  if (context.constraints.length > 0) {
-    sections.push(`【输出约束】\n${context.constraints.map(c => `- ${c}`).join('\n')}`)
-  }
-
-  return sections.join('\n\n---\n\n')
 }

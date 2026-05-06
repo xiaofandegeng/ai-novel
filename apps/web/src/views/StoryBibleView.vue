@@ -20,7 +20,7 @@ import {
 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { generateAIStream, readChatStream } from '@/api/ai'
+import { useAIStream } from '@/composables/useAIStream'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useProjectStore, useStoryBibleStore } from '../stores/projects'
 
@@ -53,33 +53,23 @@ const form = ref({
 })
 
 // --- AI Section ---
-const isBrainstorming = ref(false)
+const { isStreaming: isBrainstorming, stream: streamAI } = useAIStream()
 const aiSuggestion = ref<string | null>(null)
 
 async function handleAIBrainstorm(customPrompt?: string) {
-  isBrainstorming.value = true
-  aiSuggestion.value = ''
-
   const section = sections.find(s => s.id === activeSection.value)
   const prompt = customPrompt || `基于当前项目主题"${projectStore.currentProject?.theme || '未定义'}"，为作品的"${section?.label}"部分提供一些深入的构思建议。`
 
   try {
-    const response = await generateAIStream({
+    aiSuggestion.value = await streamAI({
       projectId,
       scene: 'story_bible',
       userInstruction: prompt,
-    })
-
-    await readChatStream(response, (text) => {
-      aiSuggestion.value = text
     })
   }
   catch (error: any) {
     aiSuggestion.value = `Error: ${error.message || 'AI 辅助构思失败'}`
     toast.add(error.message || 'AI 辅助构思失败', 'error')
-  }
-  finally {
-    isBrainstorming.value = false
   }
 }
 

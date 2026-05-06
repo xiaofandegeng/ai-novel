@@ -1,13 +1,10 @@
 import type { ConsistencyGuardReport, RunConsistencyCheckInput } from '@ai-novel/shared'
-import { buildProjectAIContext, renderAIContext } from './ai-context.service'
-import { createOpenAIClient, getEffectiveAISettings } from './ai.service'
+import { renderAIContext } from './ai-context-renderer'
+import { buildProjectAIContext } from './ai-context.service'
+import { callAIJSON } from './ai.service'
 
 export async function runConsistencyGuard(projectId: string, input: RunConsistencyCheckInput): Promise<ConsistencyGuardReport> {
   const { chapterId, generatedText, sourceInstruction, scene } = input
-  const settings = await getEffectiveAISettings()
-  if (!settings.apiKey) {
-    throw new Error('AI 服务未配置')
-  }
 
   const context = await buildProjectAIContext({
     projectId,
@@ -31,10 +28,10 @@ ${generatedText}
 
 ---
 
-请对上述生成内容进行“一致性审查”，并返回严格的 JSON 格式。
+请对上述生成内容进行”一致性审查”，并返回严格的 JSON 格式。
 
 要求：
-1. overallStatus: "pass" (无风险), "warning" (轻微偏差), "blocked" (严重冲突/人物崩坏/设定漂移)。
+1. overallStatus: “pass” (无风险), “warning” (轻微偏差), “blocked” (严重冲突/人物崩坏/设定漂移)。
 2. score: 0-100 的一致性得分。
 3. 必须分别对 themeAlignment, plotContinuity, characterConsistency, worldRuleConsistency, foreshadowingConsistency, styleConsistency 这六个维度进行评分和原因说明。
 4. risks: 具体的风险点列表。
@@ -42,18 +39,18 @@ ${generatedText}
 
 返回 JSON 格式（不要包含 markdown 代码块标记）：
 {
-  "overallStatus": "pass" | "warning" | "blocked",
-  "score": number,
-  "themeAlignment": { "status": "pass" | "warning" | "blocked", "score": number, "reason": "string" },
-  "plotContinuity": { "status": "pass" | "warning" | "blocked", "score": number, "reason": "string" },
-  "characterConsistency": { "status": "pass" | "warning" | "blocked", "score": number, "reason": "string" },
-  "worldRuleConsistency": { "status": "pass" | "warning" | "blocked", "score": number, "reason": "string" },
-  "foreshadowingConsistency": { "status": "pass" | "warning" | "blocked", "score": number, "reason": "string" },
-  "styleConsistency": { "status": "pass" | "warning" | "blocked", "score": number, "reason": "string" },
-  "risks": [
-    { "severity": "low" | "medium" | "high", "type": "theme_drift" | "plot_gap" | "character_ooc" | "world_rule_break" | "foreshadowing_break" | "style_drift" | "new_unapproved_fact", "message": "string", "evidence": "string" }
+  “overallStatus”: “pass” | “warning” | “blocked”,
+  “score”: number,
+  “themeAlignment”: { “status”: “pass” | “warning” | “blocked”, “score”: number, “reason”: “string” },
+  “plotContinuity”: { “status”: “pass” | “warning” | “blocked”, “score”: number, “reason”: “string” },
+  “characterConsistency”: { “status”: “pass” | “warning” | “blocked”, “score”: number, “reason”: “string” },
+  “worldRuleConsistency”: { “status”: “pass” | “warning” | “blocked”, “score”: number, “reason”: “string” },
+  “foreshadowingConsistency”: { “status”: “pass” | “warning” | “blocked”, “score”: number, “reason”: “string” },
+  “styleConsistency”: { “status”: “pass” | “warning” | “blocked”, “score”: number, “reason”: “string” },
+  “risks”: [
+    { “severity”: “low” | “medium” | “high”, “type”: “theme_drift” | “plot_gap” | “character_ooc” | “world_rule_break” | “foreshadowing_break” | “style_drift” | “new_unapproved_fact”, “message”: “string”, “evidence”: “string” }
   ],
-  "suggestedFixes": ["string"]
+  “suggestedFixes”: [“string”]
 }
 
 注意：
@@ -62,20 +59,10 @@ ${generatedText}
 - 严禁空话，必须结合【待审查生成内容】的具体文字给出理由。`
 
   try {
-    const client = createOpenAIClient(settings)
-    const response = await client.chat.completions.create({
-      model: settings.model,
-      messages: [{ role: 'user', content: fullPrompt }],
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-    })
-
-    const content = response.choices[0]?.message?.content
-    if (!content) {
-      throw new Error('AI 返回内容为空')
-    }
-
-    return JSON.parse(content) as ConsistencyGuardReport
+    return await callAIJSON<ConsistencyGuardReport>(
+      [{ role: 'user', content: fullPrompt }],
+      { temperature: 20 },
+    )
   }
   catch (e: any) {
     console.error('Consistency Guard Error:', e)

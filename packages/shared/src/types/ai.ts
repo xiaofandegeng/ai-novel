@@ -1,3 +1,5 @@
+import type { AIScene } from './ai-context'
+
 export interface AIMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
@@ -152,4 +154,19 @@ export interface AIProviderTestResult {
   message: string
   model?: string
   latencyMs?: number
+}
+
+export interface ChatStreamOptions {
+  projectId?: string
+  context?: string
+  model?: string
+  scene?: AIScene
+}
+
+export interface GenerateAIOptions {
+  projectId: string
+  scene: AIScene
+  chapterId?: string
+  selectedText?: string
+  userInstruction?: string
 }

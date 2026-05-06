@@ -2,14 +2,18 @@ import type { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { db } from '../db'
 import { projectPersonaConfigs } from '../db/schema'
-import * as personaService from '../services/persona.service'
+import * as analysisService from '../services/persona-analysis.service'
+import * as personaCrudService from '../services/persona-crud.service'
+import { buildPersonaInjectionPrompt } from '../services/persona-prompt.service'
+import * as trainingService from '../services/persona-training.service'
+import * as workService from '../services/persona-work.service'
 import { fail, generateId, now, success } from '../utils'
 
 export function registerPersonaRoutes(app: Hono) {
   // ─── Training Sets ───
 
   app.get('/api/persona/training-sets', async (c) => {
-    const rows = await personaService.listTrainingSets()
+    const rows = await trainingService.listTrainingSets()
     return c.json(success(rows))
   })
 
@@ -17,12 +21,12 @@ export function registerPersonaRoutes(app: Hono) {
     const body = await c.req.json()
     if (!body.name)
       return c.json(fail('训练集名称不能为空'), 400)
-    const row = await personaService.createTrainingSet(body)
+    const row = await trainingService.createTrainingSet(body)
     return c.json(success(row), 201)
   })
 
   app.get('/api/persona/training-sets/:id', async (c) => {
-    const row = await personaService.getTrainingSet(c.req.param('id'))
+    const row = await trainingService.getTrainingSet(c.req.param('id'))
     if (!row)
       return c.json(fail('训练集不存在'), 404)
     return c.json(success(row))
@@ -30,14 +34,14 @@ export function registerPersonaRoutes(app: Hono) {
 
   app.patch('/api/persona/training-sets/:id', async (c) => {
     const body = await c.req.json()
-    const row = await personaService.updateTrainingSet(c.req.param('id'), body)
+    const row = await trainingService.updateTrainingSet(c.req.param('id'), body)
     if (!row)
       return c.json(fail('训练集不存在'), 404)
     return c.json(success(row))
   })
 
   app.delete('/api/persona/training-sets/:id', async (c) => {
-    const row = await personaService.deleteTrainingSet(c.req.param('id'))
+    const row = await trainingService.deleteTrainingSet(c.req.param('id'))
     if (!row)
       return c.json(fail('训练集不存在'), 404)
     return c.json(success(row, '训练集已删除'))
@@ -46,7 +50,7 @@ export function registerPersonaRoutes(app: Hono) {
   // ─── Reference Works ───
 
   app.get('/api/persona/training-sets/:id/works', async (c) => {
-    const rows = await personaService.listWorks(c.req.param('id'))
+    const rows = await workService.listWorks(c.req.param('id'))
     return c.json(success(rows))
   })
 
@@ -54,19 +58,19 @@ export function registerPersonaRoutes(app: Hono) {
     const body = await c.req.json()
     if (!body.title)
       return c.json(fail('作品标题不能为空'), 400)
-    const row = await personaService.createWork(c.req.param('id'), body)
+    const row = await workService.createWork(c.req.param('id'), body)
     return c.json(success(row), 201)
   })
 
   app.get('/api/persona/works/:workId', async (c) => {
-    const row = await personaService.getWork(c.req.param('workId'))
+    const row = await workService.getWork(c.req.param('workId'))
     if (!row)
       return c.json(fail('作品不存在'), 404)
     return c.json(success(row))
   })
 
   app.delete('/api/persona/works/:workId', async (c) => {
-    const row = await personaService.deleteWork(c.req.param('workId'))
+    const row = await workService.deleteWork(c.req.param('workId'))
     if (!row)
       return c.json(fail('作品不存在'), 404)
     return c.json(success(row, '作品已删除'))
@@ -79,7 +83,7 @@ export function registerPersonaRoutes(app: Hono) {
     if (!body.content)
       return c.json(fail('内容不能为空'), 400)
     try {
-      const result = await personaService.splitWorkChapters(c.req.param('workId'), body.content)
+      const result = await workService.splitWorkChapters(c.req.param('workId'), body.content)
       if (typeof result === 'object' && 'error' in result && result.error)
         return c.json(fail(result.error), 404)
       return c.json(success(result))
@@ -92,12 +96,12 @@ export function registerPersonaRoutes(app: Hono) {
   // ─── Chapter Analysis ───
 
   app.get('/api/persona/works/:workId/chapters', async (c) => {
-    const rows = await personaService.listWorkChapters(c.req.param('workId'))
+    const rows = await workService.listWorkChapters(c.req.param('workId'))
     return c.json(success(rows))
   })
 
   app.get('/api/persona/chapters/:chapterId/analysis', async (c) => {
-    const row = await personaService.getChapterAnalysis(c.req.param('chapterId'))
+    const row = await analysisService.getChapterAnalysis(c.req.param('chapterId'))
     if (!row)
       return c.json(fail('分析结果不存在'), 404)
     return c.json(success(row))
@@ -105,7 +109,7 @@ export function registerPersonaRoutes(app: Hono) {
 
   app.post('/api/persona/works/:workId/analyze', async (c) => {
     try {
-      const result = await personaService.analyzeAllChapters(c.req.param('workId'))
+      const result = await analysisService.analyzeAllChapters(c.req.param('workId'))
       if (typeof result === 'object' && 'error' in result && result.error)
         return c.json(fail(result.error), 400)
       if (!('error' in result) && result.status === 'failed')
@@ -120,26 +124,26 @@ export function registerPersonaRoutes(app: Hono) {
   // ─── Work Style Report ───
 
   app.get('/api/persona/works/:workId/analysis-summary', async (c) => {
-    const summary = await personaService.getWorkAnalysisSummary(c.req.param('workId'))
+    const summary = await analysisService.getWorkAnalysisSummary(c.req.param('workId'))
     if (!summary)
       return c.json(fail('作品不存在'), 404)
     return c.json(success(summary))
   })
 
   app.get('/api/persona/works/:workId/analysis-errors', async (c) => {
-    const work = await personaService.getWork(c.req.param('workId'))
+    const work = await workService.getWork(c.req.param('workId'))
     if (!work)
       return c.json(fail('作品不存在'), 404)
-    const rows = await personaService.listWorkAnalysisErrors(c.req.param('workId'))
+    const rows = await analysisService.listWorkAnalysisErrors(c.req.param('workId'))
     return c.json(success(rows))
   })
 
   app.post('/api/persona/works/:workId/retry-failed-analyses', async (c) => {
     try {
-      const work = await personaService.getWork(c.req.param('workId'))
+      const work = await workService.getWork(c.req.param('workId'))
       if (!work)
         return c.json(fail('作品不存在'), 404)
-      const result = await personaService.retryFailedChapterAnalyses(c.req.param('workId'))
+      const result = await analysisService.retryFailedChapterAnalyses(c.req.param('workId'))
       return c.json(success(result))
     }
     catch (e: any) {
@@ -148,7 +152,7 @@ export function registerPersonaRoutes(app: Hono) {
   })
 
   app.get('/api/persona/works/:workId/style-report', async (c) => {
-    const row = await personaService.getWorkStyleReport(c.req.param('workId'))
+    const row = await analysisService.getWorkStyleReport(c.req.param('workId'))
     if (!row)
       return c.json(fail('风格报告不存在'), 404)
     return c.json(success(row))
@@ -156,7 +160,7 @@ export function registerPersonaRoutes(app: Hono) {
 
   app.post('/api/persona/works/:workId/style-report', async (c) => {
     try {
-      const result = await personaService.generateWorkStyleReport(c.req.param('workId'))
+      const result = await analysisService.generateWorkStyleReport(c.req.param('workId'))
       if (typeof result === 'object' && 'error' in result && result.error)
         return c.json(fail(result.error), 400)
       return c.json(success(result))
@@ -169,12 +173,12 @@ export function registerPersonaRoutes(app: Hono) {
   // ─── Writing Personas ───
 
   app.get('/api/personas', async (c) => {
-    const rows = await personaService.listPersonas()
+    const rows = await personaCrudService.listPersonas()
     return c.json(success(rows))
   })
 
   app.get('/api/personas/published', async (c) => {
-    const rows = await personaService.listPublishedPersonas()
+    const rows = await personaCrudService.listPublishedPersonas()
     return c.json(success(rows))
   })
 
@@ -182,12 +186,12 @@ export function registerPersonaRoutes(app: Hono) {
     const body = await c.req.json()
     if (!body.name)
       return c.json(fail('人格名称不能为空'), 400)
-    const row = await personaService.createPersona(body)
+    const row = await personaCrudService.createPersona(body)
     return c.json(success(row), 201)
   })
 
   app.get('/api/personas/:personaId', async (c) => {
-    const row = await personaService.getPersona(c.req.param('personaId'))
+    const row = await personaCrudService.getPersona(c.req.param('personaId'))
     if (!row)
       return c.json(fail('人格不存在'), 404)
     return c.json(success(row))
@@ -195,14 +199,14 @@ export function registerPersonaRoutes(app: Hono) {
 
   app.patch('/api/personas/:personaId', async (c) => {
     const body = await c.req.json()
-    const row = await personaService.updatePersona(c.req.param('personaId'), body)
+    const row = await personaCrudService.updatePersona(c.req.param('personaId'), body)
     if (!row)
       return c.json(fail('人格不存在'), 404)
     return c.json(success(row))
   })
 
   app.delete('/api/personas/:personaId', async (c) => {
-    const row = await personaService.deletePersona(c.req.param('personaId'))
+    const row = await personaCrudService.deletePersona(c.req.param('personaId'))
     if (!row)
       return c.json(fail('人格不存在'), 404)
     return c.json(success(row, '人格已删除'))
@@ -215,7 +219,7 @@ export function registerPersonaRoutes(app: Hono) {
     if (!body.name)
       return c.json(fail('人格名称不能为空'), 400)
     try {
-      const result = await personaService.generatePersonaFromTrainingSet(c.req.param('id'), body)
+      const result = await personaCrudService.generatePersonaFromTrainingSet(c.req.param('id'), body)
       if (typeof result === 'object' && 'error' in result && result.error)
         return c.json(fail(result.error), 400)
       return c.json(success(result))
@@ -229,7 +233,7 @@ export function registerPersonaRoutes(app: Hono) {
 
   app.post('/api/personas/:personaId/publish', async (c) => {
     try {
-      const result = await personaService.publishPersona(c.req.param('personaId'))
+      const result = await personaCrudService.publishPersona(c.req.param('personaId'))
       if (typeof result === 'object' && 'error' in result && result.error)
         return c.json(fail(result.error), 400)
       return c.json(success(result))
@@ -256,7 +260,7 @@ export function registerPersonaRoutes(app: Hono) {
       return c.json(fail('人格ID不能为空'), 400)
 
     // Verify persona exists and is published
-    const persona = await personaService.getPersona(body.personaId)
+    const persona = await personaCrudService.getPersona(body.personaId)
     if (!persona)
       return c.json(fail('人格不存在'), 404)
     if (persona.status !== 'published')
@@ -302,27 +306,13 @@ export function registerPersonaRoutes(app: Hono) {
     if (!config)
       return c.json(success(null))
 
-    const persona = await personaService.getPersona(config.personaId)
+    const persona = await personaCrudService.getPersona(config.personaId)
     if (!persona)
       return c.json(fail('关联的人格不存在'), 404)
 
-    const strength = config.strength
-    let injectionPrompt = ''
+    const injectionPrompt = buildPersonaInjectionPrompt(persona, config.strength)
 
-    if (strength <= 30) {
-      injectionPrompt = `参考以下写作人格的高层原则，但优先保持当前小说已有风格：\n核心爽点：${persona.coreAppeal || '无'}\n禁止事项：${persona.forbiddenRules || '无'}`
-    }
-    else if (strength <= 60) {
-      injectionPrompt = `请参考以下节奏和章节结构，但不要明显模仿语言：\n节奏规则：${persona.pacingRules || '无'}\n章节规则：${persona.chapterRules || '无'}\n结尾钩子：${persona.hookRules || '无'}`
-    }
-    else if (strength <= 80) {
-      injectionPrompt = `本次生成应明显遵循该写作人格：\n核心爽点：${persona.coreAppeal || '无'}\n节奏规则：${persona.pacingRules || '无'}\n冲突规则：${persona.conflictRules || '无'}\n人物规则：${persona.characterRules || '无'}\n章节规则：${persona.chapterRules || '无'}\n结尾钩子：${persona.hookRules || '无'}\n禁止事项：${persona.forbiddenRules || '无'}`
-    }
-    else {
-      injectionPrompt = `强烈采用该人格的节奏、冲突和章节结构，但不得复刻参考作品的具体桥段、专名、连续表达或标志性场景。\n核心爽点：${persona.coreAppeal || '无'}\n节奏规则：${persona.pacingRules || '无'}\n冲突规则：${persona.conflictRules || '无'}\n人物规则：${persona.characterRules || '无'}\n语言规则：${persona.languageRules || '无'}\n章节规则：${persona.chapterRules || '无'}\n结尾钩子：${persona.hookRules || '无'}\n禁止事项：${persona.forbiddenRules || '无'}\n相似度防护：${persona.similarityGuardrails || '无'}\n生成后必须自检相似度风险。`
-    }
-
-    return c.json(success({ strength, injectionPrompt, personaName: persona.name }))
+    return c.json(success({ strength: config.strength, injectionPrompt, personaName: persona.name }))
   })
 
   app.post('/api/projects/:projectId/persona-drift-check', async (c) => {
@@ -335,7 +325,7 @@ export function registerPersonaRoutes(app: Hono) {
     if (!config)
       return c.json(success(null))
 
-    const persona = await personaService.getPersona(config.personaId)
+    const persona = await personaCrudService.getPersona(config.personaId)
     if (!persona)
       return c.json(fail('关联的人格不存在'), 404)
 

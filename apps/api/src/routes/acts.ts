@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { acts } from '../db/schema'
 import { assertOptionalVolumeBelongsToProject } from '../services/ownership.service'
-import { fail, generateId, success } from '../utils'
+import { fail, generateId, success, updatedFields } from '../utils'
 
 export function registerActRoutes(app: Hono) {
   app.get('/api/projects/:projectId/acts', async (c) => {
@@ -36,10 +36,16 @@ export function registerActRoutes(app: Hono) {
     const id = c.req.param('id')
     const body = await c.req.json()
     await assertOptionalVolumeBelongsToProject(projectId, body.volumeId)
-    const [row] = await db.update(acts).set({
-      ...body,
-      updatedAt: new Date().toISOString(),
-    }).where(and(eq(acts.id, id), eq(acts.projectId, projectId))).returning()
+    const fields = updatedFields({
+      volumeId: body.volumeId,
+      title: body.title,
+      description: body.description,
+      theme: body.theme,
+      keyEvents: body.keyEvents,
+      targetChapterCount: body.targetChapterCount,
+      orderIndex: body.orderIndex,
+    })
+    const [row] = await db.update(acts).set(fields).where(and(eq(acts.id, id), eq(acts.projectId, projectId))).returning()
     if (!row)
       return c.json(fail('Act not found'), 404)
     return c.json(success(row))

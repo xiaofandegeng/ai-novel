@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { db } from '../db'
 import {
   acts,
@@ -19,8 +19,55 @@ import {
   storyBibles,
   storyFactTriples,
   volumes,
+  writingPersonas,
 } from '../db/schema'
 import { generateId } from '../utils'
+
+function pick(
+  input: Record<string, unknown>,
+  keys: string[],
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const key of keys) {
+    if (input[key] !== undefined)
+      result[key] = input[key]
+  }
+  return result
+}
+
+const PROJECT_FIELDS = ['title', 'description', 'genre', 'theme', 'targetWords', 'targetAudience', 'styleProfile', 'status']
+const BIBLE_FIELDS = ['worldview', 'mainConflict', 'theme', 'rules', 'timeline']
+const CHARACTER_FIELDS = ['name', 'role', 'goal', 'fear', 'secret', 'desire', 'weakness', 'personality', 'arc']
+const VOLUME_FIELDS = ['title', 'summary', 'orderIndex']
+const CHAPTER_FIELDS = ['title', 'chapterNumber', 'outline', 'summary', 'characters', 'goals', 'conflicts', 'events', 'emotionalArc', 'foreshadowing', 'endingHook', 'draft', 'status']
+const RELATIONSHIP_FIELDS = ['type', 'strength', 'status', 'description']
+const MEMORY_FIELDS = ['summary', 'keyEvents', 'newFacts', 'characterStateChanges', 'relationshipChanges', 'conflictProgress', 'foreshadowingAdded', 'foreshadowingResolved', 'themeProgress', 'styleNotes']
+const ELEMENT_FIELDS = ['elementType', 'elementId', 'elementName', 'relationType', 'importance', 'appearanceOrder', 'notes']
+const FORESHADOWING_FIELDS = ['title', 'description', 'importance', 'relatedCharacters', 'relatedEvents', 'notes']
+const TRIPLE_FIELDS = ['subjectType', 'subjectName', 'predicate', 'objectType', 'objectName', 'confidence', 'sourceType', 'status', 'relatedChapters', 'notes']
+const ACT_FIELDS = ['title', 'description', 'theme', 'keyEvents', 'targetChapterCount', 'orderIndex']
+const CONFLICT_FIELDS = ['title', 'type', 'intensity', 'status', 'participants', 'description', 'resolution']
+const KNOWLEDGE_SOURCE_FIELDS = ['title', 'sourceType', 'author', 'status', 'fileName', 'fileSize']
+const KNOWLEDGE_CHUNK_FIELDS = ['chunkType', 'title', 'content', 'summary', 'techniques', 'orderIndex']
+const KNOWLEDGE_NOTE_FIELDS = ['title', 'content', 'tags']
+const QUALITY_REPORT_FIELDS = ['scope', 'score', 'rhythmScore', 'conflictScore', 'logicScore', 'characterScore', 'styleScore', 'issues', 'suggestions']
+const POSTPROCESS_SUGGESTION_FIELDS = ['suggestionType', 'payload', 'confidence', 'status', 'reason']
+const PERSONA_CONFIG_FIELDS = ['strength', 'enabledForOutline', 'enabledForDraft', 'enabledForPolish', 'enabledForQualityReview', 'projectOverrides', 'disabledRules']
+const WRITING_PERSONA_FIELDS = [
+  'name',
+  'description',
+  'genre',
+  'status',
+  'coreAppeal',
+  'pacingRules',
+  'conflictRules',
+  'characterRules',
+  'languageRules',
+  'chapterRules',
+  'hookRules',
+  'forbiddenRules',
+  'similarityGuardrails',
+]
 
 export async function exportProjectData(projectId: string) {
   const [project] = await db.select().from(novelProjects).where(eq(novelProjects.id, projectId))
@@ -45,11 +92,16 @@ export async function exportProjectData(projectId: string) {
   const suggestions = await db.select().from(chapterPostprocessSuggestions).where(eq(chapterPostprocessSuggestions.projectId, projectId))
   const personaConfigs = await db.select().from(projectPersonaConfigs).where(eq(projectPersonaConfigs.projectId, projectId))
 
+  const personaIds = personaConfigs.map(c => c.personaId)
+  const personas = personaIds.length > 0
+    ? await db.select().from(writingPersonas).where(inArray(writingPersonas.id, personaIds))
+    : []
+
   return {
     exportedAt: new Date().toISOString(),
     version: '1.0',
     project,
-    storyBibles: bibles,
+    storyBibless: bibles,
     characters: chars,
     volumes: vols,
     chapters: chaps,
@@ -65,66 +117,114 @@ export async function exportProjectData(projectId: string) {
     knowledgeNotes: notes,
     qualityReports: quality,
     suggestions,
+    writingPersonas: personas,
     personaConfigs,
   }
 }
 
-export async function importProjectData(data: any) {
-  const idMap = new Map<string, string>()
+export async function importProjectData(data: Record<string, unknown>) {
+  if (!data.project || typeof data.project !== 'object')
+    throw new Error('Invalid import data: missing project')
+  if (data.version !== '1.0')
+    throw new Error('Unsupported import format version')
 
-  function remapId(oldId: string): string {
-    if (!idMap.has(oldId))
-      idMap.set(oldId, generateId())
-    return idMap.get(oldId)!
-  }
+  return await db.transaction(async (tx) => {
+    const idMap = new Map<string, string>()
 
-  // Create project
-  const projectId = remapId(data.project.id)
-  await db.insert(novelProjects).values({ ...data.project, id: projectId })
+    function remapId(oldId: string): string {
+      if (!idMap.has(oldId))
+        idMap.set(oldId, generateId())
+      return idMap.get(oldId)!
+    }
 
-  // Story bibles
-  for (const b of data.storyBibles || [])
-    await db.insert(storyBibles).values({ ...b, id: remapId(b.id), projectId })
+    function safeInsert(table: any, values: Record<string, unknown>) {
+      return tx.insert(table).values(values as any)
+    }
 
-  // Characters
-  for (const c of data.characters || [])
-    await db.insert(characters).values({ ...c, id: remapId(c.id), projectId })
+    const rawProject = data.project as Record<string, unknown>
+    const projectId = remapId(rawProject.id as string)
+    await safeInsert(novelProjects, { id: projectId, ...pick(rawProject, PROJECT_FIELDS) })
 
-  // Volumes
-  for (const v of data.volumes || [])
-    await db.insert(volumes).values({ ...v, id: remapId(v.id), projectId })
+    for (const b of data.storyBibless as Record<string, unknown>[])
+      await safeInsert(storyBibles, { id: remapId(b.id as string), projectId, ...pick(b, BIBLE_FIELDS) })
 
-  // Chapters
-  for (const ch of data.chapters || [])
-    await db.insert(chapters).values({ ...ch, id: remapId(ch.id), projectId, volumeId: ch.volumeId ? remapId(ch.volumeId) : null })
+    for (const c of data.characters as Record<string, unknown>[])
+      await safeInsert(characters, { id: remapId(c.id as string), projectId, ...pick(c, CHARACTER_FIELDS) })
 
-  // Relationships
-  for (const r of data.relationships || [])
-    await db.insert(characterRelationships).values({ ...r, id: remapId(r.id), projectId, characterAId: remapId(r.characterAId), characterBId: remapId(r.characterBId) })
+    for (const v of data.volumes as Record<string, unknown>[])
+      await safeInsert(volumes, { id: remapId(v.id as string), projectId, ...pick(v, VOLUME_FIELDS) })
 
-  // Memories
-  for (const m of data.memories || [])
-    await db.insert(chapterMemories).values({ ...m, id: remapId(m.id), projectId, chapterId: remapId(m.chapterId) })
+    for (const ch of data.chapters as Record<string, unknown>[])
+      await safeInsert(chapters, { id: remapId(ch.id as string), projectId, volumeId: ch.volumeId ? remapId(ch.volumeId as string) : null, ...pick(ch, CHAPTER_FIELDS) })
 
-  // Elements
-  for (const e of data.elements || [])
-    await db.insert(chapterElements).values({ ...e, id: remapId(e.id), projectId, chapterId: remapId(e.chapterId) })
+    for (const r of data.relationships as Record<string, unknown>[])
+      await safeInsert(characterRelationships, { id: remapId(r.id as string), projectId, characterAId: remapId(r.characterAId as string), characterBId: remapId(r.characterBId as string), ...pick(r, RELATIONSHIP_FIELDS) })
 
-  // Foreshadowing
-  for (const f of data.foreshadowing || [])
-    await db.insert(foreshadowingItems).values({ ...f, id: remapId(f.id), projectId, setupChapterId: f.setupChapterId ? remapId(f.setupChapterId) : null })
+    for (const m of data.memories as Record<string, unknown>[])
+      await safeInsert(chapterMemories, { id: remapId(m.id as string), projectId, chapterId: remapId(m.chapterId as string), ...pick(m, MEMORY_FIELDS) })
 
-  // Triples
-  for (const t of data.triples || [])
-    await db.insert(storyFactTriples).values({ ...t, id: remapId(t.id), projectId })
+    for (const e of data.elements as Record<string, unknown>[])
+      await safeInsert(chapterElements, { id: remapId(e.id as string), projectId, chapterId: remapId(e.chapterId as string), ...pick(e, ELEMENT_FIELDS) })
 
-  // Acts
-  for (const a of data.acts || [])
-    await db.insert(acts).values({ ...a, id: remapId(a.id), projectId })
+    for (const f of data.foreshadowing as Record<string, unknown>[])
+      await safeInsert(foreshadowingItems, { id: remapId(f.id as string), projectId, setupChapterId: f.setupChapterId ? remapId(f.setupChapterId as string) : null, expectedPayoffChapterId: f.expectedPayoffChapterId ? remapId(f.expectedPayoffChapterId as string) : null, payoffChapterId: f.payoffChapterId ? remapId(f.payoffChapterId as string) : null, ...pick(f, FORESHADOWING_FIELDS) })
 
-  // Conflicts
-  for (const c of data.conflicts || [])
-    await db.insert(conflicts).values({ ...c, id: remapId(c.id), projectId })
+    for (const t of data.triples as Record<string, unknown>[])
+      await safeInsert(storyFactTriples, { id: remapId(t.id as string), projectId, sourceChapterId: t.sourceChapterId ? remapId(t.sourceChapterId as string) : null, ...pick(t, TRIPLE_FIELDS) })
 
-  return { projectId, importedEntities: idMap.size }
+    for (const a of data.acts as Record<string, unknown>[])
+      await safeInsert(acts, { id: remapId(a.id as string), projectId, volumeId: a.volumeId ? remapId(a.volumeId as string) : null, ...pick(a, ACT_FIELDS) })
+
+    for (const c of data.conflicts as Record<string, unknown>[])
+      await safeInsert(conflicts, { id: remapId(c.id as string), projectId, ...pick(c, CONFLICT_FIELDS) })
+
+    for (const s of (data.knowledgeSources as Record<string, unknown>[] || []))
+      await safeInsert(knowledgeSources, { id: remapId(s.id as string), projectId, ...pick(s, KNOWLEDGE_SOURCE_FIELDS) })
+
+    for (const k of (data.knowledgeChunks as Record<string, unknown>[] || []))
+      await safeInsert(knowledgeChunks, { id: remapId(k.id as string), projectId, sourceId: remapId(k.sourceId as string), ...pick(k, KNOWLEDGE_CHUNK_FIELDS) })
+
+    for (const n of (data.knowledgeNotes as Record<string, unknown>[] || []))
+      await safeInsert(knowledgeNotes, { id: remapId(n.id as string), projectId, sourceId: n.sourceId ? remapId(n.sourceId as string) : null, ...pick(n, KNOWLEDGE_NOTE_FIELDS) })
+
+    for (const q of (data.qualityReports as Record<string, unknown>[] || []))
+      await safeInsert(qualityReports, { id: remapId(q.id as string), projectId, chapterId: q.chapterId ? remapId(q.chapterId as string) : null, ...pick(q, QUALITY_REPORT_FIELDS) })
+
+    for (const sg of (data.suggestions as Record<string, unknown>[] || []))
+      await safeInsert(chapterPostprocessSuggestions, { id: remapId(sg.id as string), projectId, chapterId: remapId(sg.chapterId as string), runId: null, ...pick(sg, POSTPROCESS_SUGGESTION_FIELDS) })
+
+    // Import writing personas before configs (FK dependency)
+    for (const p of ((data.writingPersonas as Record<string, unknown>[] | undefined) || [])) {
+      await safeInsert(writingPersonas, {
+        id: remapId(p.id as string),
+        sourceTrainingSetId: null,
+        ...pick(p, WRITING_PERSONA_FIELDS),
+      })
+    }
+
+    // Import persona configs — skip if persona was not imported (old export files)
+    let skippedPersonaConfigs = 0
+    for (const pc of (data.personaConfigs as Record<string, unknown>[] || [])) {
+      const oldPersonaId = pc.personaId as string | undefined
+      if (!oldPersonaId) {
+        skippedPersonaConfigs++
+        continue
+      }
+
+      const mappedPersonaId = idMap.get(oldPersonaId)
+      if (!mappedPersonaId) {
+        skippedPersonaConfigs++
+        continue
+      }
+
+      await safeInsert(projectPersonaConfigs, {
+        id: remapId(pc.id as string),
+        projectId,
+        personaId: mappedPersonaId,
+        ...pick(pc, PERSONA_CONFIG_FIELDS),
+      })
+    }
+
+    return { projectId, importedEntities: idMap.size, skippedPersonaConfigs }
+  })
 }

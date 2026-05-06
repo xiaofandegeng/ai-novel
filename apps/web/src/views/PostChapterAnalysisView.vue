@@ -63,6 +63,20 @@ const groupedByType = computed(() => {
   return groups
 })
 
+function parsePayload(payload: string): Record<string, unknown> {
+  try {
+    return JSON.parse(payload)
+  }
+  catch {
+    return { title: '无法解析建议内容' }
+  }
+}
+
+function suggestionTitle(item: typeof suggestionStore.suggestions[0]): string {
+  const data = parsePayload(item.payload)
+  return (data.title as string) || (data.subjectName as string) || (data.characterName as string) || item.payload.slice(0, 60)
+}
+
 const acceptedCount = computed(() =>
   suggestionStore.suggestions.filter(s => s.status === 'accepted').length,
 )
@@ -120,7 +134,17 @@ async function handleApplyAccepted() {
     return
   try {
     const result = await suggestionStore.applyAccepted(projectId, selectedChapterId.value)
-    toast.add(`已应用 ${result.applied} 条建议`, 'success')
+    const parts: string[] = []
+    if (result.applied)
+      parts.push(`已应用 ${result.applied} 条`)
+    if (result.acknowledged)
+      parts.push(`已记录 ${result.acknowledged} 条`)
+    if (result.failed)
+      parts.push(`失败 ${result.failed} 条`)
+    if (result.skipped)
+      parts.push(`跳过 ${result.skipped} 条`)
+    const hasProblem = result.failed > 0 || result.skipped > 0
+    toast.add(parts.join('，') || '没有需要处理的建议', hasProblem ? 'warning' : 'success')
   }
   catch {
     toast.add('批量应用失败', 'error')
@@ -222,7 +246,7 @@ async function handleRunInference() {
             >
               <div class="min-w-0 flex-1">
                 <p class="truncate text-sm text-text-primary">
-                  {{ JSON.parse(item.payload).title || JSON.parse(item.payload).subjectName || item.payload.slice(0, 60) }}
+                  {{ suggestionTitle(item) }}
                 </p>
                 <p class="text-xs text-text-muted">
                   置信度: {{ item.confidence }}%{{ item.reason ? ` · ${item.reason}` : '' }}
@@ -230,10 +254,10 @@ async function handleRunInference() {
               </div>
               <div class="ml-3 flex shrink-0 items-center gap-2">
                 <NTag
-                  :variant="item.status === 'pending' ? 'info' : item.status === 'accepted' ? 'success' : item.status === 'applied' ? 'primary' : 'default'"
+                  :variant="item.status === 'pending' ? 'info' : item.status === 'accepted' ? 'success' : item.status === 'applied' ? 'primary' : item.status === 'acknowledged' ? 'ai' : item.status === 'apply_failed' ? 'error' : 'default'"
                   size="sm"
                 >
-                  {{ item.status === 'pending' ? '待确认' : item.status === 'accepted' ? '已接受' : item.status === 'applied' ? '已应用' : '已拒绝' }}
+                  {{ item.status === 'pending' ? '待确认' : item.status === 'accepted' ? '已接受' : item.status === 'applied' ? '已应用' : item.status === 'acknowledged' ? '已记录' : item.status === 'apply_failed' ? '应用失败' : '已拒绝' }}
                 </NTag>
                 <template v-if="item.status === 'pending'">
                   <NButton variant="ghost" size="sm" class="text-green-600 hover:text-green-700" @click="handleAccept(item.id)">

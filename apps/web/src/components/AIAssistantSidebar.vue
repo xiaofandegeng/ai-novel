@@ -14,9 +14,10 @@ import {
   User,
   XCircle,
 } from 'lucide-vue-next'
-import { nextTick, ref } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { chatStream, checkConsistency, generateAIStream } from '../api/ai'
+import { chatStream, checkConsistency, readChatStream } from '../api/ai'
+import { useAIStream } from '../composables/useAIStream'
 
 type AIScene = 'outline' | 'draft' | 'polish' | 'quality' | 'chat' | 'story_bible' | 'knowledge' | 'persona_training' | 'persona_drift'
 
@@ -32,6 +33,8 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const { isStreaming, streamedContent, stream: streamAI } = useAIStream()
+
 const messages = ref<{
   role: 'user' | 'assistant'
   content: string
@@ -44,9 +47,19 @@ const messages = ref<{
 }[]>([])
 const inputMessage = ref('')
 const selectedModel = ref('gpt-4o-mini')
-const isStreaming = ref(false)
 const chatContainer = ref<HTMLElement | null>(null)
 const aiNotConfigured = ref(false)
+
+// Sync streamedContent to the last message during generateAIStream
+watch(streamedContent, (text) => {
+  if (isStreaming.value && messages.value.length > 0) {
+    const last = messages.value[messages.value.length - 1]
+    if (last.role === 'assistant') {
+      last.content = text
+      scrollToBottom()
+    }
+  }
+})
 
 async function scrollToBottom() {
   await nextTick()
@@ -63,7 +76,6 @@ async function handleSend() {
   const userMsg = inputMessage.value.trim()
   messages.value.push({ role: 'user', content: userMsg })
   inputMessage.value = ''
-  isStreaming.value = true
   scrollToBottom()
 
   // Add a placeholder for AI response
@@ -71,9 +83,9 @@ async function handleSend() {
   const lastIndex = messages.value.length - 1
 
   try {
-    let response: Response
+    let result: string
     if (props.scene && props.scene !== 'chat') {
-      response = await generateAIStream({
+      result = await streamAI({
         projectId: props.projectId,
         scene: props.scene,
         chapterId: props.chapterId,
@@ -81,27 +93,19 @@ async function handleSend() {
       })
     }
     else {
-      response = await chatStream(
+      isStreaming.value = true
+      const response = await chatStream(
         [{ role: 'user', content: userMsg }],
         { projectId: props.projectId, context: props.context, model: selectedModel.value, scene: props.scene || 'chat' },
       )
+      result = await readChatStream(response, (text) => {
+        messages.value[lastIndex].content = text
+        scrollToBottom()
+      })
+      isStreaming.value = false
     }
 
-    if (!response.body)
-      throw new Error('No response body')
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done)
-        break
-
-      const chunk = decoder.decode(value)
-      messages.value[lastIndex].content += chunk
-      scrollToBottom()
-    }
+    messages.value[lastIndex].content = result
 
     // Trigger consistency check if appropriate
     if (props.scene && ['draft', 'outline', 'polish', 'quality'].includes(props.scene)) {
@@ -142,7 +146,6 @@ async function handleSend() {
     if (messages.value[lastIndex].content.includes('[Error:')) {
       messages.value[lastIndex].error = true
     }
-    isStreaming.value = false
   }
 }
 

@@ -157,3 +157,24 @@ export interface UpdateProjectPersonaConfigInput {
   projectOverrides?: string
   disabledRules?: string
 }
+
+export interface DriftCheckResult {
+  personaFitScore: number
+  plotDriftScore: number
+  similarityRiskScore: number
+  hookStrengthScore: number
+  conflictDensityScore: number
+  issues: string[]
+  suggestions: string[]
+  riskLevel: 'low' | 'medium' | 'high'
+}
+
+export interface WorkAnalysisSummary {
+  chapterCount: number
+  analyzedCount: number
+  failedCount: number
+  hasPartialFailure?: boolean
+  hasReport: boolean
+  canAnalyze: boolean
+  canGenerateReport: boolean
+}

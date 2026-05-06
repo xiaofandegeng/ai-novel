@@ -1,5 +1,5 @@
 export type SuggestionType = 'fact_triple' | 'foreshadowing_add' | 'foreshadowing_payoff' | 'chapter_element' | 'character_state' | 'continuity_note' | 'style_note'
-export type SuggestionStatus = 'pending' | 'accepted' | 'rejected' | 'applied'
+export type SuggestionStatus = 'pending' | 'accepted' | 'rejected' | 'applied' | 'acknowledged' | 'apply_failed'
 
 export interface PostprocessSuggestion {
   id: string
