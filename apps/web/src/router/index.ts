@@ -111,7 +111,7 @@ const router = createRouter({
     {
       path: '/debug',
       name: 'debug',
-      component: () => import('@/views/DataViewer.vue'),
+      component: () => import('@/features/devtools/components/DataViewerPage.vue'),
     },
     {
       path: '/health',

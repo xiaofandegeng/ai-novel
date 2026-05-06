@@ -40,7 +40,7 @@ export async function chatStream(messages: AIMessage[], options?: ChatStreamOpti
 
 export async function readChatStream(response: Response, onChunk?: (text: string) => void): Promise<string> {
   if (!response.body)
-    throw new Error('AI response body is empty')
+    throw new Error('AI 响应为空')
 
   const reader = response.body.getReader()
   const decoder = new TextDecoder()

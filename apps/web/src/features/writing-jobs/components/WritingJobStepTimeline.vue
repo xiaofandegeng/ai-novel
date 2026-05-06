@@ -29,6 +29,7 @@ defineProps<{
   job: WritingJob
   steps: WritingJobStep[]
   actionLoading: string | null
+  currentReviewStepId: string | null
 }>()
 
 const emit = defineEmits<{
@@ -143,7 +144,7 @@ function getStepOutput(step: WritingJobStep): any | null {
           class="flex items-start gap-3 rounded-md p-3 transition-colors"
           :class="{
             'bg-bg-subtle': step.status === 'running',
-            'bg-primary-soft/30': CONFIRM_STEP_TYPES.has(step.stepType) && step.status === 'completed' && job.status === 'waiting_review',
+            'bg-primary-soft/30': step.id === currentReviewStepId,
             'bg-red-50': step.status === 'failed',
           }"
         >
@@ -182,7 +183,7 @@ function getStepOutput(step: WritingJobStep): any | null {
 
             <!-- Confirm step review panel -->
             <div
-              v-if="CONFIRM_STEP_TYPES.has(step.stepType) && step.status === 'completed' && job.status === 'waiting_review'"
+              v-if="step.id === currentReviewStepId"
               class="mt-3"
             >
               <div class="bg-bg-base border border-border-light rounded-md p-3">

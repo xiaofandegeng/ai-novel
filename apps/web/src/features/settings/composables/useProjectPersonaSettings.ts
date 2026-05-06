@@ -1,11 +1,15 @@
 import { useToast } from '@ai-novel/ui'
 import { computed, onMounted, ref } from 'vue'
 import * as personaApi from '@/api/persona'
+import { getErrorMessage } from '@/utils/error-message'
+import { T, W } from '@/utils/toast-message'
 
 export function useProjectPersonaSettings(projectId: string) {
   const toast = useToast()
 
   const publishedPersonas = ref<any[]>([])
+  const loading = ref(true)
+  const loaded = ref(false)
   const personaForm = ref({
     personaId: '',
     strength: '65',
@@ -24,6 +28,7 @@ export function useProjectPersonaSettings(projectId: string) {
   )
 
   onMounted(async () => {
+    loading.value = true
     try {
       const [personas, config] = await Promise.all([
         personaApi.listPublishedPersonas(),
@@ -45,11 +50,15 @@ export function useProjectPersonaSettings(projectId: string) {
     catch {
       // Persona is optional
     }
+    finally {
+      loaded.value = true
+      loading.value = false
+    }
   })
 
   async function handleSave() {
     if (!personaForm.value.personaId) {
-      toast.add('请先选择一个写作人格', 'warning')
+      toast.add(W.persona_select_required, 'warning')
       return
     }
     saving.value = true
@@ -63,10 +72,10 @@ export function useProjectPersonaSettings(projectId: string) {
         enabledForQualityReview: personaForm.value.enabledForQualityReview,
         projectOverrides: personaForm.value.projectOverrides || undefined,
       })
-      toast.add('写作人格配置已保存', 'success')
+      toast.add(T.persona_saved, 'success')
     }
     catch {
-      toast.add('写作人格配置保存失败', 'error')
+      toast.add(getErrorMessage('persona_save'), 'error')
     }
     finally {
       saving.value = false
@@ -86,7 +95,7 @@ export function useProjectPersonaSettings(projectId: string) {
       }
     }
     catch {
-      toast.add('预览失败', 'error')
+      toast.add(getErrorMessage('persona_preview'), 'error')
     }
     finally {
       loadingPreview.value = false
@@ -94,6 +103,8 @@ export function useProjectPersonaSettings(projectId: string) {
   }
 
   return {
+    loading,
+    loaded,
     publishedPersonas,
     personaForm,
     saving,

@@ -19,6 +19,7 @@ const {
   job,
   steps,
   form,
+  currentReviewStepId,
   projectStore,
   handleCreate,
   handleStart,
@@ -63,6 +64,7 @@ const {
           :job="job"
           :steps="steps"
           :action-loading="actionLoading"
+          :current-review-step-id="currentReviewStepId"
           @start="handleStart"
           @pause="handlePause"
           @delete="handleDelete"

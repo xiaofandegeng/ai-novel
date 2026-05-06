@@ -7,7 +7,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   })
   const json = (await res.json()) as ApiResponse<T>
   if (!json.success) {
-    throw new Error(json.error || 'Unknown error')
+    throw new Error(json.error || '操作失败')
   }
   return json.data as T
 }

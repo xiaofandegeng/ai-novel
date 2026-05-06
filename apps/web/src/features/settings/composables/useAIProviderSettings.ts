@@ -2,10 +2,14 @@ import type { AIProviderPreset } from '@ai-novel/shared'
 import { useToast } from '@ai-novel/ui'
 import { computed, onMounted, ref } from 'vue'
 import * as settingsApi from '@/api/settings'
+import { getErrorMessage } from '@/utils/error-message'
+import { T, W } from '@/utils/toast-message'
 
 export function useAIProviderSettings(_projectId: string) {
   const toast = useToast()
 
+  const loading = ref(true)
+  const loaded = ref(false)
   const saving = ref(false)
   const testing = ref(false)
   const aiTestMessage = ref('')
@@ -53,6 +57,7 @@ export function useAIProviderSettings(_projectId: string) {
   })
 
   onMounted(async () => {
+    loading.value = true
     try {
       const [aiSettings, providers] = await Promise.all([
         settingsApi.fetchAISettings(),
@@ -67,9 +72,13 @@ export function useAIProviderSettings(_projectId: string) {
         temperature: String(aiSettings.temperature),
         hasApiKey: aiSettings.hasApiKey,
       }
+      loaded.value = true
     }
     catch {
-      // AI settings load failure is non-critical
+      toast.add(getErrorMessage('ai_config_load'), 'error')
+    }
+    finally {
+      loading.value = false
     }
   })
 
@@ -94,6 +103,10 @@ export function useAIProviderSettings(_projectId: string) {
   }
 
   async function handleSaveAI() {
+    if (!loaded.value) {
+      toast.add(W.ai_config_loading, 'warning')
+      return
+    }
     saving.value = true
     aiTestMessage.value = ''
     try {
@@ -101,10 +114,10 @@ export function useAIProviderSettings(_projectId: string) {
       aiForm.value.apiKey = ''
       aiForm.value.hasApiKey = settings.hasApiKey
       aiForm.value.temperature = String(settings.temperature)
-      toast.add('AI 配置已保存', 'success')
+      toast.add(T.ai_config_saved, 'success')
     }
     catch {
-      toast.add('AI 配置保存失败', 'error')
+      toast.add(getErrorMessage('ai_config_save'), 'error')
     }
     finally {
       saving.value = false
@@ -119,11 +132,11 @@ export function useAIProviderSettings(_projectId: string) {
       aiTestMessage.value = result.latencyMs
         ? `${result.message}，耗时 ${result.latencyMs}ms`
         : result.message
-      toast.add(result.ok ? 'AI 服务检测通过' : 'AI 服务检测未通过', result.ok ? 'success' : 'warning')
+      toast.add(result.ok ? T.ai_config_passed : W.ai_config_test_failed, result.ok ? 'success' : 'warning')
     }
     catch {
-      aiTestMessage.value = 'AI 服务检测失败'
-      toast.add('AI 服务检测失败', 'error')
+      aiTestMessage.value = getErrorMessage('ai_config_test')
+      toast.add(getErrorMessage('ai_config_test'), 'error')
     }
     finally {
       testing.value = false
@@ -131,6 +144,8 @@ export function useAIProviderSettings(_projectId: string) {
   }
 
   return {
+    loading,
+    loaded,
     aiForm,
     saving,
     testing,

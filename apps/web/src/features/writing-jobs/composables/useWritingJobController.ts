@@ -9,6 +9,8 @@ import {
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useProjectStore, useWritingJobStore } from '@/stores/projects'
+import { getErrorMessage } from '@/utils/error-message'
+import { T } from '@/utils/toast-message'
 
 export const JOB_STATUS_LABEL: Record<string, string> = {
   idle: '就绪',
@@ -100,6 +102,17 @@ export function useWritingJobController(projectId: string) {
     }
   }
 
+  const currentReviewStepId = computed(() => {
+    if (job.value?.status !== 'waiting_review')
+      return null
+
+    const completedConfirmSteps = steps.value.filter(step =>
+      CONFIRM_STEP_TYPES.has(step.stepType) && step.status === 'completed',
+    )
+
+    return completedConfirmSteps.at(-1)?.id ?? null
+  })
+
   onMounted(async () => {
     try {
       await Promise.all([
@@ -108,7 +121,7 @@ export function useWritingJobController(projectId: string) {
       ])
     }
     catch {
-      toast.add('加载写作任务失败', 'error')
+      toast.add(getErrorMessage('job_load'), 'error')
     }
     finally {
       loading.value = false
@@ -119,10 +132,10 @@ export function useWritingJobController(projectId: string) {
     creating.value = true
     try {
       await writingJobStore.createJob(projectId, { mode: form.value })
-      toast.add('写作任务已创建', 'success')
+      toast.add(T.job_created, 'success')
     }
     catch {
-      toast.add('创建失败', 'error')
+      toast.add(getErrorMessage('job_create'), 'error')
     }
     finally {
       creating.value = false
@@ -133,10 +146,10 @@ export function useWritingJobController(projectId: string) {
     actionLoading.value = 'start'
     try {
       await writingJobStore.startJob(projectId)
-      toast.add('任务已启动', 'success')
+      toast.add(T.job_started, 'success')
     }
     catch (e: any) {
-      toast.add(e.message || '启动失败', 'error')
+      toast.add(e.message || getErrorMessage('job_start'), 'error')
     }
     finally {
       actionLoading.value = null
@@ -147,10 +160,10 @@ export function useWritingJobController(projectId: string) {
     actionLoading.value = 'pause'
     try {
       await writingJobStore.pauseJob(projectId)
-      toast.add('任务已暂停', 'success')
+      toast.add(T.job_paused, 'success')
     }
     catch (e: any) {
-      toast.add(e.message || '暂停失败', 'error')
+      toast.add(e.message || getErrorMessage('job_pause'), 'error')
     }
     finally {
       actionLoading.value = null
@@ -161,10 +174,10 @@ export function useWritingJobController(projectId: string) {
     actionLoading.value = 'delete'
     try {
       await writingJobStore.deleteJob(projectId)
-      toast.add('任务已删除', 'success')
+      toast.add(T.job_deleted, 'success')
     }
     catch (e: any) {
-      toast.add(e.message || '删除失败', 'error')
+      toast.add(e.message || getErrorMessage('job_delete'), 'error')
     }
     finally {
       actionLoading.value = null
@@ -175,10 +188,10 @@ export function useWritingJobController(projectId: string) {
     actionLoading.value = `approve-${stepId}`
     try {
       await writingJobStore.approveStep(projectId, stepId)
-      toast.add('已确认，继续执行', 'success')
+      toast.add(T.job_confirmed, 'success')
     }
     catch (e: any) {
-      toast.add(e.message || '确认失败', 'error')
+      toast.add(e.message || getErrorMessage('job_confirm'), 'error')
     }
     finally {
       actionLoading.value = null
@@ -189,10 +202,10 @@ export function useWritingJobController(projectId: string) {
     actionLoading.value = `reject-${stepId}`
     try {
       await writingJobStore.rejectStep(projectId, stepId)
-      toast.add('已驳回', 'success')
+      toast.add(T.job_rejected, 'success')
     }
     catch (e: any) {
-      toast.add(e.message || '驳回失败', 'error')
+      toast.add(e.message || getErrorMessage('job_reject'), 'error')
     }
     finally {
       actionLoading.value = null
@@ -203,10 +216,10 @@ export function useWritingJobController(projectId: string) {
     actionLoading.value = `retry-${stepId}`
     try {
       await writingJobStore.retryStep(projectId, stepId)
-      toast.add('正在重试...', 'success')
+      toast.add(T.job_retrying, 'success')
     }
     catch (e: any) {
-      toast.add(e.message || '重试失败', 'error')
+      toast.add(e.message || getErrorMessage('job_retry'), 'error')
     }
     finally {
       actionLoading.value = null
@@ -220,6 +233,7 @@ export function useWritingJobController(projectId: string) {
     job,
     steps,
     form,
+    currentReviewStepId,
     projectStore,
     getReviewOutput,
     getStepOutput,

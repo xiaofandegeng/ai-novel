@@ -4,6 +4,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useAIStream } from '@/composables/useAIStream'
 import { useCharacterStore, useProjectStore } from '@/stores/projects'
 import { getCharacterRoleLabel } from '@/utils/character-labels'
+import { getErrorMessage } from '@/utils/error-message'
+import { T, W } from '@/utils/toast-message'
 
 interface CharForm {
   name: string
@@ -71,7 +73,7 @@ export function useCharacterWorkspace(projectId: string) {
         selectCharacter(characterStore.characters[0].id)
     }
     catch {
-      toast.add('加载角色数据失败，请稍后重试', 'error')
+      toast.add(getErrorMessage('character_load'), 'error')
     }
     finally {
       loading.value = false
@@ -102,11 +104,11 @@ export function useCharacterWorkspace(projectId: string) {
         name: '新角色',
         role: 'supporting',
       })
-      toast.add('角色已添加', 'success')
+      toast.add(T.character_added, 'success')
       selectCharacter(newChar.id)
     }
     catch {
-      toast.add('添加角色失败，请稍后重试', 'error')
+      toast.add(getErrorMessage('character_add'), 'error')
     }
   }
 
@@ -120,10 +122,10 @@ export function useCharacterWorkspace(projectId: string) {
         role: (charForm.value.role || undefined) as CharacterRole | undefined,
       }
       await characterStore.updateCharacter(projectId, selectedCharId.value, data)
-      toast.add('角色已更新', 'success')
+      toast.add(T.character_updated, 'success')
     }
     catch {
-      toast.add('保存失败，请稍后重试', 'error')
+      toast.add(getErrorMessage('character_save'), 'error')
     }
     finally {
       saving.value = false
@@ -141,14 +143,14 @@ export function useCharacterWorkspace(projectId: string) {
       return
     try {
       await characterStore.deleteCharacter(projectId, selectedCharId.value)
-      toast.add('角色已删除', 'success')
+      toast.add(T.character_deleted, 'success')
       if (characterStore.characters.length > 0)
         selectCharacter(characterStore.characters[0].id)
       else
         selectedCharId.value = null
     }
     catch {
-      toast.add('删除失败，请稍后重试', 'error')
+      toast.add(getErrorMessage('character_delete'), 'error')
     }
     finally {
       showDeleteConfirm.value = false
@@ -157,7 +159,7 @@ export function useCharacterWorkspace(projectId: string) {
 
   async function handleAIAnalyze() {
     if (!selectedCharId.value) {
-      toast.add('请先选择一个角色', 'warning')
+      toast.add(W.character_select_required, 'warning')
       return
     }
     const prompt = `基于角色的基本信息（姓名：${charForm.value.name}，身份：${getCharacterRoleLabel(charForm.value.role)}），以及现有的性格描述："${charForm.value.personality || '无'}"，请深入分析该角色的行为动机，为其建议一些具有冲突性的恐惧、秘密与欲望。`
@@ -169,8 +171,8 @@ export function useCharacterWorkspace(projectId: string) {
       })
     }
     catch (error: any) {
-      aiSuggestion.value = `Error: ${error.message || 'AI 分析失败'}`
-      toast.add(error.message || 'AI 分析失败', 'error')
+      aiSuggestion.value = `Error: ${error.message || getErrorMessage('ai_analyze')}`
+      toast.add(error.message || getErrorMessage('ai_analyze'), 'error')
     }
   }
 

@@ -9,6 +9,8 @@ import {
   useProjectStore,
   useVolumeStore,
 } from '@/stores/projects'
+import { getErrorMessage } from '@/utils/error-message'
+import { T } from '@/utils/toast-message'
 
 export function useOutlineWorkspace(projectId: string) {
   const toast = useToast()
@@ -41,6 +43,7 @@ export function useOutlineWorkspace(projectId: string) {
 
   const { isStreaming: isBrainstorming, stream: streamAI } = useAIStream()
   const aiSuggestion = ref<string | null>(null)
+  const outlineAlternatives = ref<string[]>([])
 
   onMounted(async () => {
     try {
@@ -57,7 +60,7 @@ export function useOutlineWorkspace(projectId: string) {
         selectChapter(chapterStore.chapters[0].id)
     }
     catch {
-      toast.add('大纲数据加载失败', 'error')
+      toast.add(getErrorMessage('outline_load'), 'error')
     }
     finally {
       loading.value = false
@@ -110,10 +113,10 @@ export function useOutlineWorkspace(projectId: string) {
       await chapterElementStore.replaceElements(projectId, selectedChapterId.value, {
         elements: chapterElementDrafts.value,
       })
-      toast.add('大纲已保存', 'success')
+      toast.add(T.outline_saved, 'success')
     }
     catch {
-      toast.add('大纲保存失败', 'error')
+      toast.add(getErrorMessage('outline_save'), 'error')
     }
     finally {
       saving.value = false
@@ -133,11 +136,11 @@ export function useOutlineWorkspace(projectId: string) {
         chapterNumber: nextNumber,
         status: 'planning',
       })
-      toast.add('章节已添加', 'success')
+      toast.add(T.chapter_added, 'success')
       selectChapter(newCh.id)
     }
     catch {
-      toast.add('章节添加失败', 'error')
+      toast.add(getErrorMessage('chapter_add'), 'error')
     }
   }
 
@@ -148,10 +151,10 @@ export function useOutlineWorkspace(projectId: string) {
         title: `第 ${nextOrder} 卷`,
         orderIndex: nextOrder,
       })
-      toast.add('分卷已添加', 'success')
+      toast.add(T.volume_added, 'success')
     }
     catch {
-      toast.add('分卷添加失败', 'error')
+      toast.add(getErrorMessage('volume_add'), 'error')
     }
   }
 
@@ -217,7 +220,7 @@ export function useOutlineWorkspace(projectId: string) {
       })
     }
     catch (error: any) {
-      toast.add(error.message || 'AI 灵感风暴失败', 'error')
+      toast.add(error.message || getErrorMessage('ai_brainstorm'), 'error')
       aiSuggestion.value = null
     }
   }
@@ -228,20 +231,41 @@ export function useOutlineWorkspace(projectId: string) {
 
     if (action === 'insert') {
       outlineForm.value.events = (outlineForm.value.events ? `${outlineForm.value.events}\n\n` : '') + aiSuggestion.value
-      toast.add('AI 建议已插入关键事件', 'success')
+      toast.add(T.ai_inserted, 'success')
     }
     else if (action === 'replace') {
       outlineForm.value.events = aiSuggestion.value
-      toast.add('AI 建议已替换关键事件', 'success')
+      toast.add(T.ai_replaced, 'success')
     }
     else if (action === 'backup') {
-      toast.add('AI 建议已保存为备选', 'success')
+      outlineAlternatives.value.unshift(aiSuggestion.value)
+      toast.add(T.ai_backup, 'success')
     }
     else {
-      toast.add('AI 建议已丢弃', 'info')
+      toast.add(T.ai_discarded, 'info')
     }
 
     aiSuggestion.value = null
+  }
+
+  function applyOutlineAlternative(index: number, action: 'insert' | 'replace') {
+    const text = outlineAlternatives.value[index]
+    if (!text)
+      return
+
+    if (action === 'insert') {
+      outlineForm.value.events = (outlineForm.value.events ? `${outlineForm.value.events}\n\n` : '') + text
+      toast.add(T.alt_inserted, 'success')
+    }
+    else {
+      outlineForm.value.events = text
+      toast.add(T.alt_replaced, 'success')
+    }
+  }
+
+  function removeOutlineAlternative(index: number) {
+    outlineAlternatives.value.splice(index, 1)
+    toast.add(T.alt_removed, 'info')
   }
 
   return {
@@ -254,6 +278,7 @@ export function useOutlineWorkspace(projectId: string) {
     newEventName,
     isBrainstorming,
     aiSuggestion,
+    outlineAlternatives,
     projectStore,
     characterStore,
     volumeStore,
@@ -269,5 +294,7 @@ export function useOutlineWorkspace(projectId: string) {
     addEventElement,
     handleAIBrainstorm,
     confirmOutlineAIResult,
+    applyOutlineAlternative,
+    removeOutlineAlternative,
   }
 }

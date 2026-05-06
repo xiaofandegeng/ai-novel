@@ -6,6 +6,6 @@ export async function fetchHealthMetrics(projectId: string): Promise<HealthMetri
   const res = await fetch(`/api/projects/${projectId}/health-metrics`)
   const json = await res.json()
   if (!json.success)
-    throw new Error(json.error || 'Failed to fetch health metrics')
+    throw new Error(json.error || '健康指标获取失败')
   return json.data
 }

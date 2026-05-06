@@ -1,6 +1,7 @@
 import type { GenerateAIOptions } from '@ai-novel/shared'
 import { ref } from 'vue'
 import { generateAIStream, readChatStream } from '../api/ai'
+import { getErrorMessage } from '../utils/error-message'
 
 export function useAIStream() {
   const isStreaming = ref(false)
@@ -18,7 +19,7 @@ export function useAIStream() {
       })
     }
     catch (e: any) {
-      error.value = e.message || 'AI 生成失败'
+      error.value = e.message || getErrorMessage('ai_generate')
       throw e
     }
     finally {

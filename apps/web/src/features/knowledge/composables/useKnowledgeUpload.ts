@@ -1,5 +1,6 @@
 import type { KnowledgeSource } from '@ai-novel/shared'
 import { ref } from 'vue'
+import { getErrorMessage } from '@/utils/error-message'
 import * as knowledgeApi from '../../../api/knowledge'
 import { useKnowledgeStore } from '../../../stores/knowledge.store'
 
@@ -11,7 +12,7 @@ export function useKnowledgeUpload(projectId: string) {
     return new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => resolve(String(reader.result || ''))
-      reader.onerror = () => reject(reader.error || new Error('文件读取失败'))
+      reader.onerror = () => reject(reader.error || new Error(getErrorMessage('file_read')))
       reader.readAsText(file)
     })
   }

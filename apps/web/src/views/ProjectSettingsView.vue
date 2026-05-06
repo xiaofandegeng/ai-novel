@@ -10,6 +10,7 @@ import {
   Save,
   Settings,
 } from 'lucide-vue-next'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
 import ProjectAIProviderSettings from '../features/settings/components/ProjectAIProviderSettings.vue'
@@ -23,7 +24,7 @@ const route = useRoute()
 const projectId = route.params.id as string
 
 const {
-  loading,
+  loading: basicLoading,
   saving,
   titleError,
   form,
@@ -35,6 +36,7 @@ const {
 } = useProjectBasicSettings(projectId)
 
 const {
+  loading: aiLoading,
   aiForm,
   saving: savingAI,
   testing: testingAI,
@@ -49,6 +51,7 @@ const {
 } = useAIProviderSettings(projectId)
 
 const {
+  loading: personaLoading,
   publishedPersonas,
   personaForm,
   saving: savingPersona,
@@ -58,6 +61,10 @@ const {
   handleSave: handleSavePersona,
   handlePreview: handlePreviewPersona,
 } = useProjectPersonaSettings(projectId)
+
+const settingsLoading = computed(() =>
+  basicLoading.value || aiLoading.value || personaLoading.value,
+)
 </script>
 
 <template>
@@ -87,7 +94,7 @@ const {
 
     <template #topbar-right>
       <div class="flex items-center gap-2">
-        <NButton variant="ghost" size="sm" :disabled="loading || saving" @click="handleReset">
+        <NButton variant="ghost" size="sm" :disabled="basicLoading || saving" @click="handleReset">
           <RotateCcw :size="16" class="mr-1.5" /> 重置
         </NButton>
         <NButton variant="primary" size="sm" :loading="saving" @click="handleSave">
@@ -113,7 +120,7 @@ const {
           </div>
         </div>
 
-        <NLoadingState v-if="loading" />
+        <NLoadingState v-if="settingsLoading" />
 
         <template v-else>
           <ProjectBasicSettingsForm

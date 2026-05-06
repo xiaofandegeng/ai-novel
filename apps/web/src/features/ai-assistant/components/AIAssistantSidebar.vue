@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { ConsistencyGuardReport } from '@ai-novel/shared'
 import { NButton } from '@ai-novel/ui'
 import {
   AlertTriangle,
@@ -16,15 +15,12 @@ import {
 } from 'lucide-vue-next'
 import { nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { chatStream, checkConsistency, readChatStream } from '../api/ai'
-import { useAIStream } from '../composables/useAIStream'
-
-type AIScene = 'outline' | 'draft' | 'polish' | 'quality' | 'chat' | 'story_bible' | 'knowledge' | 'persona_training' | 'persona_drift'
+import { useAIAssistantSession } from '../composables/useAIAssistantSession'
 
 const props = defineProps<{
   projectId: string
   context?: string
-  scene?: AIScene
+  scene?: 'outline' | 'draft' | 'polish' | 'quality' | 'chat' | 'story_bible' | 'knowledge' | 'persona_training' | 'persona_drift'
   chapterId?: string
 }>()
 
@@ -33,124 +29,37 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
-const { isStreaming, streamedContent, stream: streamAI } = useAIStream()
+const { isStreaming, messages, selectedModel, aiNotConfigured, send, clearChat } = useAIAssistantSession()
 
-const messages = ref<{
-  role: 'user' | 'assistant'
-  content: string
-  model?: string
-  error?: boolean
-  consistencyReport?: ConsistencyGuardReport
-  isCheckingConsistency?: boolean
-  consistencyCheckFailed?: boolean
-  consistencyCheckError?: string
-}[]>([])
 const inputMessage = ref('')
-const selectedModel = ref('gpt-4o-mini')
 const chatContainer = ref<HTMLElement | null>(null)
-const aiNotConfigured = ref(false)
 
-// Sync streamedContent to the last message during generateAIStream
-watch(streamedContent, (text) => {
-  if (isStreaming.value && messages.value.length > 0) {
-    const last = messages.value[messages.value.length - 1]
-    if (last.role === 'assistant') {
-      last.content = text
-      scrollToBottom()
-    }
-  }
+watch(() => messages.value[messages.value.length - 1]?.content, () => {
+  if (isStreaming.value)
+    scrollToBottom()
 })
 
 async function scrollToBottom() {
   await nextTick()
-  if (chatContainer.value) {
+  if (chatContainer.value)
     chatContainer.value.scrollTop = chatContainer.value.scrollHeight
-  }
 }
 
 async function handleSend() {
   if (!inputMessage.value.trim() || isStreaming.value)
     return
 
-  aiNotConfigured.value = false
-  const userMsg = inputMessage.value.trim()
-  messages.value.push({ role: 'user', content: userMsg })
+  const msg = inputMessage.value.trim()
   inputMessage.value = ''
   scrollToBottom()
 
-  // Add a placeholder for AI response
-  messages.value.push({ role: 'assistant', content: '', model: selectedModel.value })
-  const lastIndex = messages.value.length - 1
-
-  try {
-    let result: string
-    if (props.scene && props.scene !== 'chat') {
-      result = await streamAI({
-        projectId: props.projectId,
-        scene: props.scene,
-        chapterId: props.chapterId,
-        userInstruction: userMsg,
-      })
-    }
-    else {
-      isStreaming.value = true
-      const response = await chatStream(
-        [{ role: 'user', content: userMsg }],
-        { projectId: props.projectId, context: props.context, model: selectedModel.value, scene: props.scene || 'chat' },
-      )
-      result = await readChatStream(response, (text) => {
-        messages.value[lastIndex].content = text
-        scrollToBottom()
-      })
-      isStreaming.value = false
-    }
-
-    messages.value[lastIndex].content = result
-
-    // Trigger consistency check if appropriate
-    if (props.scene && ['draft', 'outline', 'polish', 'quality'].includes(props.scene)) {
-      messages.value[lastIndex].isCheckingConsistency = true
-      try {
-        const report = await checkConsistency(props.projectId, {
-          chapterId: props.chapterId,
-          scene: props.scene,
-          generatedText: messages.value[lastIndex].content,
-          sourceInstruction: userMsg,
-        })
-        messages.value[lastIndex].consistencyReport = report
-      }
-      catch (e: any) {
-        console.error('Consistency check failed', e)
-        messages.value[lastIndex].consistencyCheckFailed = true
-        messages.value[lastIndex].consistencyCheckError = e.message || '一致性审查失败'
-      }
-      finally {
-        messages.value[lastIndex].isCheckingConsistency = false
-      }
-    }
-  }
-  catch (error: any) {
-    const msg = error.message || 'AI 请求失败'
-    if (msg.includes('AI 服务未配置')) {
-      messages.value[lastIndex].content = msg
-      messages.value[lastIndex].error = true
-      aiNotConfigured.value = true
-    }
-    else {
-      messages.value[lastIndex].content = msg
-      messages.value[lastIndex].error = true
-    }
-  }
-  finally {
-    // Detect inline stream errors
-    if (messages.value[lastIndex].content.includes('[Error:')) {
-      messages.value[lastIndex].error = true
-    }
-  }
-}
-
-function clearChat() {
-  messages.value = []
+  await send(msg, {
+    projectId: props.projectId,
+    scene: props.scene,
+    chapterId: props.chapterId,
+    context: props.context,
+  })
+  scrollToBottom()
 }
 
 defineExpose({

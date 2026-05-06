@@ -1,5 +1,6 @@
 import type { Ref } from 'vue'
 import { ref } from 'vue'
+import { T } from '@/utils/toast-message'
 
 export interface PendingAIResult {
   content: string
@@ -56,11 +57,11 @@ export function useAIResultConfirm(
       else {
         draft.value = draft.value.substring(0, start) + content + draft.value.substring(start)
       }
-      deps.toast.add('AI changes applied to draft', 'success')
+      deps.toast.add(T.ai_applied, 'success')
     }
     else if (action === 'backup') {
       deps.versionStore.createSnapshot(deps.projectId, deps.currentChapterId, content, `AI Suggestion (${pendingAIResult.value.source})`)
-      deps.toast.add('Saved as backup version', 'success')
+      deps.toast.add(T.ai_saved_backup, 'success')
     }
 
     pendingAIResult.value = null

@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import type { ConflictStatus, ConflictType } from '@ai-novel/shared'
-import type { Component } from 'vue'
 import {
   NAppLayout,
   NButton,
@@ -8,14 +6,10 @@ import {
   NLoadingState,
   NTag,
   NTextArea,
-  useToast,
 } from '@ai-novel/ui'
 import {
-  AlertCircle,
   ArrowLeft,
-  CheckCircle2,
   ChevronLeft,
-  Flame,
   HelpCircle,
   LayoutGrid,
   Plus,
@@ -24,156 +18,34 @@ import {
   Users,
   Zap,
 } from 'lucide-vue-next'
-import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
-import {
-  useCharacterStore,
-  useConflictStore,
-  useProjectStore,
-} from '../stores/projects'
+import { CONFLICT_STATUS_OPTIONS, CONFLICT_TYPES, useConflictWorkspace } from '../features/conflicts/composables/useConflictWorkspace'
 
 const route = useRoute()
 const router = useRouter()
 const projectId = route.params.id as string
-const toast = useToast()
 
-const projectStore = useProjectStore()
-const characterStore = useCharacterStore()
-const conflictStore = useConflictStore()
+const {
+  loading,
+  saving,
+  selectedConflictId,
+  showDeleteConfirm,
+  conflictForm,
+  projectStore,
+  characterStore,
+  conflictStore,
+  selectConflict,
+  handleAdd,
+  handleSave,
+  confirmDelete,
+  handleConfirmDelete,
+  toggleParticipant,
+  getStatusStyle,
+} = useConflictWorkspace(projectId)
 
-const loading = ref(true)
-const saving = ref(false)
-const selectedConflictId = ref<string | null>(null)
-
-// Form state
-const conflictForm = ref({
-  title: '',
-  type: 'external' as ConflictType,
-  intensity: 5,
-  status: 'latent' as ConflictStatus,
-  description: '',
-  resolution: '',
-  participants: [] as string[],
-})
-
-onMounted(async () => {
-  try {
-    await Promise.all([
-      projectStore.fetchProject(projectId),
-      characterStore.fetchCharacters(projectId),
-      conflictStore.fetchConflicts(projectId),
-    ])
-
-    if (conflictStore.conflicts.length > 0) {
-      selectConflict(conflictStore.conflicts[0].id)
-    }
-  }
-  catch {
-    toast.add('加载冲突数据失败，请稍后重试', 'error')
-  }
-  finally {
-    loading.value = false
-  }
-})
-
-function selectConflict(id: string) {
-  selectedConflictId.value = id
-  const conf = conflictStore.conflicts.find(c => c.id === id)
-  if (conf) {
-    conflictForm.value = {
-      ...conf,
-      description: conf.description || '',
-      participants: conf.participants ? JSON.parse(conf.participants) : [],
-      resolution: conf.resolution || '',
-    }
-  }
-}
-
-async function handleAdd() {
-  try {
-    const newConf = await conflictStore.createConflict(projectId, {
-      title: '新冲突',
-      type: 'external',
-      intensity: 3,
-      status: 'latent',
-      description: '定义这场冲突的核心动因。',
-    })
-    toast.add('冲突已添加', 'success')
-    selectConflict(newConf.id)
-  }
-  catch {
-    toast.add('添加冲突失败，请稍后重试', 'error')
-  }
-}
-
-async function handleSave() {
-  if (!selectedConflictId.value)
-    return
-  saving.value = true
-  try {
-    const data = {
-      ...conflictForm.value,
-      participants: JSON.stringify(conflictForm.value.participants),
-    }
-    await conflictStore.updateConflict(projectId, selectedConflictId.value, data)
-    toast.add('冲突已更新', 'success')
-  }
-  catch {
-    toast.add('保存失败，请稍后重试', 'error')
-  }
-  finally {
-    saving.value = false
-  }
-}
-
-const showDeleteConfirm = ref(false)
-
-function confirmDelete() {
-  if (!selectedConflictId.value)
-    return
-  showDeleteConfirm.value = true
-}
-
-async function handleConfirmDelete() {
-  if (!selectedConflictId.value)
-    return
-  try {
-    await conflictStore.deleteConflict(projectId, selectedConflictId.value)
-    toast.add('冲突已删除', 'success')
-    selectedConflictId.value = null
-  }
-  catch {
-    toast.add('删除失败，请稍后重试', 'error')
-  }
-  finally {
-    showDeleteConfirm.value = false
-  }
-}
-
-function toggleParticipant(id: string) {
-  const index = conflictForm.value.participants.indexOf(id)
-  if (index === -1)
-    conflictForm.value.participants.push(id)
-  else conflictForm.value.participants.splice(index, 1)
-}
-
-const statusOptions: Array<{ value: ConflictStatus, label: string, icon: Component, color: string, bg: string }> = [
-  { value: 'latent', label: '潜伏 / 萌芽', icon: HelpCircle, color: 'text-text-muted', bg: 'bg-bg-subtle' },
-  { value: 'forming', label: '成型期', icon: AlertCircle, color: 'text-info', bg: 'bg-info/10' },
-  { value: 'escalating', label: '激化中', icon: TrendingUp, color: 'text-warning', bg: 'bg-warning/10' },
-  { value: 'exploding', label: '顶点 / 爆发', icon: Flame, color: 'text-semantic-error', bg: 'bg-semantic-error/10' },
-  { value: 'resolved', label: '已解决', icon: CheckCircle2, color: 'text-semantic-success', bg: 'bg-semantic-success/10' },
-]
-
-function getStatusStyle(status: string) {
-  return statusOptions.find(s => s.value === status)
-}
-
-const types = [
-  { value: 'external', label: '外部矛盾（角色 vs 他人/世界）' },
-  { value: 'internal', label: '内部矛盾（角色 vs 自我）' },
-]
+const statusOptions = CONFLICT_STATUS_OPTIONS
+const types = CONFLICT_TYPES
 </script>
 
 <template>
@@ -190,9 +62,7 @@ const types = [
         >
           <ArrowLeft :size="20" />
         </router-link>
-
         <div class="h-6 w-px bg-border-light" />
-
         <router-link
           :to="`/project/${projectId}`"
           class="text-base text-text-primary font-semibold transition-colors hover:text-primary"
@@ -206,7 +76,6 @@ const types = [
     </template>
 
     <div class="h-full flex overflow-hidden bg-bg-page">
-      <!-- Left: Conflict List -->
       <aside class="w-80 flex shrink-0 flex-col border-r border-border-light bg-bg-surface">
         <div class="flex items-center justify-between border-b border-border-light p-4 text-sm text-text-primary font-bold tracking-wider uppercase">
           <div class="flex items-center gap-2">
@@ -215,7 +84,7 @@ const types = [
             </NButton>
             <Zap :size="16" /> 矛盾矩阵
           </div>
-          <NButton variant="ghost" size="sm" @click="handleAdd">
+          <NButton variant="ghost" size="sm" aria-label="添加冲突" @click="handleAdd">
             <Plus :size="16" />
           </NButton>
         </div>
@@ -245,7 +114,6 @@ const types = [
         </div>
       </aside>
 
-      <!-- Center: Details -->
       <main class="flex-1 overflow-y-auto bg-bg-page p-8">
         <div v-if="loading" class="h-64 flex items-center justify-center">
           <NLoadingState />
@@ -276,7 +144,6 @@ const types = [
             </div>
           </header>
 
-          <!-- 冲突状态轨迹 -->
           <div class="grid grid-cols-5 gap-2">
             <button
               v-for="item in statusOptions"
@@ -335,7 +202,6 @@ const types = [
             </div>
           </div>
 
-          <!-- Planning Note -->
           <div class="flex gap-4 border border-accent/10 rounded-lg bg-accent-soft/30 p-4">
             <TrendingUp :size="20" class="mt-1 shrink-0 text-accent" />
             <div>

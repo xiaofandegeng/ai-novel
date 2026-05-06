@@ -6,11 +6,14 @@ defineProps<{
   aiSuggestion: string | null
   isBrainstorming: boolean
   theme?: string
+  alternatives: string[]
 }>()
 
 const emit = defineEmits<{
   brainstorm: []
   confirm: [action: 'insert' | 'replace' | 'backup' | 'discard']
+  applyAlternative: [index: number, action: 'insert' | 'replace']
+  removeAlternative: [index: number]
 }>()
 </script>
 
@@ -61,6 +64,32 @@ const emit = defineEmits<{
         <NButton variant="ghost" size="sm" class="w-full group-hover:bg-ai/5 group-hover:text-ai" @click="emit('brainstorm')">
           建议方案
         </NButton>
+      </div>
+
+      <div v-if="alternatives.length > 0" class="space-y-3">
+        <h3 class="text-xs text-text-muted font-bold tracking-wider uppercase">
+          备选方案
+        </h3>
+        <div
+          v-for="(item, index) in alternatives"
+          :key="`${index}-${item.slice(0, 16)}`"
+          class="border border-border-light rounded-lg bg-bg-surface p-3"
+        >
+          <p class="line-clamp-4 whitespace-pre-wrap text-xs text-text-secondary leading-relaxed">
+            {{ item }}
+          </p>
+          <div class="mt-2 flex gap-2">
+            <NButton size="sm" variant="ghost" @click="emit('applyAlternative', index, 'insert')">
+              插入
+            </NButton>
+            <NButton size="sm" variant="ghost" @click="emit('applyAlternative', index, 'replace')">
+              替换
+            </NButton>
+            <NButton size="sm" variant="ghost" @click="emit('removeAlternative', index)">
+              移除
+            </NButton>
+          </div>
+        </div>
       </div>
 
       <div class="space-y-4">

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ForeshadowingImportance, ForeshadowingStatus } from '@ai-novel/shared'
+import type { ForeshadowingStatus } from '@ai-novel/shared'
 import {
   NAppLayout,
   NButton,
@@ -7,170 +7,40 @@ import {
   NLoadingState,
   NTag,
   NTextArea,
-  useToast,
 } from '@ai-novel/ui'
 import {
   Lightbulb,
   Plus,
   Trash2,
 } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
-import { useForeshadowingStore, useProjectStore } from '../stores/projects'
+import {
+  FORESHADOWING_STATUS_LABEL,
+  FORESHADOWING_STATUS_VARIANT,
+  useForeshadowingWorkspace,
+} from '../features/foreshadowing/composables/useForeshadowingWorkspace'
 
 const route = useRoute()
 const projectId = route.params.id as string
-const toast = useToast()
 
-const projectStore = useProjectStore()
-const foreshadowingStore = useForeshadowingStore()
+const {
+  loading,
+  selectedId,
+  showDeleteConfirm,
+  form,
+  selectedItem,
+  groupedItems,
+  projectStore,
+  selectItem,
+  handleCreate,
+  handleUpdate,
+  handleDelete,
+  resetForm,
+} = useForeshadowingWorkspace(projectId)
 
-const loading = ref(true)
-const selectedId = ref<string | null>(null)
-const showDeleteConfirm = ref(false)
-
-const form = ref({
-  title: '',
-  description: '',
-  setupChapterId: '',
-  expectedPayoffChapterId: '',
-  status: 'open' as ForeshadowingStatus,
-  importance: 'normal' as ForeshadowingImportance,
-  relatedCharacters: '',
-  relatedEvents: '',
-  notes: '',
-})
-
-const selectedItem = computed(() =>
-  foreshadowingStore.items.find(i => i.id === selectedId.value),
-)
-
-const statusLabel: Record<ForeshadowingStatus, string> = {
-  open: '待回收',
-  progressing: '推进中',
-  paid_off: '已回收',
-  abandoned: '已放弃',
-}
-const statusVariant: Record<ForeshadowingStatus, 'info' | 'warning' | 'success' | 'default'> = {
-  open: 'info',
-  progressing: 'warning',
-  paid_off: 'success',
-  abandoned: 'default',
-}
-
-const groupedItems = computed(() => {
-  const groups: Record<string, typeof foreshadowingStore.items> = {
-    open: [],
-    progressing: [],
-    paid_off: [],
-    abandoned: [],
-  }
-  for (const item of foreshadowingStore.items) {
-    groups[item.status].push(item)
-  }
-  return groups
-})
-
-onMounted(async () => {
-  try {
-    await Promise.all([
-      projectStore.fetchProject(projectId),
-      foreshadowingStore.fetchItems(projectId),
-    ])
-  }
-  catch {
-    toast.add('加载伏笔台账失败', 'error')
-  }
-  finally {
-    loading.value = false
-  }
-})
-
-function selectItem(id: string) {
-  selectedId.value = id
-  const item = foreshadowingStore.items.find(i => i.id === id)
-  if (item) {
-    form.value = {
-      title: item.title,
-      description: item.description || '',
-      setupChapterId: item.setupChapterId || '',
-      expectedPayoffChapterId: item.expectedPayoffChapterId || '',
-      status: item.status,
-      importance: item.importance,
-      relatedCharacters: item.relatedCharacters || '',
-      relatedEvents: item.relatedEvents || '',
-      notes: item.notes || '',
-    }
-  }
-}
-
-async function handleCreate() {
-  try {
-    const item = await foreshadowingStore.createItem(projectId, {
-      title: form.value.title,
-      description: form.value.description || undefined,
-      status: form.value.status,
-      importance: form.value.importance,
-      relatedCharacters: form.value.relatedCharacters || undefined,
-      relatedEvents: form.value.relatedEvents || undefined,
-      notes: form.value.notes || undefined,
-    })
-    selectedId.value = item.id
-    toast.add('伏笔已创建', 'success')
-  }
-  catch {
-    toast.add('创建失败', 'error')
-  }
-}
-
-async function handleUpdate() {
-  if (!selectedId.value)
-    return
-  try {
-    await foreshadowingStore.updateItem(projectId, selectedId.value, {
-      title: form.value.title,
-      description: form.value.description || null,
-      status: form.value.status,
-      importance: form.value.importance,
-      relatedCharacters: form.value.relatedCharacters || null,
-      relatedEvents: form.value.relatedEvents || null,
-      notes: form.value.notes || null,
-    })
-    toast.add('伏笔已更新', 'success')
-  }
-  catch {
-    toast.add('更新失败', 'error')
-  }
-}
-
-async function handleDelete() {
-  if (!selectedId.value)
-    return
-  try {
-    await foreshadowingStore.deleteItem(projectId, selectedId.value)
-    selectedId.value = null
-    toast.add('伏笔已删除', 'success')
-  }
-  catch {
-    toast.add('删除失败', 'error')
-  }
-}
-
-function resetForm() {
-  selectedId.value = null
-  form.value = {
-    title: '',
-    description: '',
-    setupChapterId: '',
-    expectedPayoffChapterId: '',
-    status: 'open',
-    importance: 'normal',
-    relatedCharacters: '',
-    relatedEvents: '',
-    notes: '',
-  }
-}
+const statusLabel = FORESHADOWING_STATUS_LABEL
+const statusVariant = FORESHADOWING_STATUS_VARIANT
 </script>
 
 <template>
@@ -183,7 +53,6 @@ function resetForm() {
     </template>
 
     <div class="h-full flex">
-      <!-- Left: Item list -->
       <div class="w-80 shrink-0 overflow-y-auto border-r border-border-light">
         <div class="flex items-center justify-between border-b border-border-light p-4">
           <h2 class="text-sm text-text-primary font-bold">
@@ -219,7 +88,6 @@ function resetForm() {
         </div>
       </div>
 
-      <!-- Right: Detail / Create form -->
       <div class="flex-1 overflow-y-auto p-6">
         <NLoadingState v-if="loading" />
         <div v-else-if="!selectedId" class="py-12 text-center text-text-muted">
@@ -297,12 +165,10 @@ function resetForm() {
             </div>
 
             <div>
-              <label class="mb-1 block text-xs text-text-muted">描述</label>
               <NTextArea v-model="form.description" label="描述" :rows="3" placeholder="伏笔内容描述" />
             </div>
 
             <div>
-              <label class="mb-1 block text-xs text-text-muted">备注</label>
               <NTextArea v-model="form.notes" label="备注" :rows="2" placeholder="备注信息" />
             </div>
 

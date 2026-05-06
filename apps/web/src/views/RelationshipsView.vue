@@ -6,7 +6,6 @@ import {
   NLoadingState,
   NTag,
   NTextArea,
-  useToast,
 } from '@ai-novel/ui'
 import {
   ArrowLeft,
@@ -20,133 +19,29 @@ import {
   UserCircle2,
   Users,
 } from 'lucide-vue-next'
-import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
-import {
-  useCharacterStore,
-  useProjectStore,
-  useRelationshipStore,
-} from '../stores/projects'
+import { useRelationshipWorkspace } from '../features/relationships/composables/useRelationshipWorkspace'
 
 const route = useRoute()
 const router = useRouter()
 const projectId = route.params.id as string
-const toast = useToast()
 
-const projectStore = useProjectStore()
-const characterStore = useCharacterStore()
-const relationshipStore = useRelationshipStore()
-
-const loading = ref(true)
-const saving = ref(false)
-const selectedRelId = ref<string | null>(null)
-
-// Form state
-const relForm = ref({
-  characterAId: '',
-  characterBId: '',
-  type: 'ally',
-  strength: 5,
-  description: '',
-  status: '',
-})
-
-onMounted(async () => {
-  try {
-    await Promise.all([
-      projectStore.fetchProject(projectId),
-      characterStore.fetchCharacters(projectId),
-      relationshipStore.fetchRelationships(projectId),
-    ])
-
-    if (relationshipStore.relationships.length > 0) {
-      selectRelationship(relationshipStore.relationships[0].id)
-    }
-  }
-  catch {
-    toast.add('加载关系数据失败，请稍后重试', 'error')
-  }
-  finally {
-    loading.value = false
-  }
-})
-
-function selectRelationship(id: string) {
-  selectedRelId.value = id
-  const rel = relationshipStore.relationships.find(r => r.id === id)
-  if (rel) {
-    relForm.value = {
-      ...rel,
-      description: rel.description || '',
-      status: rel.status || '',
-    }
-  }
-}
-
-async function handleAdd() {
-  if (characterStore.characters.length < 2) {
-    toast.add('至少需要 2 名角色才能创建关系', 'warning')
-    return
-  }
-
-  try {
-    const newRel = await relationshipStore.createRelationship(projectId, {
-      characterAId: characterStore.characters[0].id,
-      characterBId: characterStore.characters[1].id,
-      type: 'ally',
-      strength: 5,
-      description: '新关系',
-    })
-    toast.add('关系已添加', 'success')
-    selectRelationship(newRel.id)
-  }
-  catch {
-    toast.add('添加关系失败，请稍后重试', 'error')
-  }
-}
-
-async function handleSave() {
-  if (!selectedRelId.value)
-    return
-  saving.value = true
-  try {
-    await relationshipStore.updateRelationship(projectId, selectedRelId.value, relForm.value)
-    toast.add('关系已保存', 'success')
-  }
-  catch {
-    toast.add('保存失败，请稍后重试', 'error')
-  }
-  finally {
-    saving.value = false
-  }
-}
-
-const showDeleteConfirm = ref(false)
-
-function confirmDelete() {
-  if (!selectedRelId.value)
-    return
-  showDeleteConfirm.value = true
-}
-
-async function handleConfirmDelete() {
-  if (!selectedRelId.value)
-    return
-  try {
-    await relationshipStore.deleteRelationship(projectId, selectedRelId.value)
-    toast.add('关系已删除', 'success')
-    selectedRelId.value = null
-  }
-  catch {
-    toast.add('删除失败，请稍后重试', 'error')
-  }
-  finally {
-    showDeleteConfirm.value = false
-  }
-}
-
-const getCharName = (id: string) => characterStore.characters.find(c => c.id === id)?.name || '未知'
+const {
+  loading,
+  saving,
+  selectedRelId,
+  showDeleteConfirm,
+  relForm,
+  projectStore,
+  relationshipStore,
+  selectRelationship,
+  handleAdd,
+  handleSave,
+  confirmDelete,
+  handleConfirmDelete,
+  getCharName,
+} = useRelationshipWorkspace(projectId)
 
 const relationshipTypes = [
   { value: 'ally', label: '盟友 / 朋友', icon: Users },
@@ -169,9 +64,7 @@ const relationshipTypes = [
         >
           <ArrowLeft :size="20" />
         </router-link>
-
         <div class="h-6 w-px bg-border-light" />
-
         <router-link
           :to="`/project/${projectId}`"
           class="text-base text-text-primary font-semibold transition-colors hover:text-primary"
@@ -185,7 +78,6 @@ const relationshipTypes = [
     </template>
 
     <div class="h-full flex overflow-hidden bg-bg-page">
-      <!-- Left: Relationship List -->
       <aside class="w-80 flex shrink-0 flex-col border-r border-border-light bg-bg-surface">
         <div class="flex items-center justify-between border-b border-border-light p-4">
           <h2 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
@@ -194,7 +86,7 @@ const relationshipTypes = [
             </NButton>
             <Share2 :size="16" /> 角色关系网
           </h2>
-          <NButton variant="ghost" size="sm" @click="handleAdd">
+          <NButton variant="ghost" size="sm" aria-label="添加关系" @click="handleAdd">
             <Plus :size="16" />
           </NButton>
         </div>
@@ -223,7 +115,6 @@ const relationshipTypes = [
         </div>
       </aside>
 
-      <!-- Center: Details -->
       <main class="flex-1 overflow-y-auto bg-bg-page p-8">
         <div v-if="loading" class="h-64 flex items-center justify-center">
           <NLoadingState />

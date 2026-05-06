@@ -31,6 +31,7 @@ const {
   newEventName,
   isBrainstorming,
   aiSuggestion,
+  outlineAlternatives,
   projectStore,
   characterStore,
   volumeStore,
@@ -46,6 +47,8 @@ const {
   addEventElement,
   handleAIBrainstorm,
   confirmOutlineAIResult,
+  applyOutlineAlternative,
+  removeOutlineAlternative,
 } = useOutlineWorkspace(projectId)
 </script>
 
@@ -128,8 +131,11 @@ const {
         :ai-suggestion="aiSuggestion"
         :is-brainstorming="isBrainstorming"
         :theme="projectStore.currentProject?.theme"
+        :alternatives="outlineAlternatives"
         @brainstorm="handleAIBrainstorm"
         @confirm="confirmOutlineAIResult"
+        @apply-alternative="applyOutlineAlternative"
+        @remove-alternative="removeOutlineAlternative"
       />
     </div>
   </NAppLayout>

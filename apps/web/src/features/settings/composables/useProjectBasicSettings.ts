@@ -3,6 +3,8 @@ import { useToast } from '@ai-novel/ui'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProjectStore } from '@/stores/projects'
+import { getErrorMessage } from '@/utils/error-message'
+import { T } from '@/utils/toast-message'
 
 export function useProjectBasicSettings(projectId: string) {
   const toast = useToast()
@@ -61,7 +63,7 @@ export function useProjectBasicSettings(projectId: string) {
       syncFormFromProject()
     }
     catch {
-      toast.add('项目设置加载失败', 'error')
+      toast.add(getErrorMessage('project_load'), 'error')
       router.push('/')
     }
     finally {
@@ -97,10 +99,10 @@ export function useProjectBasicSettings(projectId: string) {
     try {
       await projectStore.updateProject(projectId, payload)
       syncFormFromProject()
-      toast.add('项目设置已保存', 'success')
+      toast.add(T.project_saved, 'success')
     }
     catch {
-      toast.add('项目设置保存失败', 'error')
+      toast.add(getErrorMessage('project_save'), 'error')
     }
     finally {
       saving.value = false
@@ -110,7 +112,7 @@ export function useProjectBasicSettings(projectId: string) {
   function handleReset() {
     syncFormFromProject()
     titleError.value = ''
-    toast.add('已恢复为当前项目配置', 'info')
+    toast.add(T.project_reset, 'info')
   }
 
   return {
