@@ -5,12 +5,13 @@ import type {
   ConflictContextSummary,
   RelationshipContextSummary,
 } from '@ai-novel/shared'
-import { and, desc, eq, lt, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, lt, or, sql } from 'drizzle-orm'
 import { db } from '../db'
 import {
   chapterElements,
   chapterMemories,
   chapters,
+  chapterScenes,
   characterRelationships,
   characters,
   conflicts,
@@ -55,7 +56,7 @@ function buildKnowledgeSearchTerms(input: {
 }
 
 export async function buildProjectAIContext(input: AIContextRequest): Promise<BuiltAIContext> {
-  const { projectId, scene, chapterId, selectedText, userInstruction } = input
+  const { projectId, scene, chapterId, sceneId, selectedText, userInstruction } = input
 
   // 1. Fetch Project & Story Bible
   const [project] = await db.select().from(novelProjects).where(eq(novelProjects.id, projectId))
@@ -76,6 +77,23 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
         volumeTitle = volume?.title
       }
     }
+  }
+
+  // 2b. Fetch Current Scene (if sceneId provided)
+  let currentSceneData: any = null
+  let allChapterScenes: any[] = []
+  if (sceneId) {
+    const [sceneRow] = await db.select().from(chapterScenes).where(
+      and(eq(chapterScenes.id, sceneId), eq(chapterScenes.projectId, projectId)),
+    )
+    if (sceneRow) {
+      currentSceneData = sceneRow
+    }
+  }
+  if (currentChapterData) {
+    allChapterScenes = await db.select().from(chapterScenes).where(
+      and(eq(chapterScenes.chapterId, currentChapterData.id), eq(chapterScenes.projectId, projectId)),
+    ).orderBy(asc(chapterScenes.orderIndex), asc(chapterScenes.sceneNumber))
   }
 
   // 3. Fetch Characters & Relationships
@@ -347,6 +365,30 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
           endingHook: currentChapterData.endingHook || undefined,
           draftExcerpt,
         }
+      : undefined,
+    currentScene: currentSceneData
+      ? {
+          id: currentSceneData.id,
+          title: currentSceneData.title,
+          sceneNumber: currentSceneData.sceneNumber,
+          location: currentSceneData.location,
+          timeline: currentSceneData.timeline,
+          purpose: currentSceneData.purpose,
+          summary: currentSceneData.summary,
+          characters: currentSceneData.characters,
+          conflict: currentSceneData.conflict,
+          targetWords: currentSceneData.targetWords,
+          content: currentSceneData.content,
+        }
+      : undefined,
+    chapterScenes: allChapterScenes.length > 0
+      ? allChapterScenes.map(s => ({
+          id: s.id,
+          sceneNumber: s.sceneNumber,
+          title: s.title,
+          status: s.status,
+          summary: s.summary,
+        }))
       : undefined,
     nearbyChapters,
     characters: characterSummaries,

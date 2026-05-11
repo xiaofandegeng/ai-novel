@@ -2,6 +2,8 @@
 import type { WritingJobMode } from '@ai-novel/shared'
 import { NButton } from '@ai-novel/ui'
 import { Bot } from 'lucide-vue-next'
+import { computed, watch } from 'vue'
+import { useChapterStore, useSceneStore } from '../../../stores/projects'
 import { MODE_LABEL } from '../composables/useWritingJobController'
 
 defineProps<{
@@ -13,6 +15,34 @@ const emit = defineEmits<{
 }>()
 
 const form = defineModel<WritingJobMode>({ required: true })
+const formChapterId = defineModel<string | null>('chapterId', { required: true })
+const formSceneId = defineModel<string | null>('sceneId', { required: true })
+
+const chapterStore = useChapterStore()
+const sceneStore = useSceneStore()
+
+const chapters = computed(() => chapterStore.chapters)
+const scenes = computed(() => sceneStore.scenes)
+
+watch(formChapterId, async (id) => {
+  formSceneId.value = null
+  if (id) {
+    try {
+      await sceneStore.fetchScenes(chapterStore.chapters[0]?.projectId || '', id)
+    }
+    catch {}
+  }
+  else {
+    sceneStore.clear()
+  }
+})
+
+watch(form, (mode) => {
+  if (mode !== 'scene_draft') {
+    formChapterId.value = null
+    formSceneId.value = null
+  }
+})
 </script>
 
 <template>
@@ -26,7 +56,7 @@ const form = defineModel<WritingJobMode>({ required: true })
 
     <div>
       <label class="mb-2 block text-xs text-text-muted">写作模式</label>
-      <div class="grid grid-cols-3 gap-3">
+      <div class="grid grid-cols-4 gap-3">
         <button
           v-for="(label, mode) in MODE_LABEL"
           :key="mode"
@@ -39,8 +69,43 @@ const form = defineModel<WritingJobMode>({ required: true })
       </div>
     </div>
 
+    <div v-if="form === 'scene_draft'" class="space-y-3">
+      <div>
+        <label class="mb-1 block text-xs text-text-muted">选择章节</label>
+        <select
+          v-model="formChapterId"
+          class="w-full border border-border-light rounded-md bg-bg-page px-3 py-2 text-sm"
+        >
+          <option :value="null" disabled>
+            请选择章节
+          </option>
+          <option v-for="ch in chapters" :key="ch.id" :value="ch.id">
+            {{ ch.title }}
+          </option>
+        </select>
+      </div>
+      <div v-if="formChapterId">
+        <label class="mb-1 block text-xs text-text-muted">选择场景</label>
+        <select
+          v-model="formSceneId"
+          class="w-full border border-border-light rounded-md bg-bg-page px-3 py-2 text-sm"
+        >
+          <option :value="null" disabled>
+            请选择场景
+          </option>
+          <option v-for="sc in scenes" :key="sc.id" :value="sc.id">
+            场景 {{ sc.sceneNumber }}: {{ sc.title || '未命名' }}
+          </option>
+        </select>
+      </div>
+    </div>
+
     <div class="flex justify-end">
-      <NButton :loading="creating" @click="emit('create')">
+      <NButton
+        :loading="creating"
+        :disabled="form === 'scene_draft' && (!formChapterId || !formSceneId)"
+        @click="emit('create')"
+      >
         创建任务
       </NButton>
     </div>

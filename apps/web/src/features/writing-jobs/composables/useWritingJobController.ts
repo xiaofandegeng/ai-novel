@@ -1,4 +1,4 @@
-import type { WritingJobMode, WritingJobStep, WritingJobStepStatus, WritingJobStepType } from '@ai-novel/shared'
+import type { CreateWritingJobInput, WritingJobMode, WritingJobStep, WritingJobStepStatus, WritingJobStepType } from '@ai-novel/shared'
 import { useToast } from '@ai-novel/ui'
 import {
   CheckCircle2,
@@ -34,6 +34,7 @@ export const MODE_LABEL: Record<WritingJobMode, string> = {
   outline_only: '仅大纲',
   draft_only: '仅正文',
   outline_then_draft: '大纲+正文',
+  scene_draft: '场景草稿',
 }
 
 export const STEP_LABEL: Record<WritingJobStepType, string> = {
@@ -73,6 +74,8 @@ export function useWritingJobController(projectId: string) {
   const steps = computed(() => writingJobStore.steps)
 
   const form = ref<WritingJobMode>('outline_then_draft')
+  const formChapterId = ref<string | null>(null)
+  const formSceneId = ref<string | null>(null)
 
   function getReviewOutput(step: WritingJobStep): any | null {
     if (!CONFIRM_STEP_TYPES.has(step.stepType))
@@ -131,7 +134,16 @@ export function useWritingJobController(projectId: string) {
   async function handleCreate() {
     creating.value = true
     try {
-      await writingJobStore.createJob(projectId, { mode: form.value })
+      const data: CreateWritingJobInput = { mode: form.value }
+      if (form.value === 'scene_draft') {
+        if (!formChapterId.value || !formSceneId.value) {
+          toast.add('场景草稿模式需要选择章节和场景', 'warning')
+          return
+        }
+        data.currentChapterId = formChapterId.value
+        data.sceneId = formSceneId.value
+      }
+      await writingJobStore.createJob(projectId, data)
       toast.add(T.job_created, 'success')
     }
     catch {
@@ -233,6 +245,8 @@ export function useWritingJobController(projectId: string) {
     job,
     steps,
     form,
+    formChapterId,
+    formSceneId,
     currentReviewStepId,
     projectStore,
     getReviewOutput,

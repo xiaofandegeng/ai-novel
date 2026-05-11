@@ -14,6 +14,7 @@ const props = defineProps<{
   storyBible: StoryBible | null | undefined
   chapterElements: ChapterElement[]
   projectId: string
+  sceneId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -228,6 +229,7 @@ defineExpose({
           ref="aiSidebarRef"
           :project-id="projectId"
           :chapter-id="chapter?.id"
+          :scene-id="sceneId"
           :context="aiContext"
           :scene="pendingScene"
           @apply="emit('applyAI', $event)"

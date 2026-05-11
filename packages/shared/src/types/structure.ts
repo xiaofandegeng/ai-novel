@@ -32,6 +32,8 @@ export interface UpdateActInput {
   orderIndex?: number
 }
 
+export type SceneStatus = 'planned' | 'drafting' | 'reviewed' | 'completed'
+
 export interface ChapterScene {
   id: string
   projectId: string
@@ -46,6 +48,8 @@ export interface ChapterScene {
   targetWords: number | null
   content: string | null
   orderIndex: number
+  status: SceneStatus
+  conflict: string | null
   createdAt: string
   updatedAt: string
 }
@@ -61,6 +65,8 @@ export interface CreateSceneInput {
   targetWords?: number
   content?: string
   orderIndex: number
+  status?: SceneStatus
+  conflict?: string
 }
 
 export interface UpdateSceneInput {
@@ -74,4 +80,11 @@ export interface UpdateSceneInput {
   targetWords?: number | null
   content?: string | null
   orderIndex?: number
+  status?: SceneStatus
+  conflict?: string | null
+}
+
+export interface BulkCreateScenesInput {
+  scenes: CreateSceneInput[]
+  mode?: 'append' | 'replace'
 }

@@ -61,6 +61,7 @@ export async function readChatStream(response: Response, onChunk?: (text: string
 
 export async function checkConsistency(projectId: string, input: {
   chapterId?: string
+  sceneId?: string
   scene: AIScene
   generatedText: string
   sourceInstruction?: string

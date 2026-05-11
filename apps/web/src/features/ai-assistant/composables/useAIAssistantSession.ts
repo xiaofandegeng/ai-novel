@@ -36,7 +36,7 @@ export function useAIAssistantSession() {
 
   async function send(
     userMsg: string,
-    opts: { projectId: string, scene?: AIScene, chapterId?: string, context?: string },
+    opts: { projectId: string, scene?: AIScene, chapterId?: string, sceneId?: string, context?: string },
   ) {
     if (!userMsg.trim() || isStreaming.value)
       return
@@ -53,6 +53,7 @@ export function useAIAssistantSession() {
           projectId: opts.projectId,
           scene: opts.scene,
           chapterId: opts.chapterId,
+          sceneId: opts.sceneId,
           userInstruction: userMsg,
         })
       }
@@ -75,6 +76,7 @@ export function useAIAssistantSession() {
         try {
           const report = await checkConsistency(opts.projectId, {
             chapterId: opts.chapterId,
+            sceneId: opts.sceneId,
             scene: opts.scene,
             generatedText: messages.value[lastIndex].content,
             sourceInstruction: userMsg,

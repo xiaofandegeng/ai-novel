@@ -22,6 +22,7 @@ const props = defineProps<{
   context?: string
   scene?: 'outline' | 'draft' | 'polish' | 'quality' | 'chat' | 'story_bible' | 'knowledge' | 'persona_training' | 'persona_drift'
   chapterId?: string
+  sceneId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -57,6 +58,7 @@ async function handleSend() {
     projectId: props.projectId,
     scene: props.scene,
     chapterId: props.chapterId,
+    sceneId: props.sceneId || undefined,
     context: props.context,
   })
   scrollToBottom()

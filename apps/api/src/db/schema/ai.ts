@@ -1,13 +1,14 @@
 import { integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
-import { chapters } from './chapter'
+import { chapters, chapterScenes } from './chapter'
 import { novelProjects } from './project'
 
 export const writingJobs = pgTable('writing_jobs', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
   currentChapterId: text('current_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
-  mode: text('mode').$type<'outline_only' | 'draft_only' | 'outline_then_draft'>().notNull(),
+  sceneId: text('scene_id').references(() => chapterScenes.id, { onDelete: 'set null' }),
+  mode: text('mode').$type<'outline_only' | 'draft_only' | 'outline_then_draft' | 'scene_draft'>().notNull(),
   status: text('status').$type<'idle' | 'running' | 'waiting_review' | 'paused' | 'completed' | 'failed'>().notNull().default('idle'),
   lastError: text('last_error'),
   ...timestamps,

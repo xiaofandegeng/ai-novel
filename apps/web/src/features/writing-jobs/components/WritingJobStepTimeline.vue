@@ -8,6 +8,7 @@ import {
   AlertCircle,
   Bot,
   CheckCircle2,
+  Clapperboard,
   Loader2,
   Pause,
   Play,
@@ -16,6 +17,7 @@ import {
   Trash2,
   XCircle,
 } from 'lucide-vue-next'
+import { computed } from 'vue'
 import {
   CONFIRM_STEP_TYPES,
   JOB_STATUS_LABEL,
@@ -25,7 +27,7 @@ import {
   STEP_STATUS_CONFIG,
 } from '../composables/useWritingJobController'
 
-defineProps<{
+const props = defineProps<{
   job: WritingJob
   steps: WritingJobStep[]
   actionLoading: string | null
@@ -40,6 +42,21 @@ const emit = defineEmits<{
   reject: [stepId: string]
   retry: [stepId: string]
 }>()
+
+const sceneDraftLabel = computed(() => {
+  if (props.job.mode !== 'scene_draft' || !props.job.sceneId)
+    return null
+  const planStep = props.steps.find(s => s.stepType === 'generate_plan')
+  if (planStep?.output) {
+    try {
+      const plan = JSON.parse(planStep.output)
+      if (plan.title)
+        return plan.title
+    }
+    catch {}
+  }
+  return `场景 ${props.job.sceneId.slice(0, 8)}...`
+})
 
 function getReviewOutput(step: WritingJobStep, steps: WritingJobStep[]): any | null {
   if (!CONFIRM_STEP_TYPES.has(step.stepType))
@@ -82,6 +99,9 @@ function getStepOutput(step: WritingJobStep): any | null {
               写作任务
             </h3>
             <span class="text-xs text-text-muted">{{ MODE_LABEL[job.mode] }}</span>
+            <span v-if="sceneDraftLabel" class="flex items-center gap-1 text-xs text-primary">
+              <Clapperboard :size="10" /> {{ sceneDraftLabel }}
+            </span>
           </div>
         </div>
         <NTag :variant="JOB_STATUS_VARIANT[job.status]">

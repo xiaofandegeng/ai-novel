@@ -1,4 +1,4 @@
-import type { ChapterStatus, CreateChapterElementInput } from '@ai-novel/shared'
+import type { ChapterScene, ChapterStatus, CreateChapterElementInput } from '@ai-novel/shared'
 import { useToast } from '@ai-novel/ui'
 import { onMounted, ref } from 'vue'
 import { useAIStream } from '@/composables/useAIStream'
@@ -7,6 +7,7 @@ import {
   useChapterStore,
   useCharacterStore,
   useProjectStore,
+  useSceneStore,
   useVolumeStore,
 } from '@/stores/projects'
 import { getErrorMessage } from '@/utils/error-message'
@@ -20,6 +21,7 @@ export function useOutlineWorkspace(projectId: string) {
   const volumeStore = useVolumeStore()
   const chapterStore = useChapterStore()
   const chapterElementStore = useChapterElementStore()
+  const sceneStore = useSceneStore()
 
   const loading = ref(true)
   const saving = ref(false)
@@ -43,6 +45,7 @@ export function useOutlineWorkspace(projectId: string) {
 
   const { isStreaming: isBrainstorming, stream: streamAI } = useAIStream()
   const aiSuggestion = ref<string | null>(null)
+  const sceneSuggestion = ref<string | null>(null)
   const outlineAlternatives = ref<string[]>([])
 
   onMounted(async () => {
@@ -97,6 +100,12 @@ export function useOutlineWorkspace(projectId: string) {
     }
     catch {
       chapterElementDrafts.value = []
+    }
+    try {
+      await sceneStore.fetchScenes(projectId, id)
+    }
+    catch {
+      // scenes fetch failure is non-critical
     }
   }
 
@@ -268,6 +277,165 @@ export function useOutlineWorkspace(projectId: string) {
     toast.add(T.alt_removed, 'info')
   }
 
+  async function addScene() {
+    if (!selectedChapterId.value)
+      return
+    const nextNumber = sceneStore.scenes.length + 1
+    try {
+      await sceneStore.createScene(projectId, selectedChapterId.value, {
+        sceneNumber: nextNumber,
+        title: `场景 ${nextNumber}`,
+        orderIndex: nextNumber,
+        status: 'planned',
+      })
+    }
+    catch {
+      toast.add(getErrorMessage('scene_add'), 'error')
+    }
+  }
+
+  async function updateSceneData(scene: ChapterScene) {
+    if (!selectedChapterId.value)
+      return
+    try {
+      await sceneStore.updateScene(projectId, selectedChapterId.value, scene.id, {
+        title: scene.title,
+        location: scene.location,
+        timeline: scene.timeline,
+        purpose: scene.purpose,
+        summary: scene.summary,
+        characters: scene.characters,
+        conflict: scene.conflict,
+        targetWords: scene.targetWords,
+        status: scene.status,
+      })
+    }
+    catch {
+      toast.add(getErrorMessage('scene_update'), 'error')
+    }
+  }
+
+  async function deleteScene(id: string) {
+    if (!selectedChapterId.value)
+      return
+    try {
+      await sceneStore.deleteScene(projectId, selectedChapterId.value, id)
+    }
+    catch {
+      toast.add(getErrorMessage('scene_delete'), 'error')
+    }
+  }
+
+  async function reorderScenes(orders: Array<{ id: string, orderIndex: number }>) {
+    if (!selectedChapterId.value)
+      return
+    try {
+      await sceneStore.reorderScenes(projectId, selectedChapterId.value, orders)
+    }
+    catch {
+      toast.add(getErrorMessage('scene_reorder'), 'error')
+    }
+  }
+
+  async function generateScenesAI() {
+    if (!selectedChapterId.value)
+      return
+    try {
+      sceneSuggestion.value = await streamAI({
+        projectId,
+        scene: 'outline',
+        chapterId: selectedChapterId.value,
+        userInstruction: `为当前章节规划场景列表。为每个场景提供：标题、地点、时间线、目的、冲突、出场角色、目标字数。
+          返回 JSON 数组格式，每个元素包含 title, location, timeline, purpose, conflict, characters, targetWords 字段。`,
+      })
+    }
+    catch (error: any) {
+      toast.add(error.message || getErrorMessage('ai_scene_gen'), 'error')
+      sceneSuggestion.value = null
+    }
+  }
+
+  function extractSceneJson(raw: string): unknown {
+    const fenced = raw.match(/```(?:json)?\s?([\s\S]*?)```/i)
+    const text = (fenced?.[1] || raw).trim()
+    const start = text.indexOf('[')
+    const end = text.lastIndexOf(']')
+    if (start === -1 || end === -1 || end <= start)
+      throw new Error('未找到 JSON 数组')
+    return JSON.parse(text.slice(start, end + 1))
+  }
+
+  function parseSceneSuggestion(raw: string) {
+    let parsed: unknown
+    try {
+      parsed = extractSceneJson(raw)
+    }
+    catch {
+      return null
+    }
+    if (!Array.isArray(parsed))
+      return null
+
+    return parsed
+      .map((item, index) => {
+        const data = item && typeof item === 'object' ? item as Record<string, unknown> : {}
+        const title = typeof data.title === 'string' ? data.title.trim() : ''
+        const purpose = typeof data.purpose === 'string' ? data.purpose.trim() : ''
+        if (!title && !purpose)
+          return null
+        const sceneNumber = index + 1
+        return {
+          sceneNumber,
+          title: title || `场景 ${sceneNumber}`,
+          location: typeof data.location === 'string' ? data.location : undefined,
+          timeline: typeof data.timeline === 'string' ? data.timeline : undefined,
+          purpose: purpose || undefined,
+          conflict: typeof data.conflict === 'string' ? data.conflict : undefined,
+          characters: typeof data.characters === 'string'
+            ? data.characters
+            : Array.isArray(data.characters)
+              ? data.characters.filter(v => typeof v === 'string').join('、')
+              : undefined,
+          targetWords: typeof data.targetWords === 'number'
+            ? data.targetWords
+            : typeof data.targetWords === 'string'
+              ? Number(data.targetWords) || undefined
+              : undefined,
+          orderIndex: sceneNumber,
+          status: 'planned' as const,
+        }
+      })
+      .filter(row => row !== null)
+  }
+
+  async function applySceneSuggestion(mode: 'append' | 'replace' = 'append') {
+    if (!selectedChapterId.value || !sceneSuggestion.value)
+      return
+
+    const rows = parseSceneSuggestion(sceneSuggestion.value)
+    if (!rows || rows.length === 0) {
+      toast.add('AI 场景建议解析失败，请保留建议并手动调整后再录入。', 'error')
+      return
+    }
+
+    try {
+      await sceneStore.bulkCreateScenes(projectId, selectedChapterId.value, {
+        scenes: rows,
+        mode,
+      })
+      toast.add(mode === 'replace' ? `已替换为 ${rows.length} 个场景` : `已追加 ${rows.length} 个场景`, 'success')
+      sceneSuggestion.value = null
+    }
+    catch {
+      toast.add(getErrorMessage('scene_add'), 'error')
+    }
+  }
+
+  function discardSceneSuggestion() {
+    sceneSuggestion.value = null
+    toast.add(T.ai_discarded, 'info')
+  }
+
   return {
     loading,
     saving,
@@ -278,6 +446,7 @@ export function useOutlineWorkspace(projectId: string) {
     newEventName,
     isBrainstorming,
     aiSuggestion,
+    sceneSuggestion,
     outlineAlternatives,
     projectStore,
     characterStore,
@@ -296,5 +465,13 @@ export function useOutlineWorkspace(projectId: string) {
     confirmOutlineAIResult,
     applyOutlineAlternative,
     removeOutlineAlternative,
+    sceneStore,
+    addScene,
+    updateSceneData,
+    deleteScene,
+    reorderScenes,
+    generateScenesAI,
+    applySceneSuggestion,
+    discardSceneSuggestion,
   }
 }

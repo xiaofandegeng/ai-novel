@@ -27,6 +27,27 @@ export function renderAIContext(context: BuiltAIContext): string {
     sections.push(`【当前章节】\n${chapterLines.join('\n')}`)
   }
 
+  if (context.currentScene) {
+    const sceneLines = [
+      `场景 ${context.currentScene.sceneNumber}: ${context.currentScene.title || '未命名'}`,
+      context.currentScene.location ? `地点: ${context.currentScene.location}` : null,
+      context.currentScene.timeline ? `时间线: ${context.currentScene.timeline}` : null,
+      context.currentScene.purpose ? `目的: ${context.currentScene.purpose}` : null,
+      context.currentScene.summary ? `摘要: ${context.currentScene.summary}` : null,
+      context.currentScene.characters ? `出场角色: ${context.currentScene.characters}` : null,
+      context.currentScene.conflict ? `场景冲突: ${context.currentScene.conflict}` : null,
+      context.currentScene.targetWords ? `目标字数: ${context.currentScene.targetWords}` : null,
+    ].filter(Boolean)
+    sections.push(`【当前场景】\n${sceneLines.join('\n')}`)
+  }
+
+  if (context.chapterScenes && context.chapterScenes.length > 0) {
+    const sceneList = context.chapterScenes
+      .map(s => `- 场景 ${s.sceneNumber}: ${s.title || '未命名'} [${s.status}] - ${s.summary || '无摘要'}`)
+      .join('\n')
+    sections.push(`【场景列表】\n${sceneList}`)
+  }
+
   if (context.nearbyChapters?.previous || context.nearbyChapters?.next) {
     sections.push(`【前后章节】\n上一章: ${context.nearbyChapters.previous ? `${context.nearbyChapters.previous.chapterNumber}. ${context.nearbyChapters.previous.title} - ${context.nearbyChapters.previous.summary || '无摘要'}` : '无'}\n下一章: ${context.nearbyChapters.next ? `${context.nearbyChapters.next.chapterNumber}. ${context.nearbyChapters.next.title} - ${context.nearbyChapters.next.summary || '无摘要'}` : '无'}`)
   }

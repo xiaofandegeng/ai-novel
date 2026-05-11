@@ -14,6 +14,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
 import ChapterOutlineEditor from '../features/outline/components/ChapterOutlineEditor.vue'
 import OutlineAIPanel from '../features/outline/components/OutlineAIPanel.vue'
+import ScenePlanner from '../features/outline/components/ScenePlanner.vue'
 import VolumeChapterTree from '../features/outline/components/VolumeChapterTree.vue'
 import { useOutlineWorkspace } from '../features/outline/composables/useOutlineWorkspace'
 
@@ -31,6 +32,7 @@ const {
   newEventName,
   isBrainstorming,
   aiSuggestion,
+  sceneSuggestion,
   outlineAlternatives,
   projectStore,
   characterStore,
@@ -49,6 +51,14 @@ const {
   confirmOutlineAIResult,
   applyOutlineAlternative,
   removeOutlineAlternative,
+  sceneStore,
+  addScene,
+  updateSceneData,
+  deleteScene,
+  reorderScenes,
+  generateScenesAI,
+  applySceneSuggestion,
+  discardSceneSuggestion,
 } = useOutlineWorkspace(projectId)
 </script>
 
@@ -124,6 +134,20 @@ const {
           @remove-element="removeElement"
           @add-event-element="addEventElement"
           @update:new-event-name="newEventName = $event"
+        />
+
+        <ScenePlanner
+          v-if="selectedChapterId"
+          :scenes="sceneStore.scenes"
+          :is-generating="isBrainstorming"
+          :scene-suggestion="sceneSuggestion"
+          @add="addScene"
+          @edit="updateSceneData"
+          @delete="deleteScene"
+          @reorder="reorderScenes"
+          @generate="generateScenesAI"
+          @apply-suggestion="applySceneSuggestion"
+          @discard-suggestion="discardSceneSuggestion"
         />
       </main>
 

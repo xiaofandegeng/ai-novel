@@ -1,7 +1,7 @@
 import type { WritingJobStepType } from '@ai-novel/shared'
 import { and, asc, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { chapters, writingJobs, writingJobSteps } from '../db/schema'
+import { chapters, chapterScenes, writingJobs, writingJobSteps } from '../db/schema'
 import { generateId, now } from '../utils'
 import { renderAIContext } from './ai-context-renderer'
 import { buildProjectAIContext } from './ai-context.service'
@@ -10,7 +10,7 @@ import { runChapterPostprocess } from './chapter-postprocess.service'
 import { runConsistencyGuard } from './consistency-guard.service'
 import { createSnapshot } from './version.service'
 
-type JobMode = 'outline_only' | 'draft_only' | 'outline_then_draft'
+type JobMode = 'outline_only' | 'draft_only' | 'outline_then_draft' | 'scene_draft'
 
 const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
   outline_only: [
@@ -31,6 +31,19 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'update_health',
   ],
   outline_then_draft: [
+    'prepare_context',
+    'generate_plan',
+    'confirm_plan',
+    'generate_draft',
+    'consistency_check',
+    'confirm_apply',
+    'apply_draft',
+    'save_version',
+    'postprocess',
+    'confirm_suggestions',
+    'update_health',
+  ],
+  scene_draft: [
     'prepare_context',
     'generate_plan',
     'confirm_plan',
@@ -129,7 +142,13 @@ async function getJobAndChapter(jobId: string, projectId: string) {
     chapter = ch || null
   }
 
-  return { job, chapter }
+  let scene = null
+  if (job.sceneId) {
+    const [sc] = await db.select().from(chapterScenes).where(eq(chapterScenes.id, job.sceneId))
+    scene = sc || null
+  }
+
+  return { job, chapter, scene }
 }
 
 // ---- Step executors ----
@@ -137,12 +156,14 @@ async function getJobAndChapter(jobId: string, projectId: string) {
 async function executePrepareContext(
   projectId: string,
   chapterId: string | null,
+  sceneId: string | null,
   stepId: string,
 ): Promise<string> {
   const context = await buildProjectAIContext({
     projectId,
     scene: 'outline',
     chapterId: chapterId || undefined,
+    sceneId: sceneId || undefined,
     userInstruction: '为下一章生成写作计划和正文',
   })
   const rendered = renderAIContext(context)
@@ -253,12 +274,14 @@ ${contextPrompt}
 async function executeConsistencyCheck(
   projectId: string,
   chapterId: string | null,
+  sceneId: string | null,
   draftOutput: string,
   stepId: string,
 ): Promise<string> {
   const draft = JSON.parse(draftOutput)
   const report = await runConsistencyGuard(projectId, {
     chapterId: chapterId || undefined,
+    sceneId: sceneId || undefined,
     generatedText: draft.draft || '',
     sourceInstruction: '章节正文生成',
     scene: 'draft',
@@ -300,6 +323,41 @@ async function executeApplyDraft(
     title: row.title,
   })
 
+  await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
+  return output
+}
+
+async function executeApplySceneDraft(
+  projectId: string,
+  sceneId: string | null,
+  draftOutput: string,
+  stepId: string,
+): Promise<string> {
+  if (!sceneId)
+    throw new Error('没有可写入的场景')
+
+  const draft = JSON.parse(draftOutput)
+  const content = typeof draft.draft === 'string' ? draft.draft.trim() : ''
+  if (!content)
+    throw new Error('生成正文为空，无法写入场景')
+
+  const [row] = await db.update(chapterScenes).set({
+    content,
+    status: 'reviewed',
+    updatedAt: now(),
+  }).where(and(
+    eq(chapterScenes.id, sceneId),
+    eq(chapterScenes.projectId, projectId),
+  )).returning()
+
+  if (!row)
+    throw new Error('场景不存在或不属于当前项目')
+
+  const output = JSON.stringify({
+    sceneId,
+    wordCount: content.length,
+    title: row.title,
+  })
   await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
   return output
 }
@@ -379,6 +437,8 @@ async function executeStep(
   step: typeof writingJobSteps.$inferSelect,
   projectId: string,
   chapterId: string | null,
+  sceneId: string | null,
+  jobMode: string,
   previousStepOutputs: Map<string, string>,
 ): Promise<boolean> {
   // Returns true if execution should continue, false if we hit a confirm/pause point
@@ -389,7 +449,7 @@ async function executeStep(
   try {
     switch (step.stepType) {
       case 'prepare_context':
-        await executePrepareContext(projectId, chapterId, step.id)
+        await executePrepareContext(projectId, chapterId, sceneId, step.id)
         break
 
       case 'generate_plan': {
@@ -415,7 +475,7 @@ async function executeStep(
 
       case 'consistency_check': {
         const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
-        await executeConsistencyCheck(projectId, chapterId, draftOutput, step.id)
+        await executeConsistencyCheck(projectId, chapterId, sceneId, draftOutput, step.id)
         break
       }
 
@@ -426,7 +486,12 @@ async function executeStep(
 
       case 'apply_draft': {
         const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
-        await executeApplyDraft(projectId, chapterId, draftOutput, step.id)
+        if (jobMode === 'scene_draft') {
+          await executeApplySceneDraft(projectId, sceneId, draftOutput, step.id)
+        }
+        else {
+          await executeApplyDraft(projectId, chapterId, draftOutput, step.id)
+        }
         break
       }
 
@@ -480,7 +545,7 @@ async function collectStepOutputs(jobId: string): Promise<Map<string, string>> {
 }
 
 async function runNextSteps(projectId: string, jobId: string, fromStepIndex?: number): Promise<void> {
-  const { chapter } = await getJobAndChapter(jobId, projectId)
+  const { chapter, scene, job } = await getJobAndChapter(jobId, projectId)
   const allSteps = await getJobSteps(jobId)
 
   await updateJobStatus(jobId, 'running', null)
@@ -509,7 +574,7 @@ async function runNextSteps(projectId: string, jobId: string, fromStepIndex?: nu
         continue
     }
 
-    const shouldContinue = await executeStep(step, projectId, chapter?.id || null, previousOutputs)
+    const shouldContinue = await executeStep(step, projectId, chapter?.id || null, scene?.id || null, job.mode, previousOutputs)
 
     // Update output cache after execution
     const [updatedStep] = await db.select().from(writingJobSteps).where(eq(writingJobSteps.id, step.id))

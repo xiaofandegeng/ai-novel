@@ -1,7 +1,7 @@
 import type { ChapterMemory, ChapterPostprocessResult } from '@ai-novel/shared'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { chapterMemories, chapterPostprocessRuns, chapters, foreshadowingItems, novelProjects, storyBibles } from '../db/schema'
+import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, foreshadowingItems, novelProjects, storyBibles } from '../db/schema'
 import { callAIJSON } from './ai.service'
 import { createSuggestion } from './postprocess-suggestion.service'
 
@@ -364,4 +364,131 @@ ${truncatedContent}
     }).where(eq(chapterPostprocessRuns.id, runId))
     throw error
   }
+}
+
+export async function runScenePostprocess(input: {
+  projectId: string
+  chapterId: string
+  sceneId: string
+  content: string
+}): Promise<{ suggestionCount: number }> {
+  const { projectId, chapterId, sceneId, content } = input
+
+  const [scene] = await db.select().from(chapterScenes).where(and(
+    eq(chapterScenes.id, sceneId),
+    eq(chapterScenes.projectId, projectId),
+    eq(chapterScenes.chapterId, chapterId),
+  ))
+  if (!scene)
+    throw new Error('场景不存在或不属于当前章节')
+
+  const [project] = await db.select().from(novelProjects).where(eq(novelProjects.id, projectId))
+  if (!project)
+    throw new Error('项目不存在')
+
+  const truncatedContent = content.length > 4000
+    ? `${content.substring(0, 4000)}...(内容过长已截断)`
+    : content
+
+  const prompt = `你是一位专业的长篇小说编辑。请分析以下单个场景正文，提取结构化信息。
+场景级分析只生成待确认建议，不直接写入正式事实库。
+返回严格 JSON，不要 markdown。
+
+作品：${project.title}
+章节：${chapterId}
+场景 ${scene.sceneNumber}: ${scene.title || '未命名'}
+场景目的: ${scene.purpose || '未定义'}
+场景冲突: ${scene.conflict || '未定义'}
+出场角色: ${scene.characters || '未定义'}
+
+场景正文：
+${truncatedContent}
+
+请返回以下 JSON 格式：
+{
+  "facts": [
+    { "subjectType": "string", "subjectName": "string", "predicate": "string", "objectType": "string", "objectName": "string", "confidence": 80, "reason": "string" }
+  ],
+  "foreshadowingAdded": [
+    { "title": "string", "description": "string", "importance": "major", "confidence": 75 }
+  ],
+  "characterStateChanges": [
+    { "characterName": "string", "change": "string", "confidence": 80 }
+  ],
+  "events": [
+    { "title": "string", "description": "string", "importance": "major" }
+  ]
+}
+
+要求：
+- 只提取明确出现在正文中的内容
+- 如果某类没有相关内容，返回空数组 []
+- confidence 范围 0-100`
+
+  const parsed = await callAIJSON<{
+    facts: StructuredFact[]
+    foreshadowingAdded: StructuredForeshadowing[]
+    characterStateChanges: StructuredCharacterChange[]
+    events: StructuredEvent[]
+  }>([{ role: 'user', content: prompt }], { temperature: 30 })
+
+  let count = 0
+
+  if (parsed.facts?.length) {
+    for (const fact of parsed.facts) {
+      if (!fact.subjectName || !fact.predicate || !fact.objectName)
+        continue
+      await createSuggestion(projectId, chapterId, null, 'fact_triple', {
+        ...fact,
+        scope: 'scene',
+        sceneId,
+      }, fact.confidence || 70, fact.reason)
+      count++
+    }
+  }
+
+  if (parsed.foreshadowingAdded?.length) {
+    for (const fs of parsed.foreshadowingAdded) {
+      if (!fs.title)
+        continue
+      await createSuggestion(projectId, chapterId, null, 'foreshadowing_add', {
+        ...fs,
+        scope: 'scene',
+        sceneId,
+      }, fs.confidence || 70)
+      count++
+    }
+  }
+
+  if (parsed.characterStateChanges?.length) {
+    for (const cs of parsed.characterStateChanges) {
+      if (!cs.characterName || !cs.change)
+        continue
+      await createSuggestion(projectId, chapterId, null, 'character_state', {
+        ...cs,
+        scope: 'scene',
+        sceneId,
+      }, cs.confidence || 70)
+      count++
+    }
+  }
+
+  if (parsed.events?.length) {
+    for (const evt of parsed.events) {
+      if (!evt.title)
+        continue
+      await createSuggestion(projectId, chapterId, null, 'chapter_element', {
+        elementType: 'event',
+        elementName: evt.title,
+        relationType: 'occurs',
+        importance: evt.importance || 'normal',
+        notes: evt.description || '',
+        scope: 'scene',
+        sceneId,
+      }, 60)
+      count++
+    }
+  }
+
+  return { suggestionCount: count }
 }

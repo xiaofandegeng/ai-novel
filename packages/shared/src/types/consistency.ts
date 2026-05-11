@@ -14,6 +14,7 @@ export interface ConsistencyRisk {
   type: ConsistencyRiskType
   message: string
   evidence?: string
+  scope?: 'chapter' | 'scene'
 }
 
 export interface GuardDimensionResult {
@@ -37,6 +38,7 @@ export interface ConsistencyGuardReport {
 
 export interface RunConsistencyCheckInput {
   chapterId?: string
+  sceneId?: string
   scene: 'outline' | 'draft' | 'polish' | 'quality'
   generatedText: string
   sourceInstruction?: string

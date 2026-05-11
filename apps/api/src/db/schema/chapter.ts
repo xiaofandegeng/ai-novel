@@ -67,6 +67,8 @@ export const chapterScenes = pgTable('chapter_scenes', {
   targetWords: integer('target_words'),
   content: text('content'),
   orderIndex: integer('order_index').notNull(),
+  status: text('status').$type<'planned' | 'drafting' | 'reviewed' | 'completed'>().notNull().default('planned'),
+  conflict: text('conflict'),
   ...timestamps,
 })
 

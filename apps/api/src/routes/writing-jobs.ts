@@ -1,7 +1,7 @@
 import type { Hono } from 'hono'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { writingJobs } from '../db/schema'
+import { chapterScenes, writingJobs } from '../db/schema'
 import { assertOptionalChapterBelongsToProject } from '../services/ownership.service'
 import {
   approveStep,
@@ -24,12 +24,28 @@ export function registerWritingJobRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
     const body = await c.req.json()
     await assertOptionalChapterBelongsToProject(projectId, body.currentChapterId)
+
+    if (body.mode === 'scene_draft') {
+      if (!body.sceneId || !body.currentChapterId)
+        return c.json(fail('scene_draft mode requires both sceneId and currentChapterId'), 400)
+      const [scene] = await db.select({ id: chapterScenes.id }).from(chapterScenes).where(
+        and(
+          eq(chapterScenes.id, body.sceneId),
+          eq(chapterScenes.projectId, projectId),
+          eq(chapterScenes.chapterId, body.currentChapterId),
+        ),
+      )
+      if (!scene)
+        return c.json(fail('Scene not found or does not belong to this chapter'), 400)
+    }
+
     const id = generateId()
     const [row] = await db.insert(writingJobs).values({
       id,
       projectId,
       mode: body.mode,
       currentChapterId: body.currentChapterId,
+      sceneId: body.sceneId,
       status: 'idle',
     }).returning()
 

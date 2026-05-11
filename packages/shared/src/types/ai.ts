@@ -167,6 +167,7 @@ export interface GenerateAIOptions {
   projectId: string
   scene: AIScene
   chapterId?: string
+  sceneId?: string
   selectedText?: string
   userInstruction?: string
 }

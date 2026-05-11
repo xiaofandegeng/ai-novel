@@ -4,6 +4,7 @@ export interface AIContextRequest {
   projectId: string
   scene: AIScene
   chapterId?: string
+  sceneId?: string
   selectedText?: string
   userInstruction?: string
   extra?: Record<string, unknown>
@@ -87,6 +88,26 @@ export interface BuiltAIContext {
     endingHook?: string
     draftExcerpt?: string
   }
+  currentScene?: {
+    id: string
+    title: string | null
+    sceneNumber: number
+    location: string | null
+    timeline: string | null
+    purpose: string | null
+    summary: string | null
+    characters: string | null
+    conflict: string | null
+    targetWords: number | null
+    content: string | null
+  }
+  chapterScenes?: Array<{
+    id: string
+    sceneNumber: number
+    title: string | null
+    status: string
+    summary: string | null
+  }>
   nearbyChapters?: {
     previous?: ChapterContextSummary
     next?: ChapterContextSummary

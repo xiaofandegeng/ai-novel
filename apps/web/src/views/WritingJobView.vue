@@ -19,6 +19,8 @@ const {
   job,
   steps,
   form,
+  formChapterId,
+  formSceneId,
   currentReviewStepId,
   projectStore,
   handleCreate,
@@ -55,6 +57,8 @@ const {
         <WritingJobLauncher
           v-if="!job"
           v-model="form"
+          v-model:chapter-id="formChapterId"
+          v-model:scene-id="formSceneId"
           :creating="creating"
           @create="handleCreate"
         />
