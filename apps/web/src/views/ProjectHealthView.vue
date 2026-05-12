@@ -7,17 +7,21 @@ import {
 } from '@ai-novel/ui'
 import {
   Activity,
+  AlertTriangle,
   BarChart3,
   CheckCircle2,
+  Clapperboard,
+  FileText,
   Flame,
   Lightbulb,
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useHealthStore, useProjectStore } from '../stores/projects'
 
 const route = useRoute()
+const router = useRouter()
 const projectId = route.params.id as string
 const toast = useToast()
 
@@ -35,6 +39,21 @@ const completionPercent = computed(() => {
     ? Math.round((metrics.value.completedChapters / metrics.value.totalChapters) * 100)
     : 0
 })
+
+const riskVariant = {
+  high: 'error',
+  medium: 'warning',
+  low: 'info',
+} as const
+
+const riskTypeLabel = {
+  scene: '场景',
+  foreshadowing: '伏笔',
+  conflict: '冲突',
+  quality: '质量',
+  structure: '结构',
+  knowledge: '知识',
+} as const
 
 onMounted(async () => {
   try {
@@ -79,6 +98,37 @@ onMounted(async () => {
         </p>
       </div>
       <div v-else class="space-y-6">
+        <!-- Actionable risks -->
+        <div v-if="metrics.risks.length > 0" class="border border-border-light rounded-lg bg-bg-surface p-4">
+          <h3 class="mb-3 flex items-center gap-2 text-sm text-text-primary font-bold">
+            <AlertTriangle :size="16" class="text-yellow-500" /> 需要关注的风险
+          </h3>
+          <div class="space-y-2">
+            <button
+              v-for="risk in metrics.risks"
+              :key="risk.id"
+              class="w-full border border-border-light rounded-md bg-bg-page px-3 py-3 text-left transition-colors hover:border-primary/30 hover:bg-primary-soft/20"
+              @click="risk.targetRoute && router.push(risk.targetRoute)"
+            >
+              <div class="mb-1 flex items-center gap-2">
+                <NTag :variant="riskVariant[risk.severity]" size="sm">
+                  {{ risk.severity === 'high' ? '高风险' : risk.severity === 'medium' ? '中风险' : '低风险' }}
+                </NTag>
+                <NTag size="sm" variant="default">
+                  {{ riskTypeLabel[risk.type] }}
+                </NTag>
+                <span class="text-sm text-text-primary font-semibold">{{ risk.title }}</span>
+              </div>
+              <p class="text-xs text-text-secondary leading-relaxed">
+                {{ risk.message }}
+              </p>
+              <p v-if="risk.targetRoute" class="mt-1 text-xs text-primary">
+                {{ risk.actionLabel }} →
+              </p>
+            </button>
+          </div>
+        </div>
+
         <!-- Summary cards -->
         <div class="grid grid-cols-4 gap-4">
           <div class="border border-border-light rounded-lg bg-bg-surface p-4">
@@ -195,6 +245,114 @@ onMounted(async () => {
                 />
               </div>
               <span class="w-8 text-right text-xs text-text-secondary">{{ qt.score }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scene health metrics -->
+        <div class="border border-border-light rounded-lg bg-bg-surface p-4">
+          <h3 class="mb-3 flex items-center gap-2 text-sm text-text-primary font-bold">
+            <Clapperboard :size="16" class="text-primary" /> 场景健康
+          </h3>
+
+          <!-- Scene status distribution -->
+          <div v-if="Object.keys(metrics.sceneStatusDistribution).length > 0" class="mb-4">
+            <p class="mb-2 text-xs text-text-muted">
+              场景状态分布
+            </p>
+            <div class="flex gap-4">
+              <div v-for="(count, status) in metrics.sceneStatusDistribution" :key="status" class="flex items-center gap-2">
+                <NTag
+                  :variant="status === 'completed' ? 'success' : status === 'reviewed' ? 'warning' : status === 'drafting' ? 'info' : 'default'"
+                  size="sm"
+                >
+                  {{ status === 'planned' ? '已规划' : status === 'drafting' ? '写作中' : status === 'reviewed' ? '待审核' : '已完成' }}
+                </NTag>
+                <span class="text-sm text-text-secondary font-medium">{{ count }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Warning cards -->
+          <div class="grid grid-cols-3 mb-4 gap-3">
+            <div class="border border-border-light rounded-md bg-bg-page p-3">
+              <div class="flex items-center gap-2">
+                <AlertTriangle v-if="metrics.scenesWithoutContent > 0" :size="14" class="text-yellow-500" />
+                <FileText v-else :size="14" class="text-text-muted" />
+                <span class="text-xs text-text-muted">无正文场景</span>
+              </div>
+              <div class="mt-1 text-lg text-text-primary font-bold">
+                {{ metrics.scenesWithoutContent }}
+              </div>
+            </div>
+            <div class="border border-border-light rounded-md bg-bg-page p-3">
+              <div class="flex items-center gap-2">
+                <AlertTriangle v-if="metrics.scenesWithoutPurpose > 0" :size="14" class="text-yellow-500" />
+                <FileText v-else :size="14" class="text-text-muted" />
+                <span class="text-xs text-text-muted">无目的场景</span>
+              </div>
+              <div class="mt-1 text-lg text-text-primary font-bold">
+                {{ metrics.scenesWithoutPurpose }}
+              </div>
+            </div>
+            <div class="border border-border-light rounded-md bg-bg-page p-3">
+              <div class="flex items-center gap-2">
+                <AlertTriangle v-if="metrics.scenesWithoutConflict > 0" :size="14" class="text-yellow-500" />
+                <FileText v-else :size="14" class="text-text-muted" />
+                <span class="text-xs text-text-muted">无冲突场景</span>
+              </div>
+              <div class="mt-1 text-lg text-text-primary font-bold">
+                {{ metrics.scenesWithoutConflict }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Chapters without scenes -->
+          <div v-if="metrics.chaptersWithoutScenes.length > 0" class="mb-4">
+            <p class="mb-2 text-xs text-text-muted">
+              缺少场景规划的章节
+            </p>
+            <div class="space-y-1">
+              <div
+                v-for="ch in metrics.chaptersWithoutScenes"
+                :key="ch.chapterId"
+                class="flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-xs transition-colors hover:bg-bg-page"
+                @click="router.push({ path: `/project/${projectId}/outline`, query: { chapter: ch.chapterId } })"
+              >
+                <span class="text-text-secondary">
+                  第{{ ch.chapterNumber }}章：{{ ch.title }}
+                </span>
+                <span class="text-primary">
+                  去规划 →
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Scene word count deviation -->
+          <div v-if="metrics.sceneWordCountDeviation.length > 0">
+            <p class="mb-2 text-xs text-text-muted">
+              场景字数偏差（目标 vs 实际）
+            </p>
+            <div class="space-y-1">
+              <div
+                v-for="sd in metrics.sceneWordCountDeviation"
+                :key="sd.sceneId"
+                class="flex items-center gap-3 text-xs"
+              >
+                <span class="w-32 truncate text-text-muted">
+                  {{ sd.title || `场景 ${sd.sceneNumber}` }}
+                </span>
+                <span class="w-14 text-right text-text-secondary">{{ sd.actual }}</span>
+                <span class="text-text-muted">/</span>
+                <span class="w-14 text-text-secondary">{{ sd.target }}</span>
+                <span
+                  class="font-medium"
+                  :class="Math.abs(sd.deviation) > sd.target * 0.3 ? 'text-red-500' : Math.abs(sd.deviation) > sd.target * 0.1 ? 'text-yellow-500' : 'text-green-500'"
+                >
+                  {{ sd.deviation > 0 ? '+' : '' }}{{ sd.deviation }}
+                </span>
+              </div>
             </div>
           </div>
         </div>

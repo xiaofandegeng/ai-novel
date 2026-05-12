@@ -24,6 +24,7 @@ import {
   writingPersonas,
 } from '../db/schema'
 import { retrieveKnowledgeForAI } from './knowledge-retrieval.service'
+import { buildPersonaMemoryContext } from './persona-memory.service'
 import { buildPersonaPromptForProject } from './persona-prompt.service'
 
 function buildKnowledgeSearchTerms(input: {
@@ -187,6 +188,11 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
         factTripleSubjects,
         limit: 5,
       })
+    : []
+
+  // 6b. Project-level accumulated writing memory
+  const personaMemory = scene !== 'chat'
+    ? await buildPersonaMemoryContext(projectId)
     : []
 
   // 7. Assemble Nearby Chapters
@@ -396,6 +402,7 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     conflicts: conflictSummaries,
     persona,
     knowledgeSnippets,
+    personaMemory,
     chapterMemories: recentMemories,
     chapterElements: chapterElementSummaries,
     foreshadowingItems: foreshadowingContext,

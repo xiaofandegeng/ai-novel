@@ -287,15 +287,15 @@ function getStepOutput(step: WritingJobStep): any | null {
 
             <!-- Consistency check output -->
             <div
-              v-if="step.status === 'completed' && !CONFIRM_STEP_TYPES.has(step.stepType) && step.output && (step.stepType === 'consistency_check')"
+              v-if="step.status === 'completed' && !CONFIRM_STEP_TYPES.has(step.stepType) && step.output && (step.stepType === 'consistency_check' || step.stepType === 'update_health')"
               class="mt-2"
             >
               <details class="text-xs text-text-muted">
                 <summary class="cursor-pointer hover:text-text-secondary">
-                  查看检查结果
+                  {{ step.stepType === 'update_health' ? '查看健康摘要' : '查看检查结果' }}
                 </summary>
                 <div class="bg-bg-base mt-1 border border-border-light rounded p-2">
-                  <template v-if="getStepOutput(step)">
+                  <template v-if="getStepOutput(step) && step.stepType === 'consistency_check'">
                     <div class="mb-1">
                       <span class="font-medium">状态：</span>
                       <span
@@ -311,6 +311,24 @@ function getStepOutput(step: WritingJobStep): any | null {
                     </div>
                     <div v-if="getStepOutput(step).risks?.length" class="text-red-600">
                       {{ getStepOutput(step).risks.map((r: any) => r.message).join('；') }}
+                    </div>
+                  </template>
+                  <template v-else-if="getStepOutput(step) && step.stepType === 'update_health'">
+                    <div class="grid grid-cols-2 gap-2 text-text-secondary">
+                      <div>章节进度：{{ getStepOutput(step).completedChapters }} / {{ getStepOutput(step).totalChapters }}</div>
+                      <div>开放伏笔：{{ getStepOutput(step).openForeshadowingCount }}</div>
+                      <div>无正文场景：{{ getStepOutput(step).scenesWithoutContent }}</div>
+                      <div>无冲突场景：{{ getStepOutput(step).scenesWithoutConflict }}</div>
+                    </div>
+                    <div v-if="getStepOutput(step).topRisks?.length" class="mt-2 space-y-1">
+                      <div
+                        v-for="risk in getStepOutput(step).topRisks"
+                        :key="`${risk.type}-${risk.title}`"
+                        class="rounded bg-bg-subtle px-2 py-1 text-text-secondary"
+                      >
+                        <span class="font-medium">{{ risk.title }}</span>
+                        <span class="ml-1 text-text-muted">({{ risk.severity === 'high' ? '高风险' : risk.severity === 'medium' ? '中风险' : '低风险' }})</span>
+                      </div>
                     </div>
                   </template>
                 </div>

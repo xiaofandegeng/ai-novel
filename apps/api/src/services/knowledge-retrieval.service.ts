@@ -2,6 +2,7 @@ import type { KnowledgeContextSnippet } from '@ai-novel/shared'
 import { and, eq, or, sql } from 'drizzle-orm'
 import { db } from '../db'
 import { knowledgeChunks, knowledgeEmbeddings, storyFactTriples } from '../db/schema'
+import { buildEmbeddingText, cosineSimilarity, createLocalEmbedding, parseEmbedding } from './embedding.service'
 
 interface RetrievedKnowledge extends KnowledgeContextSnippet {
   score: number
@@ -103,9 +104,8 @@ async function expandViaFactTriples(
   return [...expanded]
 }
 
-interface SearchResult { id: string, title: string | null, summary: string | null, techniques: string | null, matchedTerms: string[] }
+interface SearchResult { id: string, title: string | null, summary: string | null, techniques: string | null, matchedTerms: string[], vectorScore?: number }
 
-// TODO: Replace text-index search with pgvector cosine similarity once embedding provider is configured.
 async function embeddingIndexSearch(
   projectId: string,
   terms: string[],
@@ -113,40 +113,46 @@ async function embeddingIndexSearch(
   if (terms.length === 0)
     return []
 
-  const predicates = terms.flatMap((term) => {
-    const pattern = `%${term}%`
-    return [
-      sql`${knowledgeEmbeddings.summary} ILIKE ${pattern}`,
-      sql`${knowledgeEmbeddings.tags} ILIKE ${pattern}`,
-    ]
-  })
-
   const rows = await db
     .select({
       id: knowledgeEmbeddings.id,
       summary: knowledgeEmbeddings.summary,
       tags: knowledgeEmbeddings.tags,
+      embedding: knowledgeEmbeddings.embedding,
     })
     .from(knowledgeEmbeddings)
-    .where(and(
-      eq(knowledgeEmbeddings.projectId, projectId),
-      or(...predicates),
-    ))
-    .limit(15)
+    .where(eq(knowledgeEmbeddings.projectId, projectId))
+    .limit(200)
 
-  return rows.map(row => ({
-    id: row.id,
-    title: null,
-    summary: row.summary,
-    techniques: row.tags,
-    matchedTerms: terms.filter((term) => {
-      const pattern = term.toLowerCase()
-      return (
-        (row.summary?.toLowerCase().includes(pattern))
-        || (row.tags?.toLowerCase().includes(pattern))
-      )
-    }),
-  }))
+  const queryEmbedding = createLocalEmbedding(terms.join(' '))
+
+  return rows
+    .map((row) => {
+      const existingEmbedding = parseEmbedding(row.embedding)
+      const embedding = existingEmbedding || createLocalEmbedding(buildEmbeddingText({
+        summary: row.summary,
+        tags: row.tags,
+      }))
+      const vectorScore = cosineSimilarity(queryEmbedding, embedding)
+      const matchedTerms = terms.filter((term) => {
+        const pattern = term.toLowerCase()
+        return (
+          (row.summary?.toLowerCase().includes(pattern))
+          || (row.tags?.toLowerCase().includes(pattern))
+        )
+      })
+      return {
+        id: row.id,
+        title: null,
+        summary: row.summary,
+        techniques: row.tags,
+        matchedTerms,
+        vectorScore,
+      }
+    })
+    .filter(row => row.vectorScore > 0.05 || row.matchedTerms.length > 0)
+    .sort((a, b) => (b.vectorScore || 0) - (a.vectorScore || 0))
+    .slice(0, 15)
 }
 
 function fuseResults(
@@ -202,7 +208,11 @@ function fuseResults(
   for (const r of embeddingResults) {
     if (!r.summary)
       continue
-    addResult(r, `知识索引匹配: ${r.matchedTerms.join(', ')}`, r.matchedTerms.length * 3)
+    const vectorScore = r.vectorScore || 0
+    const reason = r.matchedTerms.length > 0
+      ? `向量检索 + 知识索引匹配: ${r.matchedTerms.join(', ')}`
+      : `向量检索相似度: ${Math.round(vectorScore * 100)}`
+    addResult(r, reason, Math.max(1, vectorScore * 8) + r.matchedTerms.length * 2)
   }
 
   return [...scoreMap.values()]

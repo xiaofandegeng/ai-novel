@@ -208,7 +208,7 @@ export async function* streamChat(
   const systemMessages: ChatCompletionMessageParam[] = [
     {
       role: 'system',
-      content: 'You are an expert novelist and creative writing assistant. Help the author expand their world, brainstorm character motivations, or draft scenes based on the provided context.',
+      content: '你是专业的长篇小说创作协作者。必须优先遵守项目上下文、故事设定、人物动机、章节目标、场景约束、伏笔台账、事实图谱和写作人格。你只能输出可供作者确认的创作建议或正文草稿，不得绕过作者决策，不得复刻参考作品原文、专名、桥段或连续表达。',
     },
   ]
   if (options?.context) {

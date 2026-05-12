@@ -8,6 +8,7 @@ import { buildProjectAIContext } from './ai-context.service'
 import { callAIJSON } from './ai.service'
 import { runChapterPostprocess } from './chapter-postprocess.service'
 import { runConsistencyGuard } from './consistency-guard.service'
+import { getProjectHealthMetrics } from './health-metrics.service'
 import { createSnapshot } from './version.service'
 
 type JobMode = 'outline_only' | 'draft_only' | 'outline_then_draft' | 'scene_draft'
@@ -425,10 +426,28 @@ async function executePostprocess(
 }
 
 async function executeUpdateHealth(
+  projectId: string,
   stepId: string,
 ): Promise<void> {
-  // Health metrics update is a placeholder — mark as completed
-  await updateStep(stepId, { output: JSON.stringify({ done: true }), status: 'completed', finishedAt: now() })
+  const metrics = await getProjectHealthMetrics(projectId)
+  const output = {
+    completedChapters: metrics.completedChapters,
+    totalChapters: metrics.totalChapters,
+    openForeshadowingCount: metrics.openForeshadowingCount,
+    pendingTriples: metrics.pendingTriples,
+    scenesWithoutContent: metrics.scenesWithoutContent,
+    scenesWithoutPurpose: metrics.scenesWithoutPurpose,
+    scenesWithoutConflict: metrics.scenesWithoutConflict,
+    riskCount: metrics.risks.length,
+    topRisks: metrics.risks.slice(0, 5).map(risk => ({
+      severity: risk.severity,
+      type: risk.type,
+      title: risk.title,
+      actionLabel: risk.actionLabel,
+      targetRoute: risk.targetRoute,
+    })),
+  }
+  await updateStep(stepId, { output: JSON.stringify(output), status: 'completed', finishedAt: now() })
 }
 
 // ---- Core engine: auto-execute steps until hitting a confirm step or completion ----
@@ -512,7 +531,7 @@ async function executeStep(
         return false
 
       case 'update_health':
-        await executeUpdateHealth(step.id)
+        await executeUpdateHealth(projectId, step.id)
         break
 
       default:

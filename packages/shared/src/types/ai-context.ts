@@ -121,6 +121,7 @@ export interface BuiltAIContext {
     prompt: string
   }
   knowledgeSnippets: KnowledgeContextSnippet[]
+  personaMemory: string[]
   chapterMemories: string[]
   chapterElements: string[]
   foreshadowingItems: string[]

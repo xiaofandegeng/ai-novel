@@ -141,9 +141,20 @@ async function applyOneSuggestion(
         objectType: payload.objectType || 'unknown',
         objectName: payload.objectName,
         confidence,
-        sourceType: 'ai_extracted',
+        sourceType: payload.sourceType === 'auto_inferred' ? 'auto_inferred' : 'ai_extracted',
         sourceChapterId: chapterId,
         status: 'confirmed',
+        relatedChapters: payload.relatedChapters ? JSON.stringify(payload.relatedChapters) : undefined,
+        notes: payload.inferenceRule || payload.reason
+          ? JSON.stringify({
+              inferenceRule: payload.inferenceRule,
+              inferenceKey: payload.inferenceKey,
+              sourceTripleIds: payload.sourceTripleIds,
+              sourceElementIds: payload.sourceElementIds,
+              sourceFacts: payload.sourceFacts,
+              reason: payload.reason,
+            })
+          : undefined,
       }).onConflictDoNothing()
       return 'applied'
     }

@@ -77,6 +77,38 @@ function suggestionTitle(item: typeof suggestionStore.suggestions[0]): string {
   return (data.title as string) || (data.subjectName as string) || (data.characterName as string) || item.payload.slice(0, 60)
 }
 
+function inferenceLabel(rule: unknown): string {
+  if (rule === 'co_occurrence')
+    return '共场推理'
+  if (rule === 'transitive')
+    return '传递推理'
+  return '图谱推理'
+}
+
+function inferenceDetails(item: typeof suggestionStore.suggestions[0]) {
+  const data = parsePayload(item.payload)
+  const sourceFacts = Array.isArray(data.sourceFacts)
+    ? data.sourceFacts.filter((fact): fact is string => typeof fact === 'string')
+    : []
+  const sourceTripleIds = Array.isArray(data.sourceTripleIds)
+    ? data.sourceTripleIds.filter((id): id is string => typeof id === 'string')
+    : []
+  const sourceElementIds = Array.isArray(data.sourceElementIds)
+    ? data.sourceElementIds.filter((id): id is string => typeof id === 'string')
+    : []
+
+  if (!data.inferenceRule && sourceFacts.length === 0 && sourceTripleIds.length === 0 && sourceElementIds.length === 0)
+    return null
+
+  return {
+    rule: inferenceLabel(data.inferenceRule),
+    reason: typeof data.reason === 'string' ? data.reason : item.reason,
+    sourceFacts,
+    sourceTripleIds,
+    sourceElementIds,
+  }
+}
+
 const acceptedCount = computed(() =>
   suggestionStore.suggestions.filter(s => s.status === 'accepted').length,
 )
@@ -251,6 +283,40 @@ async function handleRunInference() {
                 <p class="text-xs text-text-muted">
                   置信度: {{ item.confidence }}%{{ item.reason ? ` · ${item.reason}` : '' }}
                 </p>
+                <div
+                  v-if="inferenceDetails(item)"
+                  class="mt-2 border border-ai/10 rounded-md bg-ai-soft/40 px-3 py-2 text-xs text-text-secondary"
+                >
+                  <div class="mb-1 flex items-center gap-2 text-ai font-semibold">
+                    <Lightbulb :size="12" />
+                    {{ inferenceDetails(item)?.rule }}
+                  </div>
+                  <p v-if="inferenceDetails(item)?.reason" class="mb-1 leading-relaxed">
+                    {{ inferenceDetails(item)?.reason }}
+                  </p>
+                  <div v-if="inferenceDetails(item)?.sourceFacts.length" class="space-y-1">
+                    <div class="text-[10px] text-text-muted font-bold">
+                      来源事实
+                    </div>
+                    <ul class="list-disc pl-4 leading-relaxed">
+                      <li v-for="fact in inferenceDetails(item)?.sourceFacts" :key="fact">
+                        {{ fact }}
+                      </li>
+                    </ul>
+                  </div>
+                  <div
+                    v-if="inferenceDetails(item)?.sourceTripleIds.length || inferenceDetails(item)?.sourceElementIds.length"
+                    class="mt-1 text-[10px] text-text-muted"
+                  >
+                    来源 ID：
+                    <span v-if="inferenceDetails(item)?.sourceTripleIds.length">
+                      triples {{ inferenceDetails(item)?.sourceTripleIds.join(', ') }}
+                    </span>
+                    <span v-if="inferenceDetails(item)?.sourceElementIds.length">
+                      elements {{ inferenceDetails(item)?.sourceElementIds.join(', ') }}
+                    </span>
+                  </div>
+                </div>
               </div>
               <div class="ml-3 flex shrink-0 items-center gap-2">
                 <NTag

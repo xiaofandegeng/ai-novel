@@ -8,8 +8,10 @@ import {
   useToast,
 } from '@ai-novel/ui'
 import {
+  AlertTriangle,
   ArrowLeft,
   BookText,
+  CheckCircle2,
   ChevronRight,
   Download,
   PenLine,
@@ -19,11 +21,13 @@ import {
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { exportProject } from '../api/export'
+import { fetchAISettings } from '../api/settings'
 import AppSidebar from '../components/AppSidebar.vue'
 import {
   useChapterStore,
   useCharacterStore,
   useProjectStore,
+  useStoryBibleStore,
   useVolumeStore,
 } from '../stores/projects'
 
@@ -36,8 +40,10 @@ const projectStore = useProjectStore()
 const characterStore = useCharacterStore()
 const volumeStore = useVolumeStore()
 const chapterStore = useChapterStore()
+const storyBibleStore = useStoryBibleStore()
 
 const loading = ref(true)
+const aiConfigured = ref(false)
 
 onMounted(async () => {
   try {
@@ -46,7 +52,16 @@ onMounted(async () => {
       characterStore.fetchCharacters(projectId),
       volumeStore.fetchVolumes(projectId),
       chapterStore.fetchChapters(projectId),
+      storyBibleStore.fetchStoryBible(projectId),
     ])
+    try {
+      const aiSettings = await fetchAISettings()
+      aiConfigured.value = aiSettings.hasApiKey
+    }
+    catch {
+      aiConfigured.value = false
+      toast.add('AI 配置状态读取失败，可前往项目设置重新检测', 'warning')
+    }
   }
   catch {
     toast.add('加载项目数据失败，请稍后重试', 'error')
@@ -91,6 +106,64 @@ async function handleExport() {
 }
 
 const showAISuggestion = ref(true)
+
+const readinessItems = computed(() => {
+  const bible = storyBibleStore.storyBible
+  const hasBible = Boolean(
+    bible?.worldview
+    || bible?.mainConflict
+    || bible?.theme
+    || bible?.rules,
+  )
+  const hasOutline = chapterStore.chapters.length > 0
+  const hasDraftableChapter = chapterStore.chapters.some(ch => ch.status !== 'completed')
+
+  return [
+    {
+      id: 'ai',
+      label: 'AI 服务配置',
+      ready: aiConfigured.value,
+      description: aiConfigured.value ? '已配置 API Key，可进行生成和分析。' : '未配置 API Key，AI 生成、拆书和质量评估不可用。',
+      actionLabel: '去配置',
+      route: `/project/${projectId}/settings`,
+    },
+    {
+      id: 'bible',
+      label: '故事设定',
+      ready: hasBible,
+      description: hasBible ? '已有故事背景约束，AI 能读取基础设定。' : '建议先填写世界观、主冲突或核心规则。',
+      actionLabel: '补充设定',
+      route: `/project/${projectId}/bible`,
+    },
+    {
+      id: 'characters',
+      label: '角色档案',
+      ready: characterStore.characters.length > 0,
+      description: characterStore.characters.length > 0 ? `已有 ${characterStore.characters.length} 个角色。` : '至少创建主角、对手或关键配角。',
+      actionLabel: '创建角色',
+      route: `/project/${projectId}/characters`,
+    },
+    {
+      id: 'outline',
+      label: '分卷与章节',
+      ready: volumeStore.volumes.length > 0 && hasOutline,
+      description: hasOutline ? `已有 ${chapterStore.chapters.length} 个章节，可进入写作。` : '建议先建立第一卷和第一章。',
+      actionLabel: '规划大纲',
+      route: `/project/${projectId}/outline`,
+    },
+    {
+      id: 'writing',
+      label: '可写章节',
+      ready: hasDraftableChapter,
+      description: hasDraftableChapter ? '存在可继续写作的章节。' : '当前章节均已完成，可新增下一章。',
+      actionLabel: hasDraftableChapter ? '开始写作' : '新增章节',
+      route: hasDraftableChapter ? `/project/${projectId}/write` : `/project/${projectId}/outline`,
+    },
+  ]
+})
+
+const readyCount = computed(() => readinessItems.value.filter(item => item.ready).length)
+const canStartWriting = computed(() => readyCount.value >= 4)
 
 function handleExploreCharacters() {
   router.push(`/project/${projectId}/characters`)
@@ -216,6 +289,40 @@ function handleExploreCharacters() {
 
         <!-- Overview Sections -->
         <div class="grid gap-6 md:grid-cols-2">
+          <NPanel
+            title="开写前检查"
+            :description="canStartWriting ? '核心配置已经就绪，可以进入正文写作。' : '先补齐关键配置，AI 才能稳定遵守设定和写作方向。'"
+            padding
+          >
+            <template #actions>
+              <NTag :variant="canStartWriting ? 'success' : 'warning'" size="sm">
+                {{ readyCount }} / {{ readinessItems.length }}
+              </NTag>
+            </template>
+            <div class="space-y-2">
+              <button
+                v-for="item in readinessItems"
+                :key="item.id"
+                class="w-full border border-border-light rounded-md bg-bg-page px-3 py-2 text-left transition-colors hover:border-primary/30 hover:bg-primary-soft/20"
+                @click="router.push(item.route)"
+              >
+                <div class="flex items-start gap-3">
+                  <CheckCircle2 v-if="item.ready" :size="16" class="mt-0.5 shrink-0 text-green-600" />
+                  <AlertTriangle v-else :size="16" class="mt-0.5 shrink-0 text-yellow-500" />
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center justify-between gap-3">
+                      <span class="text-sm text-text-primary font-medium">{{ item.label }}</span>
+                      <span class="shrink-0 text-xs text-primary">{{ item.actionLabel }} →</span>
+                    </div>
+                    <p class="mt-0.5 text-xs text-text-muted leading-relaxed">
+                      {{ item.description }}
+                    </p>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </NPanel>
+
           <!-- Story Bible Snippet -->
           <NPanel title="故事设定集预览" padding>
             <template #actions>

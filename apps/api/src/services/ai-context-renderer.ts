@@ -92,6 +92,10 @@ export function renderAIContext(context: BuiltAIContext): string {
     sections.push(`【参考技巧库】\n${knowledgeList}\n\n注意：只能借鉴抽象技巧和结构经验，不得复刻参考作品桥段、专名或连续表达。`)
   }
 
+  if (context.personaMemory.length > 0) {
+    sections.push(`【项目写作记忆】\n以下是从已完成章节沉淀出的抽象风格和节奏偏好，只能作为高层写法约束：\n${context.personaMemory.join('\n')}\n\n注意：这是本项目自己的写作记忆，不得把它当作剧情事实覆盖故事设定。`)
+  }
+
   if (context.chapterMemories.length > 0) {
     sections.push(`【前序章节记忆】\n以下是最近章节的结构化记忆，请确保连贯性：\n${context.chapterMemories.join('\n\n')}`)
   }

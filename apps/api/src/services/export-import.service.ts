@@ -2,15 +2,18 @@ import { eq, inArray } from 'drizzle-orm'
 import { db } from '../db'
 import {
   acts,
+  aiContextSnapshots,
   chapterElements,
   chapterMemories,
   chapterPostprocessSuggestions,
   chapters,
+  chapterScenes,
   characterRelationships,
   characters,
   conflicts,
   foreshadowingItems,
   knowledgeChunks,
+  knowledgeEmbeddings,
   knowledgeNotes,
   knowledgeSources,
   novelProjects,
@@ -19,6 +22,8 @@ import {
   storyBibles,
   storyFactTriples,
   volumes,
+  writingJobs,
+  writingJobSteps,
   writingPersonas,
 } from '../db/schema'
 import { generateId } from '../utils'
@@ -40,6 +45,7 @@ const BIBLE_FIELDS = ['worldview', 'mainConflict', 'theme', 'rules', 'timeline']
 const CHARACTER_FIELDS = ['name', 'role', 'goal', 'fear', 'secret', 'desire', 'weakness', 'personality', 'arc']
 const VOLUME_FIELDS = ['title', 'summary', 'orderIndex']
 const CHAPTER_FIELDS = ['title', 'chapterNumber', 'outline', 'summary', 'characters', 'goals', 'conflicts', 'events', 'emotionalArc', 'foreshadowing', 'endingHook', 'draft', 'status']
+const SCENE_FIELDS = ['sceneNumber', 'title', 'location', 'timeline', 'purpose', 'summary', 'characters', 'targetWords', 'content', 'orderIndex', 'status', 'conflict']
 const RELATIONSHIP_FIELDS = ['type', 'strength', 'status', 'description']
 const MEMORY_FIELDS = ['summary', 'keyEvents', 'newFacts', 'characterStateChanges', 'relationshipChanges', 'conflictProgress', 'foreshadowingAdded', 'foreshadowingResolved', 'themeProgress', 'styleNotes']
 const ELEMENT_FIELDS = ['elementType', 'elementId', 'elementName', 'relationType', 'importance', 'appearanceOrder', 'notes']
@@ -49,9 +55,13 @@ const ACT_FIELDS = ['title', 'description', 'theme', 'keyEvents', 'targetChapter
 const CONFLICT_FIELDS = ['title', 'type', 'intensity', 'status', 'participants', 'description', 'resolution']
 const KNOWLEDGE_SOURCE_FIELDS = ['title', 'sourceType', 'author', 'status', 'fileName', 'fileSize']
 const KNOWLEDGE_CHUNK_FIELDS = ['chunkType', 'title', 'content', 'summary', 'techniques', 'orderIndex']
+const KNOWLEDGE_EMBEDDING_FIELDS = ['sourceType', 'embedding', 'summary', 'tags']
 const KNOWLEDGE_NOTE_FIELDS = ['title', 'content', 'tags']
 const QUALITY_REPORT_FIELDS = ['scope', 'score', 'rhythmScore', 'conflictScore', 'logicScore', 'characterScore', 'styleScore', 'issues', 'suggestions']
 const POSTPROCESS_SUGGESTION_FIELDS = ['suggestionType', 'payload', 'confidence', 'status', 'reason']
+const WRITING_JOB_FIELDS = ['mode', 'status', 'lastError']
+const WRITING_JOB_STEP_FIELDS = ['stepType', 'status', 'input', 'output', 'error', 'startedAt', 'finishedAt']
+const AI_CONTEXT_SNAPSHOT_FIELDS = ['scene', 'requestId', 'modelProvider', 'modelName', 'contextPayload', 'renderedPromptPreview', 'tokenEstimate']
 const PERSONA_CONFIG_FIELDS = ['strength', 'enabledForOutline', 'enabledForDraft', 'enabledForPolish', 'enabledForQualityReview', 'projectOverrides', 'disabledRules']
 const WRITING_PERSONA_FIELDS = [
   'name',
@@ -78,6 +88,7 @@ export async function exportProjectData(projectId: string) {
   const chars = await db.select().from(characters).where(eq(characters.projectId, projectId))
   const vols = await db.select().from(volumes).where(eq(volumes.projectId, projectId))
   const chaps = await db.select().from(chapters).where(eq(chapters.projectId, projectId))
+  const scenes = await db.select().from(chapterScenes).where(eq(chapterScenes.projectId, projectId))
   const rels = await db.select().from(characterRelationships).where(eq(characterRelationships.projectId, projectId))
   const mems = await db.select().from(chapterMemories).where(eq(chapterMemories.projectId, projectId))
   const elems = await db.select().from(chapterElements).where(eq(chapterElements.projectId, projectId))
@@ -87,9 +98,15 @@ export async function exportProjectData(projectId: string) {
   const confList = await db.select().from(conflicts).where(eq(conflicts.projectId, projectId))
   const sources = await db.select().from(knowledgeSources).where(eq(knowledgeSources.projectId, projectId))
   const chunks = await db.select().from(knowledgeChunks).where(eq(knowledgeChunks.projectId, projectId))
+  const embeddings = await db.select().from(knowledgeEmbeddings).where(eq(knowledgeEmbeddings.projectId, projectId))
   const notes = await db.select().from(knowledgeNotes).where(eq(knowledgeNotes.projectId, projectId))
   const quality = await db.select().from(qualityReports).where(eq(qualityReports.projectId, projectId))
   const suggestions = await db.select().from(chapterPostprocessSuggestions).where(eq(chapterPostprocessSuggestions.projectId, projectId))
+  const jobs = await db.select().from(writingJobs).where(eq(writingJobs.projectId, projectId))
+  const jobSteps = jobs.length > 0
+    ? await db.select().from(writingJobSteps).where(inArray(writingJobSteps.jobId, jobs.map(job => job.id)))
+    : []
+  const contextSnapshots = await db.select().from(aiContextSnapshots).where(eq(aiContextSnapshots.projectId, projectId))
   const personaConfigs = await db.select().from(projectPersonaConfigs).where(eq(projectPersonaConfigs.projectId, projectId))
 
   const personaIds = personaConfigs.map(c => c.personaId)
@@ -105,6 +122,7 @@ export async function exportProjectData(projectId: string) {
     characters: chars,
     volumes: vols,
     chapters: chaps,
+    chapterScenes: scenes,
     relationships: rels,
     memories: mems,
     elements: elems,
@@ -114,9 +132,13 @@ export async function exportProjectData(projectId: string) {
     conflicts: confList,
     knowledgeSources: sources,
     knowledgeChunks: chunks,
+    knowledgeEmbeddings: embeddings,
     knowledgeNotes: notes,
     qualityReports: quality,
     suggestions,
+    writingJobs: jobs,
+    writingJobSteps: jobSteps,
+    aiContextSnapshots: contextSnapshots,
     writingPersonas: personas,
     personaConfigs,
   }
@@ -157,6 +179,9 @@ export async function importProjectData(data: Record<string, unknown>) {
     for (const ch of data.chapters as Record<string, unknown>[])
       await safeInsert(chapters, { id: remapId(ch.id as string), projectId, volumeId: ch.volumeId ? remapId(ch.volumeId as string) : null, ...pick(ch, CHAPTER_FIELDS) })
 
+    for (const sc of ((data.chapterScenes as Record<string, unknown>[] | undefined) || []))
+      await safeInsert(chapterScenes, { id: remapId(sc.id as string), projectId, chapterId: remapId(sc.chapterId as string), ...pick(sc, SCENE_FIELDS) })
+
     for (const r of data.relationships as Record<string, unknown>[])
       await safeInsert(characterRelationships, { id: remapId(r.id as string), projectId, characterAId: remapId(r.characterAId as string), characterBId: remapId(r.characterBId as string), ...pick(r, RELATIONSHIP_FIELDS) })
 
@@ -184,6 +209,9 @@ export async function importProjectData(data: Record<string, unknown>) {
     for (const k of (data.knowledgeChunks as Record<string, unknown>[] || []))
       await safeInsert(knowledgeChunks, { id: remapId(k.id as string), projectId, sourceId: remapId(k.sourceId as string), ...pick(k, KNOWLEDGE_CHUNK_FIELDS) })
 
+    for (const emb of ((data.knowledgeEmbeddings as Record<string, unknown>[] | undefined) || []))
+      await safeInsert(knowledgeEmbeddings, { id: remapId(emb.id as string), projectId, sourceId: remapId(emb.sourceId as string), ...pick(emb, KNOWLEDGE_EMBEDDING_FIELDS) })
+
     for (const n of (data.knowledgeNotes as Record<string, unknown>[] || []))
       await safeInsert(knowledgeNotes, { id: remapId(n.id as string), projectId, sourceId: n.sourceId ? remapId(n.sourceId as string) : null, ...pick(n, KNOWLEDGE_NOTE_FIELDS) })
 
@@ -192,6 +220,28 @@ export async function importProjectData(data: Record<string, unknown>) {
 
     for (const sg of (data.suggestions as Record<string, unknown>[] || []))
       await safeInsert(chapterPostprocessSuggestions, { id: remapId(sg.id as string), projectId, chapterId: remapId(sg.chapterId as string), runId: null, ...pick(sg, POSTPROCESS_SUGGESTION_FIELDS) })
+
+    for (const job of ((data.writingJobs as Record<string, unknown>[] | undefined) || [])) {
+      await safeInsert(writingJobs, {
+        id: remapId(job.id as string),
+        projectId,
+        currentChapterId: job.currentChapterId ? remapId(job.currentChapterId as string) : null,
+        sceneId: job.sceneId ? remapId(job.sceneId as string) : null,
+        ...pick(job, WRITING_JOB_FIELDS),
+      })
+    }
+
+    for (const step of ((data.writingJobSteps as Record<string, unknown>[] | undefined) || []))
+      await safeInsert(writingJobSteps, { id: remapId(step.id as string), jobId: remapId(step.jobId as string), ...pick(step, WRITING_JOB_STEP_FIELDS) })
+
+    for (const snapshot of ((data.aiContextSnapshots as Record<string, unknown>[] | undefined) || [])) {
+      await safeInsert(aiContextSnapshots, {
+        id: remapId(snapshot.id as string),
+        projectId,
+        chapterId: snapshot.chapterId ? remapId(snapshot.chapterId as string) : null,
+        ...pick(snapshot, AI_CONTEXT_SNAPSHOT_FIELDS),
+      })
+    }
 
     // Import writing personas before configs (FK dependency)
     for (const p of ((data.writingPersonas as Record<string, unknown>[] | undefined) || [])) {

@@ -15,6 +15,7 @@ import { useRoute } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
 import ProjectAIProviderSettings from '../features/settings/components/ProjectAIProviderSettings.vue'
 import ProjectBasicSettingsForm from '../features/settings/components/ProjectBasicSettingsForm.vue'
+import ProjectPersonaMemoryPanel from '../features/settings/components/ProjectPersonaMemoryPanel.vue'
 import ProjectPersonaSettings from '../features/settings/components/ProjectPersonaSettings.vue'
 import { useAIProviderSettings } from '../features/settings/composables/useAIProviderSettings'
 import { useProjectBasicSettings } from '../features/settings/composables/useProjectBasicSettings'
@@ -141,6 +142,8 @@ const settingsLoading = computed(() =>
             @save="handleSavePersona"
             @preview="handlePreviewPersona"
           />
+
+          <ProjectPersonaMemoryPanel :project-id="projectId" />
 
           <ProjectAIProviderSettings
             v-model="aiForm"

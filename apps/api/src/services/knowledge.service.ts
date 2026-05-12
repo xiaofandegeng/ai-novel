@@ -3,6 +3,7 @@ import { db } from '../db'
 import { knowledgeChunks, knowledgeEmbeddings, knowledgeNotes, knowledgeSources } from '../db/schema'
 import { fail, generateId, now } from '../utils'
 import { callAIJSON } from './ai.service'
+import { buildEmbeddingText, createLocalEmbedding, serializeEmbedding } from './embedding.service'
 
 export async function listSources(projectId: string) {
   return db.select().from(knowledgeSources).where(eq(knowledgeSources.projectId, projectId))
@@ -174,7 +175,11 @@ export async function analyzeSource(projectId: string, sourceId: string, content
         projectId,
         sourceType: 'knowledge_chunk',
         sourceId: chunk.id,
-        embedding: null,
+        embedding: serializeEmbedding(createLocalEmbedding(buildEmbeddingText({
+          title: chunk.title,
+          summary: chunk.summary,
+          techniques: chunk.techniques,
+        }))),
         summary: chunk.summary || null,
         tags: chunk.techniques || null,
       }))
