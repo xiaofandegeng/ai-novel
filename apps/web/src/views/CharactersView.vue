@@ -39,7 +39,10 @@ const {
   charForm,
   charRoleModel,
   isAnalyzing,
-  aiSuggestion,
+  aiProposal,
+  aiError,
+  proposedFieldItems,
+  candidateRoleLabel,
   filteredCharacters,
   projectStore,
   selectCharacter,
@@ -48,6 +51,11 @@ const {
   confirmDelete,
   handleConfirmDelete,
   handleAIAnalyze,
+  handleAINewCharacter,
+  applyAIToCurrentCharacter,
+  createCharacterFromAI,
+  clearAIProposal,
+  retryAIRequest,
 } = useCharacterWorkspace(projectId)
 
 const sections = [
@@ -250,24 +258,89 @@ const activeTab = ref('profile')
             >
               分析并充实角色
             </NButton>
+            <NButton
+              variant="ghost"
+              size="sm"
+              class="mt-2 w-full"
+              :loading="isAnalyzing"
+              @click="handleAINewCharacter"
+            >
+              <UserPlus :size="14" class="mr-1.5" /> AI 推荐新角色
+            </NButton>
 
-            <div v-if="isAnalyzing || aiSuggestion !== null" class="animate-in fade-in slide-in-from-top-2 mt-4 border border-ai/20 rounded-lg bg-white p-3 shadow-sm space-y-3">
+            <div v-if="isAnalyzing || aiProposal !== null || aiError" class="animate-in fade-in slide-in-from-top-2 mt-4 border border-ai/20 rounded-lg bg-white p-3 shadow-sm space-y-3">
               <div class="flex items-center justify-between">
-                <span class="text-[10px] text-ai font-bold uppercase">AI 建议</span>
-                <button class="text-[10px] text-text-muted hover:text-ai" @click="aiSuggestion = null">
+                <span class="text-[10px] text-ai font-bold uppercase">AI 建议确认区</span>
+                <button class="text-[10px] text-text-muted hover:text-ai" @click="clearAIProposal">
                   清除
                 </button>
               </div>
-              <div v-if="isAnalyzing && !aiSuggestion" class="flex items-center gap-2 py-2 text-xs text-text-muted">
+              <div v-if="isAnalyzing && !aiProposal" class="flex items-center gap-2 py-2 text-xs text-text-muted">
                 <NLoadingState size="sm" /> 正在分析并生成构思...
               </div>
-              <div v-else class="max-h-60 overflow-y-auto text-xs leading-relaxed italic" :class="aiSuggestion?.startsWith('Error:') ? 'text-error font-medium not-italic' : 'text-text-secondary'">
-                {{ aiSuggestion }}
+              <div v-else-if="aiError" class="border-error/20 bg-error/5 text-error border rounded-md p-3 text-xs font-medium">
+                {{ aiError }}
               </div>
-              <p v-if="aiSuggestion && !aiSuggestion.startsWith('Error:')" class="text-[10px] text-text-muted">
-                复制并手动更新到左侧表单中。
-              </p>
-              <NButton v-if="aiSuggestion?.startsWith('Error:')" size="sm" variant="ghost" class="w-full text-xs" @click="handleAIAnalyze">
+              <template v-else-if="aiProposal">
+                <p v-if="aiProposal.summary" class="text-xs text-text-secondary leading-relaxed">
+                  {{ aiProposal.summary }}
+                </p>
+
+                <div v-if="aiProposal.kind === 'enrich'" class="space-y-2">
+                  <div
+                    v-for="item in proposedFieldItems"
+                    :key="item.key"
+                    class="border border-border-light rounded-md bg-bg-subtle p-2"
+                  >
+                    <p class="mb-1 text-[10px] text-text-muted font-semibold">
+                      {{ item.label }}
+                    </p>
+                    <p class="whitespace-pre-wrap text-xs text-text-primary leading-relaxed">
+                      {{ item.value }}
+                    </p>
+                  </div>
+                  <p v-if="proposedFieldItems.length === 0" class="text-xs text-text-muted">
+                    暂无可回填字段。
+                  </p>
+                  <div v-if="proposedFieldItems.length > 0" class="grid grid-cols-2 gap-2">
+                    <NButton size="sm" variant="ai" class="text-xs" @click="applyAIToCurrentCharacter('fill_empty')">
+                      填入空白字段
+                    </NButton>
+                    <NButton size="sm" variant="ghost" class="text-xs" @click="applyAIToCurrentCharacter('replace')">
+                      覆盖对应字段
+                    </NButton>
+                  </div>
+                </div>
+
+                <div v-else class="space-y-3">
+                  <div class="border border-border-light rounded-md bg-bg-subtle p-3">
+                    <p class="text-sm text-text-primary font-semibold">
+                      {{ aiProposal.candidate?.name || 'AI 推荐角色' }}
+                    </p>
+                    <p class="mt-1 text-xs text-text-muted">
+                      {{ candidateRoleLabel }}
+                    </p>
+                  </div>
+                  <div class="max-h-56 overflow-y-auto space-y-2">
+                    <div
+                      v-for="item in proposedFieldItems"
+                      :key="item.key"
+                      class="border border-border-light rounded-md p-2"
+                    >
+                      <p class="mb-1 text-[10px] text-text-muted font-semibold">
+                        {{ item.label }}
+                      </p>
+                      <p class="whitespace-pre-wrap text-xs text-text-primary leading-relaxed">
+                        {{ item.value }}
+                      </p>
+                    </div>
+                  </div>
+                  <NButton size="sm" variant="ai" class="w-full text-xs" @click="createCharacterFromAI">
+                    创建并选中该角色
+                  </NButton>
+                </div>
+              </template>
+              <NButton v-if="aiError" size="sm" variant="ghost" class="w-full text-xs" @click="retryAIRequest">
                 重试
               </NButton>
             </div>
