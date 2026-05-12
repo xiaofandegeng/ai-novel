@@ -10,6 +10,7 @@
     "build": "pnpm run -r build",
     "lint": "eslint . --cache --concurrency=auto",
     "lint:fix": "eslint . --fix --cache --concurrency=auto",
+    "format": "pnpm lint:fix",
     "test": "pnpm run -r test",
     "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test",
     "db:generate": "pnpm --filter @ai-novel/api db:generate",

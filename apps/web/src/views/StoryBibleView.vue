@@ -54,27 +54,124 @@ const form = ref({
 
 // --- AI Section ---
 const { isStreaming: isBrainstorming, stream: streamAI } = useAIStream()
-const aiSuggestion = ref<string | null>(null)
+
+interface ProcessedStoryBibleSuggestion {
+  raw: string
+  cleaned: string
+  removedNotes: string[]
+}
+
+const aiSuggestion = ref<ProcessedStoryBibleSuggestion | null>(null)
+const aiError = ref('')
+
+function buildStoryBiblePrompt(prompt: string, sectionLabel: string) {
+  return [
+    prompt,
+    '',
+    `请只输出可直接写入【${sectionLabel}】设定栏的内容。`,
+    '要求：',
+    '1. 不要输出 Markdown 加粗、分割线、代码块或标题装饰。',
+    '2. 不要向作者提问，不要写“作者决策点”“请告知倾向”等对话式内容。',
+    '3. 如果有待决策内容，请直接整理成“待定：...”设定草案。',
+    '4. 内容要保持设定口吻，便于作者确认后追加或替换到设定集中。',
+  ].join('\n')
+}
+
+function normalizeStoryBibleSuggestion(raw: string): ProcessedStoryBibleSuggestion {
+  const removedNotes: string[] = []
+  const cleanedLines: string[] = []
+  const lines = raw
+    .replace(/\r\n/g, '\n')
+    .replace(/```[a-z]*\n?/gi, '')
+    .replace(/```/g, '')
+    .split('\n')
+
+  let inDecisionBlock = false
+
+  for (const sourceLine of lines) {
+    const trimmed = sourceLine.trim()
+
+    if (!trimmed) {
+      if (cleanedLines.length > 0 && cleanedLines.at(-1) !== '')
+        cleanedLines.push('')
+      continue
+    }
+
+    const line = trimmed
+      .replace(/^#{1,6}\s*/, '')
+      .replace(/\*\*/g, '')
+      .replace(/__/g, '')
+      .replace(/^\s*\*\s+/, '- ')
+      .trim()
+
+    if (/^-{3,}$/.test(line))
+      continue
+
+    const isDecisionHeading = /^(?:作者决策点|决策点|需要作者确认|下一步确认|请你选择|请告知)/.test(line)
+    const isAssistantMeta = /请告知|告诉我你的倾向|我将据此|下一阶段|进入下一阶段|如果你愿意|我可以继续|是否需要|你倾向于/.test(line)
+
+    if (isDecisionHeading) {
+      inDecisionBlock = true
+      removedNotes.push(line)
+      continue
+    }
+
+    if (inDecisionBlock) {
+      removedNotes.push(line)
+      continue
+    }
+
+    if (/^(?:好的|当然|以下是|下面是|我建议|建议如下|分析如下)[：:,，]?/.test(line))
+      continue
+
+    if (isAssistantMeta) {
+      removedNotes.push(line)
+      continue
+    }
+
+    cleanedLines.push(line)
+  }
+
+  const cleaned = cleanedLines
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+  return {
+    raw,
+    cleaned,
+    removedNotes,
+  }
+}
 
 async function handleAIBrainstorm(customPrompt?: string) {
   const section = sections.find(s => s.id === activeSection.value)
   const prompt = customPrompt || `基于当前项目主题"${projectStore.currentProject?.theme || '未定义'}"，为作品的"${section?.label}"部分提供一些深入的构思建议。`
 
+  aiSuggestion.value = null
+  aiError.value = ''
+
   try {
-    aiSuggestion.value = await streamAI({
+    const raw = await streamAI({
       projectId,
       scene: 'story_bible',
-      userInstruction: prompt,
+      userInstruction: buildStoryBiblePrompt(prompt, section?.label || '故事设定'),
     })
+    const processed = normalizeStoryBibleSuggestion(raw)
+    aiSuggestion.value = processed
+
+    if (!processed.cleaned)
+      aiError.value = 'AI 返回内容没有可直接写入设定的部分，请调整提示后重试。'
   }
   catch (error: any) {
-    aiSuggestion.value = `Error: ${error.message || 'AI 辅助构思失败'}`
-    toast.add(error.message || 'AI 辅助构思失败', 'error')
+    aiError.value = error.message || 'AI 辅助构思失败'
+    toast.add(aiError.value, 'error')
   }
 }
 
 function handleApplyAI(action: 'append' | 'replace') {
-  if (!aiSuggestion.value)
+  const suggestion = aiSuggestion.value?.cleaned.trim()
+  if (!suggestion)
     return
 
   const section = sections.find(s => s.id === activeSection.value)
@@ -83,13 +180,14 @@ function handleApplyAI(action: 'append' | 'replace') {
 
   const field = section.field as keyof typeof form.value
   if (action === 'append') {
-    form.value[field] = (form.value[field] ? `${form.value[field]}\n\n` : '') + aiSuggestion.value
+    form.value[field] = (form.value[field] ? `${form.value[field]}\n\n` : '') + suggestion
   }
   else {
-    form.value[field] = aiSuggestion.value
+    form.value[field] = suggestion
   }
 
   aiSuggestion.value = null
+  aiError.value = ''
   toast.add('已应用 AI 建议', 'success')
 }
 
@@ -226,25 +324,45 @@ async function handleSave() {
                     </NButton>
                   </div>
 
-                  <div v-if="isBrainstorming || aiSuggestion !== null" class="animate-in fade-in slide-in-from-top-2 border border-ai/20 rounded-lg bg-ai-soft/50 p-4 shadow-sm space-y-4">
+                  <div v-if="isBrainstorming || aiSuggestion !== null || aiError" class="animate-in fade-in slide-in-from-top-2 border border-ai/20 rounded-lg bg-ai-soft/50 p-4 shadow-sm space-y-4">
                     <div class="flex items-center justify-between">
                       <div class="flex items-center gap-2">
                         <Sparkles :size="18" class="text-ai" />
                         <h3 class="text-sm text-ai font-bold uppercase">
-                          AI 建议
+                          AI 建议确认区
                         </h3>
                       </div>
-                      <NButton variant="ghost" size="sm" @click="aiSuggestion = null">
+                      <NButton variant="ghost" size="sm" @click="aiSuggestion = null; aiError = ''">
                         放弃
                       </NButton>
                     </div>
                     <div v-if="isBrainstorming && !aiSuggestion" class="flex items-center gap-2 py-4 text-sm text-text-muted">
                       <NLoadingState size="sm" /> 正在思考并构思建议...
                     </div>
-                    <div v-else class="max-h-60 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed italic" :class="aiSuggestion?.startsWith('Error:') ? 'text-error font-medium not-italic' : 'text-text-primary'">
-                      {{ aiSuggestion }}
+                    <div v-else-if="aiError" class="border-error/20 bg-error/5 text-error border rounded-md p-3 text-sm font-medium">
+                      {{ aiError }}
                     </div>
-                    <div v-if="aiSuggestion && !aiSuggestion.startsWith('Error:')" class="flex gap-2">
+                    <template v-else-if="aiSuggestion">
+                      <div class="border border-ai/10 rounded-md bg-white p-3">
+                        <p class="mb-2 text-xs text-ai font-semibold">
+                          已整理为可写入设定
+                        </p>
+                        <div class="max-h-60 overflow-y-auto whitespace-pre-wrap text-sm text-text-primary leading-relaxed">
+                          {{ aiSuggestion.cleaned || '暂无可写入内容' }}
+                        </div>
+                      </div>
+                      <div v-if="aiSuggestion.removedNotes.length > 0" class="border border-border-light rounded-md bg-bg-subtle p-3">
+                        <p class="mb-2 text-xs text-text-muted font-semibold">
+                          已移出的问题与对话式内容
+                        </p>
+                        <ul class="max-h-28 list-disc overflow-y-auto pl-4 text-xs text-text-muted leading-relaxed space-y-1">
+                          <li v-for="(note, index) in aiSuggestion.removedNotes" :key="`${index}-${note}`">
+                            {{ note }}
+                          </li>
+                        </ul>
+                      </div>
+                    </template>
+                    <div v-if="aiSuggestion?.cleaned" class="flex gap-2">
                       <NButton size="sm" variant="ai" @click="handleApplyAI('append')">
                         在末尾追加
                       </NButton>
@@ -252,7 +370,7 @@ async function handleSave() {
                         全部替换
                       </NButton>
                     </div>
-                    <NButton v-if="aiSuggestion?.startsWith('Error:')" size="sm" variant="ghost" class="w-full text-xs" @click="handleAIBrainstorm()">
+                    <NButton v-if="aiError" size="sm" variant="ghost" class="w-full text-xs" @click="handleAIBrainstorm()">
                       重试
                     </NButton>
                   </div>
