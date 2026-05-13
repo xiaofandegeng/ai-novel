@@ -171,4 +171,5 @@ export interface GenerateAIOptions {
   sceneId?: string
   selectedText?: string
   userInstruction?: string
+  model?: string
 }

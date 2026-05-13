@@ -17,7 +17,7 @@ const emit = defineEmits<{
   (e: 'save'): void
   (e: 'snapshot'): void
   (e: 'selection', payload: { text: string, start: number, end: number }): void
-  (e: 'runAI', type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'): void
+  (e: 'runAi', type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'): void
 }>()
 
 const draft = defineModel<string>({ required: true })
@@ -53,7 +53,7 @@ function handleSelection(e: Event) {
 
 function triggerAI(type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft') {
   showFloatingBar.value = false
-  emit('runAI', type)
+  emit('runAi', type)
 }
 
 defineExpose({

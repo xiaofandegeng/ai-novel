@@ -20,7 +20,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'applyAI', content: string): void
   (e: 'consistencyCheck', payload: { report?: any, loading: boolean }): void
-  (e: 'runAI', type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'): void
+  (e: 'runAi', type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'): void
 }>()
 
 const activeContextTab = ref('outline')
@@ -236,7 +236,7 @@ defineExpose({
           :scene="pendingScene"
           @apply="emit('applyAI', $event)"
           @consistency-check="emit('consistencyCheck', $event)"
-          @run-a-i="emit('runAI', $event)"
+          @run-ai="emit('runAi', $event)"
         />
       </div>
     </div>

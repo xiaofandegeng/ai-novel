@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AI_PROVIDER_PRESETS } from '@ai-novel/shared'
 import { NButton } from '@ai-novel/ui'
 import {
   AlertTriangle,
@@ -13,8 +14,9 @@ import {
   User,
   XCircle,
 } from 'lucide-vue-next'
-import { nextTick, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { fetchAISettings } from '@/api/ai'
 import { useAIAssistantSession } from '../composables/useAIAssistantSession'
 
 const props = defineProps<{
@@ -28,7 +30,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'apply', content: string): void
   (e: 'consistencyCheck', payload: { report?: any, loading: boolean }): void
-  (e: 'runAI', type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'): void
+  (e: 'runAi', type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'): void
 }>()
 
 const router = useRouter()
@@ -36,6 +38,24 @@ const { isStreaming, messages, selectedModel, aiNotConfigured, send, clearChat }
 
 const inputMessage = ref('')
 const chatContainer = ref<HTMLElement | null>(null)
+const availableModels = ref<{ label: string, value: string }[]>([])
+
+onMounted(async () => {
+  try {
+    const settings = await fetchAISettings()
+    const providerPreset = AI_PROVIDER_PRESETS.find(p => p.id === settings.provider)
+    if (providerPreset) {
+      availableModels.value = providerPreset.models
+    }
+    else {
+      // Fallback: at least show the current model
+      availableModels.value = [{ label: settings.model || 'Default Model', value: settings.model }]
+    }
+  }
+  catch {
+    // Ignore error
+  }
+})
 
 function handleQuickAction(type: 'draft' | 'continue' | 'brainstorm') {
   if (type === 'brainstorm') {
@@ -43,7 +63,7 @@ function handleQuickAction(type: 'draft' | 'continue' | 'brainstorm') {
     handleSend()
   }
   else {
-    emit('runAI', type)
+    emit('runAi', type as any)
   }
 }
 
@@ -102,16 +122,10 @@ defineExpose({
         <Sparkles :size="18" class="text-ai" />
         <select
           v-model="selectedModel"
-          class="cursor-pointer border-none bg-transparent text-xs text-ai font-bold tracking-wider uppercase focus:ring-0"
+          class="max-w-[200px] cursor-pointer border-none bg-transparent text-xs text-ai font-bold tracking-wider uppercase focus:ring-0"
         >
-          <option value="gpt-4o-mini">
-            GPT-4o Mini
-          </option>
-          <option value="gpt-4o">
-            GPT-4o (Smart)
-          </option>
-          <option value="claude-3-5-sonnet">
-            Claude 3.5
+          <option v-for="m in availableModels" :key="m.value" :value="m.value">
+            {{ m.label }}
           </option>
         </select>
       </div>

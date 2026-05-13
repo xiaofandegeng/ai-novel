@@ -1,6 +1,6 @@
 import type { ConsistencyGuardReport } from '@ai-novel/shared'
-import { ref, watch } from 'vue'
-import { chatStream, checkConsistency, readChatStream } from '@/api/ai'
+import { onMounted, ref, watch } from 'vue'
+import { chatStream, checkConsistency, fetchAISettings, readChatStream } from '@/api/ai'
 import { useAIStream } from '@/composables/useAIStream'
 import { getErrorMessage } from '@/utils/error-message'
 
@@ -21,8 +21,23 @@ export function useAIAssistantSession() {
   const { isStreaming, streamedContent, stream: streamAI } = useAIStream()
 
   const messages = ref<AIMessage[]>([])
-  const selectedModel = ref('gpt-4o-mini')
+  const selectedModel = ref('')
   const aiNotConfigured = ref(false)
+
+  onMounted(async () => {
+    try {
+      const settings = await fetchAISettings()
+      if (settings && settings.model) {
+        selectedModel.value = settings.model
+      }
+      if (!settings || !settings.hasApiKey) {
+        aiNotConfigured.value = true
+      }
+    }
+    catch {
+      // Ignore settings fetch error, keep defaults
+    }
+  })
 
   const consistencyScenes = new Set(['draft', 'outline', 'polish', 'quality'])
 
@@ -55,6 +70,7 @@ export function useAIAssistantSession() {
           chapterId: opts.chapterId,
           sceneId: opts.sceneId,
           userInstruction: userMsg,
+          model: selectedModel.value,
         })
       }
       else {

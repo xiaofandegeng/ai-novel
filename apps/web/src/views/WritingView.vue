@@ -362,7 +362,7 @@ async function handleUpdateMemory() {
         @save="sceneMode ? handleSceneSave() : handleSave()"
         @snapshot="handleSnapshot"
         @selection="handleSelection"
-        @run-a-i="handleRunAI"
+        @run-ai="handleRunAI"
       >
         <template #version-history>
           <NButton

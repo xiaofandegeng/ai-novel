@@ -103,3 +103,12 @@ export async function getChapterMemory(projectId: string, chapterId: string) {
   }
   return json.data
 }
+
+export async function fetchAISettings() {
+  const response = await fetch('/api/ai/settings')
+  const json = await response.json()
+  if (!response.ok) {
+    throw new Error(json.error || '获取 AI 设置失败')
+  }
+  return json.data
+}
