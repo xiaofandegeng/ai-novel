@@ -92,11 +92,3 @@ export type ErrorCode = keyof typeof ERROR_MESSAGES
 export function getErrorMessage(code: ErrorCode, fallback?: string): string {
   return ERROR_MESSAGES[code] || fallback || ERROR_MESSAGES.unknown
 }
-
-export function apiError(error: unknown, code: ErrorCode): string {
-  if (error instanceof Error && error.message) {
-    console.error(`[${code}]`, error)
-    return ERROR_MESSAGES[code]
-  }
-  return ERROR_MESSAGES[code]
-}

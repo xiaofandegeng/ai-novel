@@ -23,9 +23,5 @@ export const usePersonaMemoryStore = defineStore('personaMemory', () => {
     }
   }
 
-  function clear() {
-    fragments.value = []
-  }
-
-  return { fragments, extracting, fetchFragments, extractPatterns, clear }
+  return { fragments, extracting, fetchFragments, extractPatterns }
 })

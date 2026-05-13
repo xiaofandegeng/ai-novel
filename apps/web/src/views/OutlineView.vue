@@ -5,12 +5,12 @@ import {
   NLoadingState,
 } from '@ai-novel/ui'
 import {
-  ArrowLeft,
   BookText,
   PenLine,
   Save,
 } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
+import ProjectBreadcrumb from '@/components/ProjectBreadcrumb.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import ChapterOutlineEditor from '../features/outline/components/ChapterOutlineEditor.vue'
 import OutlineAIPanel from '../features/outline/components/OutlineAIPanel.vue'
@@ -72,22 +72,12 @@ const {
 <template>
   <NAppLayout :project-name="projectStore.currentProject?.title || '加载中...'" :project-id="projectId">
     <template #topbar-left>
-      <div class="flex items-center gap-4">
-        <router-link
-          to="/"
-          class="flex items-center gap-2 text-text-muted transition-colors hover:text-primary"
-          title="返回书库"
-        >
-          <ArrowLeft :size="20" />
-        </router-link>
-        <div class="h-6 w-px bg-border-light" />
-        <router-link
-          :to="`/project/${projectId}`"
-          class="text-base text-text-primary font-semibold transition-colors hover:text-primary"
-        >
-          {{ projectStore.currentProject?.title || '加载中...' }}
-        </router-link>
-      </div>
+      <ProjectBreadcrumb
+        :title="projectStore.currentProject?.title"
+        title-fallback="加载中…"
+        :title-to="`/project/${projectId}`"
+        back-to="/"
+      />
     </template>
     <template #nav>
       <AppSidebar :project-id="projectId" />

@@ -1,6 +1,7 @@
 import type { ConsistencyGuardReport } from '@ai-novel/shared'
 import { onMounted, ref, watch } from 'vue'
-import { chatStream, checkConsistency, fetchAISettings, readChatStream } from '@/api/ai'
+import { chatStream, checkConsistency, readChatStream } from '@/api/ai'
+import { fetchAISettings } from '@/api/settings'
 import { useAIStream } from '@/composables/useAIStream'
 import { getErrorMessage } from '@/utils/error-message'
 

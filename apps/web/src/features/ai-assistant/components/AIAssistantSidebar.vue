@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ConsistencyGuardReport } from '@ai-novel/shared'
 import { AI_PROVIDER_PRESETS } from '@ai-novel/shared'
 import { NButton } from '@ai-novel/ui'
 import {
@@ -16,7 +17,7 @@ import {
 } from 'lucide-vue-next'
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchAISettings } from '@/api/ai'
+import { fetchAISettings } from '@/api/settings'
 import { useAIAssistantSession } from '../composables/useAIAssistantSession'
 
 const props = defineProps<{
@@ -30,7 +31,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'apply', content: string): void
   (e: 'insert', content: string): void
-  (e: 'consistencyCheck', payload: { report?: any, loading: boolean }): void
+  (e: 'consistencyCheck', payload: { report?: ConsistencyGuardReport, loading: boolean }): void
   (e: 'runAi', type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'): void
   (e: 'stream', content: string): void
 }>()

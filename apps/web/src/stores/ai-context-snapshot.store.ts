@@ -15,10 +15,5 @@ export const useAIContextSnapshotStore = defineStore('aiContextSnapshots', () =>
     selected.value = await api.fetchContextSnapshot(projectId, id)
   }
 
-  function clear() {
-    snapshots.value = []
-    selected.value = null
-  }
-
-  return { snapshots, selected, fetchSnapshots, fetchSnapshot, clear }
+  return { snapshots, selected, fetchSnapshots, fetchSnapshot }
 })

@@ -1,4 +1,4 @@
-type TagVariant = 'default' | 'primary' | 'success' | 'warning' | 'error' | 'info' | 'ai'
+import type { TagVariant } from '@ai-novel/ui'
 
 export function useProjectLabels() {
   const projectStatusLabels: Record<string, string> = {

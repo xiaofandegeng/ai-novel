@@ -1,4 +1,4 @@
-import type { ConflictStatus, ConflictType } from '@ai-novel/shared'
+import type { ConflictStatus, ConflictType, PostprocessSuggestion as RawSuggestion } from '@ai-novel/shared'
 import type { Component } from 'vue'
 import { useToast } from '@ai-novel/ui'
 import {
@@ -39,7 +39,15 @@ export function useConflictWorkspace(projectId: string) {
   const saving = ref(false)
   const selectedConflictId = ref<string | null>(null)
   const showDeleteConfirm = ref(false)
-  const suggestions = ref<any[]>([])
+  type ParsedSuggestion = Omit<RawSuggestion, 'payload'> & { payload: Record<string, unknown> }
+  const suggestions = ref<ParsedSuggestion[]>([])
+
+  function parseSuggestions(raw: RawSuggestion[]): ParsedSuggestion[] {
+    return raw.map(s => ({
+      ...s,
+      payload: typeof s.payload === 'string' ? JSON.parse(s.payload) : s.payload,
+    }))
+  }
   const inferring = ref(false)
 
   const conflictForm = ref({
@@ -63,7 +71,7 @@ export function useConflictWorkspace(projectId: string) {
         suggestionsApi.fetchProjectSuggestions(projectId, 'conflict_add'),
         suggestionsApi.fetchProjectSuggestions(projectId, 'conflict_update'),
       ])
-      suggestions.value = [...sAdd, ...sUpdate]
+      suggestions.value = parseSuggestions([...sAdd, ...sUpdate])
 
       if (conflictStore.conflicts.length > 0)
         selectConflict(conflictStore.conflicts[0].id)

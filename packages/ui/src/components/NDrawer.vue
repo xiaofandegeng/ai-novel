@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { toRef } from 'vue'
+import { useOverlayVisibility } from '../composables/useOverlayVisibility'
 
 interface Props {
   modelValue: boolean
@@ -21,29 +22,7 @@ function close() {
   emit('update:modelValue', false)
 }
 
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && props.modelValue) {
-    close()
-  }
-}
-
-watch(() => props.modelValue, (open) => {
-  if (open) {
-    document.body.style.overflow = 'hidden'
-  }
-  else {
-    document.body.style.overflow = ''
-  }
-})
-
-onMounted(() => {
-  document.addEventListener('keydown', onKeydown)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('keydown', onKeydown)
-  document.body.style.overflow = ''
-})
+useOverlayVisibility(toRef(props, 'modelValue'), close)
 </script>
 
 <template>
@@ -68,15 +47,7 @@ onUnmounted(() => {
               aria-label="Close"
               @click="close"
             >
-              <svg
-                class="h-5 w-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -99,6 +70,6 @@ onUnmounted(() => {
 
 .drawer-enter-from,
 .drawer-leave-to {
-  transform: translate-x(100%);
+  transform: translateX(100%);
 }
 </style>

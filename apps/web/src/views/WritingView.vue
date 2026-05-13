@@ -309,20 +309,20 @@ async function handleUpdateMemory() {
     return
   updatingMemory.value = true
   try {
-    const result = await triggerChapterPostprocess(projectId, currentChapterId.value, draft.value)
+    const result = await triggerChapterPostprocess(projectId, currentChapterId.value, draft.value) as { warnings?: string[] }
 
     // Refresh chapter data to get newly associated characters
     await chapterStore.fetchChapters(projectId)
 
-    if (result.warnings.length > 0) {
+    if (result.warnings && result.warnings.length > 0) {
       toast.add(`章节记忆已更新（${result.warnings.join('；')}）`, 'warning')
     }
     else {
       toast.add('章节记忆已更新', 'success')
     }
   }
-  catch (e: any) {
-    toast.add(e.message || '章节记忆更新失败', 'error')
+  catch (e: unknown) {
+    toast.add(e instanceof Error ? e.message : '章节记忆更新失败', 'error')
   }
   finally {
     updatingMemory.value = false

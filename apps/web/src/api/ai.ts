@@ -1,4 +1,5 @@
-import type { AIMessage, AIScene, ChatStreamOptions, GenerateAIOptions } from '@ai-novel/shared'
+import type { AIMessage, AIScene, ChatStreamOptions, ConsistencyGuardReport, GenerateAIOptions } from '@ai-novel/shared'
+import { apiGet, apiPost } from './client'
 
 export type { ChatStreamOptions, GenerateAIOptions }
 
@@ -59,56 +60,22 @@ export async function readChatStream(response: Response, onChunk?: (text: string
   return result
 }
 
-export async function checkConsistency(projectId: string, input: {
+export function checkConsistency(projectId: string, input: {
   chapterId?: string
   sceneId?: string
   scene: AIScene
   generatedText: string
   sourceInstruction?: string
 }) {
-  const response = await fetch(`/api/projects/${projectId}/consistency/check`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  })
-
-  const json = await response.json()
-  if (!response.ok) {
-    throw new Error(json.error || '一致性检查失败')
-  }
-
-  return json.data
+  return apiPost<ConsistencyGuardReport>(`/api/projects/${projectId}/consistency/check`, input)
 }
 
-export async function triggerChapterPostprocess(projectId: string, chapterId: string, content: string) {
-  const response = await fetch(`/api/projects/${projectId}/chapters/${chapterId}/postprocess`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content, trigger: 'manual_save' }),
-  })
-
-  const json = await response.json()
-  if (!response.ok) {
-    throw new Error(json.error || '章节记忆更新失败')
-  }
-
-  return json.data
+export function triggerChapterPostprocess(projectId: string, chapterId: string, content: string) {
+  return apiPost(`/api/projects/${projectId}/chapters/${chapterId}/postprocess`, { content, trigger: 'manual_save' })
 }
 
-export async function getChapterMemory(projectId: string, chapterId: string) {
-  const response = await fetch(`/api/projects/${projectId}/chapters/${chapterId}/memory`)
-  const json = await response.json()
-  if (!response.ok) {
-    throw new Error(json.error || '获取章节记忆失败')
-  }
-  return json.data
+export function getChapterMemory(projectId: string, chapterId: string) {
+  return apiGet(`/api/projects/${projectId}/chapters/${chapterId}/memory`)
 }
 
-export async function fetchAISettings() {
-  const response = await fetch('/api/ai/settings')
-  const json = await response.json()
-  if (!response.ok) {
-    throw new Error(json.error || '获取 AI 设置失败')
-  }
-  return json.data
-}
+export { fetchAISettings } from './settings'

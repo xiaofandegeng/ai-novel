@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import type { TagVariant } from '../types'
 import { computed } from 'vue'
 
-type TagVariant = 'default' | 'primary' | 'success' | 'warning' | 'error' | 'info' | 'ai'
 type TagSize = 'sm' | 'md'
 
 interface Props {

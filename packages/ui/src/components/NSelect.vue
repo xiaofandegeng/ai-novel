@@ -1,10 +1,6 @@
 <script setup lang="ts">
+import type { SelectOption } from '../types'
 import { useId } from 'vue'
-
-interface SelectOption {
-  label: string
-  value: string | number
-}
 
 interface Props {
   modelValue?: string | number

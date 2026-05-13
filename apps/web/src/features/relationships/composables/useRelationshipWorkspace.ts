@@ -1,3 +1,4 @@
+import type { PostprocessSuggestion } from '@ai-novel/shared'
 import { useToast } from '@ai-novel/ui'
 import { onMounted, ref } from 'vue'
 import * as suggestionsApi from '@/api/postprocess-suggestions'
@@ -16,7 +17,15 @@ export function useRelationshipWorkspace(projectId: string) {
   const loading = ref(true)
   const saving = ref(false)
   const inferring = ref(false)
-  const suggestions = ref<any[]>([])
+  const suggestions = ref<(Omit<PostprocessSuggestion, 'payload'> & {
+    payload: {
+      characterAName: string
+      characterBName: string
+      type: string
+      description: string
+      [key: string]: any
+    }
+  })[]>([])
   const selectedRelId = ref<string | null>(null)
   const showDeleteConfirm = ref(false)
 

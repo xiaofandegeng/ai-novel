@@ -9,7 +9,6 @@ import {
 } from '@ai-novel/ui'
 import {
   AlertTriangle,
-  ArrowLeft,
   BookText,
   CheckCircle2,
   ChevronRight,
@@ -20,6 +19,7 @@ import {
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import ProjectBreadcrumb from '@/components/ProjectBreadcrumb.vue'
 import { exportProject } from '../api/export'
 import { fetchAISettings } from '../api/settings'
 import AppSidebar from '../components/AppSidebar.vue'
@@ -175,21 +175,11 @@ function handleExploreCharacters() {
     :project-id="projectId"
   >
     <template #topbar-left>
-      <div class="flex items-center gap-4">
-        <router-link
-          to="/"
-          class="flex items-center gap-2 text-text-muted transition-colors hover:text-primary"
-          title="返回书库"
-        >
-          <ArrowLeft :size="20" />
-        </router-link>
-
-        <div class="h-6 w-px bg-border-light" />
-
-        <span class="text-base text-text-primary font-semibold">
-          {{ projectStore.currentProject?.title || '加载中…' }}
-        </span>
-      </div>
+      <ProjectBreadcrumb
+        :title="projectStore.currentProject?.title"
+        title-fallback="加载中…"
+        back-to="/"
+      />
     </template>
 
     <template #nav>

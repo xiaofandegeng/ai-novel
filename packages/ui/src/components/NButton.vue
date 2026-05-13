@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import type { ButtonVariant } from '../types'
 import { computed } from 'vue'
 
 interface Props {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'ai'
+  variant?: ButtonVariant
   size?: 'sm' | 'md' | 'lg'
   loading?: boolean
   disabled?: boolean

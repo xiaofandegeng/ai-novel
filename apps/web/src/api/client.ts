@@ -31,3 +31,19 @@ export function apiPut<T>(url: string, body: unknown): Promise<T> {
 export function apiDel<T = void>(url: string): Promise<T> {
   return request<T>(url, { method: 'DELETE' })
 }
+
+export interface CrudApi<T, C = unknown, U = unknown> {
+  fetch: (projectId: string) => Promise<T[]>
+  create: (projectId: string, data: C) => Promise<T>
+  update: (projectId: string, id: string, data: U) => Promise<T>
+  delete: (projectId: string, id: string) => Promise<void>
+}
+
+export function createCrudApi<T, C = unknown, U = unknown>(resource: string): CrudApi<T, C, U> {
+  return {
+    fetch: projectId => apiGet<T[]>(`/api/projects/${projectId}/${resource}`),
+    create: (projectId, data) => apiPost<T>(`/api/projects/${projectId}/${resource}`, data),
+    update: (projectId, id, data) => apiPatch<T>(`/api/projects/${projectId}/${resource}/${id}`, data),
+    delete: (projectId, id) => apiDel(`/api/projects/${projectId}/${resource}/${id}`),
+  }
+}

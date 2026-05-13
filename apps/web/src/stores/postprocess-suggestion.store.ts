@@ -36,9 +36,5 @@ export const usePostprocessSuggestionStore = defineStore('postprocessSuggestions
     return api.runInference(projectId)
   }
 
-  function clear() {
-    suggestions.value = []
-  }
-
-  return { suggestions, fetchSuggestions, accept, reject, applyAccepted, runInference, clear }
+  return { suggestions, fetchSuggestions, accept, reject, applyAccepted, runInference }
 })
