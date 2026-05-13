@@ -72,7 +72,7 @@ export function useAIResultConfirm(
 
   function buildAIPrompt(type: AIActionType['type']): string {
     if (type === 'draft') {
-      return '请根据本章大纲、创作目标、关键事件及登场人物设定，为我撰写本章的正文初稿。要求：保持叙事张力，注重细节描写，字数在1000-2000字左右。'
+      return '请根据本章大纲、创作目标、关键事件及登场人物设定，为我撰写本章的正文初稿。要求：保持叙事张力，注重细节描写。字数请根据剧情张力自由发挥，或您可以在下方输入框补充具体字数要求。'
     }
     if (type === 'continue') {
       return `请根据前文剧情和已有风格，继续续写后续内容。确保语气连贯，逻辑自洽。当前正文末尾：\n"${draft.value.slice(-500)}"`

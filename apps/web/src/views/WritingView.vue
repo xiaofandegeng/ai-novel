@@ -276,8 +276,30 @@ async function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discar
     versionStore,
     toast,
   })
-  if (sceneMode.value && (action === 'insert' || action === 'replace'))
+  if (sceneMode.value && (action === 'insert' || action === 'replace')) {
     await handleSceneSave()
+  }
+  else {
+    await handleSave()
+  }
+}
+
+async function handleInsertAI(content: string) {
+  const start = selectionStart.value
+  const end = selectionEnd.value
+  if (start !== end) {
+    activeContent.value = activeContent.value.substring(0, start) + content + activeContent.value.substring(end)
+  }
+  else {
+    activeContent.value = activeContent.value.substring(0, start) + content + activeContent.value.substring(start)
+  }
+  toast.add('已应用到编辑器', 'success')
+  if (sceneMode.value) {
+    await handleSceneSave()
+  }
+  else {
+    await handleSave()
+  }
 }
 
 const updatingMemory = ref(false)
@@ -288,6 +310,10 @@ async function handleUpdateMemory() {
   updatingMemory.value = true
   try {
     const result = await triggerChapterPostprocess(projectId, currentChapterId.value, draft.value)
+
+    // Refresh chapter data to get newly associated characters
+    await chapterStore.fetchChapters(projectId)
+
     if (result.warnings.length > 0) {
       toast.add(`章节记忆已更新（${result.warnings.join('；')}）`, 'warning')
     }
@@ -392,8 +418,10 @@ async function handleUpdateMemory() {
         :project-id="projectId"
         :scene-id="sceneMode ? currentSceneId : null"
         @apply-a-i="applyAIResult"
+        @insert-a-i="handleInsertAI"
         @consistency-check="updateConsistency($event.report, $event.loading)"
         @run-ai="handleRunAI"
+        @stream-a-i="applyAIResult"
       />
     </div>
   </NAppLayout>

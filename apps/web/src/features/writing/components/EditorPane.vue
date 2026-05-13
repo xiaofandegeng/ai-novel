@@ -2,7 +2,7 @@
 import type { Chapter } from '@ai-novel/shared'
 import { NButton } from '@ai-novel/ui'
 import { Sparkles } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 
 defineProps<{
   loading: boolean
@@ -27,6 +27,21 @@ const showFloatingBar = ref(false)
 const selectedText = ref('')
 const selectionStart = ref(0)
 const selectionEnd = ref(0)
+
+function resizeEditor() {
+  if (editorRef.value) {
+    editorRef.value.style.height = 'auto'
+    editorRef.value.style.height = `${editorRef.value.scrollHeight}px`
+  }
+}
+
+watch(draft, () => {
+  nextTick(resizeEditor)
+})
+
+onMounted(() => {
+  nextTick(resizeEditor)
+})
 
 function handleSelection(e: Event) {
   const el = e.target as HTMLTextAreaElement
@@ -104,9 +119,10 @@ defineExpose({
           ref="editorRef"
           v-model="draft"
           aria-label="章节正文编辑器"
-          class="min-h-[600px] w-full resize-none border-none bg-transparent text-lg text-text-primary leading-[2] font-writing placeholder:text-text-muted/30 focus:outline-none"
+          class="w-full resize-none overflow-hidden border-none bg-transparent text-lg text-text-primary leading-[2] font-writing placeholder:text-text-muted/30 focus:outline-none"
           placeholder="从这里开始写作..."
           @select="handleSelection"
+          @input="resizeEditor"
         />
 
         <!-- Empty State AI Button -->
@@ -158,13 +174,6 @@ defineExpose({
             </button>
           </div>
         </Transition>
-      </div>
-
-      <!-- Bottom Indicator -->
-      <div class="flex items-center justify-center pb-10 pt-20 opacity-30">
-        <div class="flex gap-2">
-          <div v-for="i in 3" :key="i" class="h-1.5 w-1.5 rounded-full bg-text-muted" />
-        </div>
       </div>
     </div>
   </main>

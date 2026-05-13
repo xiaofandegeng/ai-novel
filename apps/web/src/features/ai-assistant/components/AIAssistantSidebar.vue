@@ -29,8 +29,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'apply', content: string): void
+  (e: 'insert', content: string): void
   (e: 'consistencyCheck', payload: { report?: any, loading: boolean }): void
   (e: 'runAi', type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'): void
+  (e: 'stream', content: string): void
 }>()
 
 const router = useRouter()
@@ -69,8 +71,10 @@ function handleQuickAction(type: 'draft' | 'continue' | 'brainstorm') {
 
 watch(() => messages.value[messages.value.length - 1], (last) => {
   if (last && last.role === 'assistant') {
-    if (isStreaming.value)
+    if (isStreaming.value) {
       scrollToBottom()
+      emit('stream', last.content)
+    }
 
     // Notify parent about consistency check status
     if (last.isCheckingConsistency || last.consistencyReport) {
@@ -258,7 +262,7 @@ defineExpose({
             size="sm"
             aria-label="应用 AI 回复到编辑器"
             :disabled="msg.consistencyReport?.overallStatus === 'blocked' || msg.consistencyCheckFailed"
-            @click="emit('apply', msg.content)"
+            @click="emit('insert', msg.content)"
           >
             {{
               msg.consistencyCheckFailed

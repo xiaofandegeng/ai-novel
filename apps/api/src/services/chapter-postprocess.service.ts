@@ -1,7 +1,7 @@
 import type { ChapterMemory, ChapterPostprocessResult } from '@ai-novel/shared'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, conflicts, foreshadowingItems, novelProjects, storyBibles } from '../db/schema'
+import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, characters, conflicts, foreshadowingItems, novelProjects, storyBibles } from '../db/schema'
 import { callAIJSON } from './ai.service'
 import { createSuggestion } from './postprocess-suggestion.service'
 
@@ -82,6 +82,7 @@ interface StructuredAnalysis {
   conflictUpdates: Array<{ title: string, newStatus?: string, newIntensity?: number, reason: string }>
   newConflicts: Array<{ title: string, type: 'internal' | 'external', intensity: number, participants: string, description: string }>
   relationshipUpdates: StructuredRelationshipUpdate[]
+  presentCharacters?: string[]
   // Legacy string fields for backward compatibility
   newFacts?: string
   foreshadowingResolved?: string
@@ -205,6 +206,7 @@ ${truncatedContent}
       "confidence": 80
     }
   ],
+  "presentCharacters": ["在本章节正文中实际出场或被提及的已知关键角色姓名（必须是具体的人物名）"],
   "newConflicts": [
     {
       "title": "新冲突标题",
@@ -232,6 +234,40 @@ ${truncatedContent}
       [{ role: 'user', content: prompt }],
       { temperature: 30 },
     )
+
+    // Handle character associations
+    if (parsed.presentCharacters && Array.isArray(parsed.presentCharacters) && parsed.presentCharacters.length > 0) {
+      try {
+        const allCharacters = await db.select().from(characters).where(eq(characters.projectId, projectId))
+        const presentIds = new Set<string>()
+
+        // Retain existing characters as well
+        let existingIds: string[] = []
+        try {
+          if (chapter.characters) {
+            existingIds = JSON.parse(chapter.characters)
+            existingIds.forEach(id => presentIds.add(id))
+          }
+        }
+        catch { /* ignore parse error */ }
+
+        for (const name of parsed.presentCharacters) {
+          const found = allCharacters.find(c => c.name.includes(name) || name.includes(c.name))
+          if (found) {
+            presentIds.add(found.id)
+          }
+        }
+
+        if (presentIds.size > existingIds.length) {
+          await db.update(chapters)
+            .set({ characters: JSON.stringify(Array.from(presentIds)) })
+            .where(eq(chapters.id, chapterId))
+        }
+      }
+      catch (err) {
+        console.error('Failed to update chapter characters:', err)
+      }
+    }
 
     // Build memory fields (backward compatible with string fields)
     const keyEventsStr = Array.isArray(parsed.keyEvents)

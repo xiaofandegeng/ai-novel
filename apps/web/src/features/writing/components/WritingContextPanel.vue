@@ -19,8 +19,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'applyAI', content: string): void
+  (e: 'insertAi', content: string): void
   (e: 'consistencyCheck', payload: { report?: any, loading: boolean }): void
   (e: 'runAi', type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'): void
+  (e: 'streamAI', content: string): void
 }>()
 
 const activeContextTab = ref('outline')
@@ -235,8 +237,10 @@ defineExpose({
           :context="aiContext"
           :scene="pendingScene"
           @apply="emit('applyAI', $event)"
+          @insert="emit('insertAi', $event)"
           @consistency-check="emit('consistencyCheck', $event)"
           @run-ai="emit('runAi', $event)"
+          @stream="emit('streamAI', $event)"
         />
       </div>
     </div>
