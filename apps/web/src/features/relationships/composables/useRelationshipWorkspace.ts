@@ -115,6 +115,24 @@ export function useRelationshipWorkspace(projectId: string) {
     }
   }
 
+  async function handleInferRelationships() {
+    loading.value = true
+    try {
+      const result = await characterStore.inferRelationships(projectId)
+      toast.add(result.message, 'success')
+      // 提示用户去章后分析查看或刷新
+      if (result.suggestionsCreated > 0) {
+        toast.add('已生成建议，请在“章后分析”中确认应用', 'info')
+      }
+    }
+    catch (e: any) {
+      toast.add(e.message || '推导失败', 'error')
+    }
+    finally {
+      loading.value = false
+    }
+  }
+
   function getCharName(id: string) {
     return characterStore.characters.find(c => c.id === id)?.name || '未知'
   }
@@ -133,6 +151,7 @@ export function useRelationshipWorkspace(projectId: string) {
     handleSave,
     confirmDelete,
     handleConfirmDelete,
+    handleInferRelationships,
     getCharName,
   }
 }

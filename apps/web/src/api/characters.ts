@@ -16,3 +16,7 @@ export function updateCharacter(projectId: string, id: string, data: UpdateChara
 export function deleteCharacter(projectId: string, id: string) {
   return apiDel(`/api/projects/${projectId}/characters/${id}`)
 }
+
+export function inferRelationships(projectId: string) {
+  return apiPost<{ suggestionsCreated: number, message: string }>(`/api/projects/${projectId}/characters/infer-relationships`, {})
+}

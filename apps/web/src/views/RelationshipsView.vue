@@ -14,6 +14,7 @@ import {
   Info,
   Plus,
   Share2,
+  Sparkles,
   Sword,
   Trash2,
   UserCircle2,
@@ -40,6 +41,7 @@ const {
   handleSave,
   confirmDelete,
   handleConfirmDelete,
+  handleInferRelationships,
   getCharName,
 } = useRelationshipWorkspace(projectId)
 
@@ -86,9 +88,14 @@ const relationshipTypes = [
             </NButton>
             <Share2 :size="16" /> 角色关系网
           </h2>
-          <NButton variant="ghost" size="sm" aria-label="添加关系" @click="handleAdd">
-            <Plus :size="16" />
-          </NButton>
+          <div class="flex gap-1">
+            <NButton variant="ghost" size="sm" title="一键推导关系网" @click="handleInferRelationships">
+              <Sparkles :size="16" class="text-primary" />
+            </NButton>
+            <NButton variant="ghost" size="sm" aria-label="添加关系" @click="handleAdd">
+              <Plus :size="16" />
+            </NButton>
+          </div>
         </div>
         <div class="flex-1 overflow-y-auto p-2 space-y-1">
           <button

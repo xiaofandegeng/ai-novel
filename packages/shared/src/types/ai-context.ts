@@ -29,6 +29,7 @@ export interface CharacterContextSummary {
   weakness?: string
   personality?: string
   arc?: string
+  isMajor?: boolean
 }
 
 export interface RelationshipContextSummary {

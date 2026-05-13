@@ -29,5 +29,9 @@ export const useCharacterStore = defineStore('characters', () => {
     characters.value = characters.value.filter(c => c.id !== id)
   }
 
-  return { characters, fetchCharacters, createCharacter, updateCharacter, deleteCharacter }
+  async function inferRelationships(projectId: string) {
+    return await charactersApi.inferRelationships(projectId)
+  }
+
+  return { characters, fetchCharacters, createCharacter, updateCharacter, deleteCharacter, inferRelationships }
 })

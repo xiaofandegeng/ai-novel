@@ -2,9 +2,21 @@ import type { Hono } from 'hono'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { characters } from '../db/schema'
+import { inferRelationshipsFromBios } from '../services/character-inference.service'
 import { fail, generateId, now, success, updatedFields } from '../utils'
 
 export function registerCharacterRoutes(app: Hono) {
+  app.post('/api/projects/:projectId/characters/infer-relationships', async (c) => {
+    const projectId = c.req.param('projectId')
+    try {
+      const result = await inferRelationshipsFromBios(projectId)
+      return c.json(success(result))
+    }
+    catch (e: any) {
+      return c.json(fail(e.message || '推导失败'), 500)
+    }
+  })
+
   app.get('/api/projects/:projectId/characters', async (c) => {
     const projectId = c.req.param('projectId')
     const rows = await db.select().from(characters).where(eq(characters.projectId, projectId))

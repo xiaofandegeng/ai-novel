@@ -98,22 +98,51 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
   }
 
   // 3. Fetch Characters & Relationships
-  // If we have current chapter, we might want to prioritize characters mentioned there
-  // For now, let's just get project characters
   const allCharacters = await db.select().from(characters).where(eq(characters.projectId, projectId))
-  const characterSummaries: CharacterContextSummary[] = allCharacters.map(c => ({
-    id: c.id,
-    name: c.name,
-    role: c.role || undefined,
-    goal: c.goal || undefined,
-    fear: c.fear || undefined,
-    secret: c.secret || undefined,
-    desire: c.desire || undefined,
-    weakness: c.weakness || undefined,
-    personality: c.personality || undefined,
-    arc: c.arc || undefined,
-  }))
 
+  // 获取本章元素中明确提到的角色 ID
+  const chapterElementsRows = currentChapterData
+    ? await db.select().from(chapterElements).where(
+        and(eq(chapterElements.projectId, projectId), eq(chapterElements.chapterId, currentChapterData.id)),
+      )
+    : []
+  const activeCharacterIds = new Set(
+    chapterElementsRows
+      .filter(e => e.elementType === 'character' && e.elementId)
+      .map(e => e.elementId as string),
+  )
+
+  // 辅助函数：解析存储在 text 字段中的 JSON ID 数组
+  const parseIds = (idStr: string | null | undefined): string[] => {
+    if (!idStr)
+      return []
+    try {
+      return JSON.parse(idStr)
+    }
+    catch {
+      return []
+    }
+  }
+
+  // 3.1 提取核心角色详情
+  const characterSummaries: CharacterContextSummary[] = allCharacters.map((c) => {
+    const isMajor = activeCharacterIds.has(c.id)
+    return {
+      id: c.id,
+      name: c.name,
+      role: c.role || undefined,
+      goal: c.goal || undefined,
+      fear: c.fear || undefined,
+      secret: c.secret || undefined,
+      desire: c.desire || undefined,
+      weakness: c.weakness || undefined,
+      personality: c.personality || undefined,
+      arc: c.arc || undefined,
+      isMajor, // 标记为本章核心角色
+    }
+  })
+
+  // 3.2 人物关系
   const rels = await db.select().from(characterRelationships).where(eq(characterRelationships.projectId, projectId))
   const relationshipSummaries: RelationshipContextSummary[] = rels.map((r) => {
     const charA = allCharacters.find(c => c.id === r.characterAId)
@@ -132,14 +161,22 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
   const allConflicts = await db.select().from(conflicts).where(eq(conflicts.projectId, projectId))
   const conflictSummaries: ConflictContextSummary[] = allConflicts
     .filter(c => c.status !== 'resolved' && c.status !== 'abandoned')
-    .map(c => ({
-      title: c.title,
-      type: c.type,
-      intensity: c.intensity,
-      status: c.status,
-      participants: c.participants || undefined,
-      description: c.description || undefined,
-    }))
+    .map((c) => {
+      // 尝试通过 participantIds 匹配具体的角色名，增强上下文准确性
+      const pIds = parseIds(c.participantIds)
+      const resolvedParticipants = pIds.length > 0
+        ? allCharacters.filter(char => pIds.includes(char.id)).map(char => char.name).join('、')
+        : c.participants
+
+      return {
+        title: c.title,
+        type: c.type,
+        intensity: c.intensity,
+        status: c.status,
+        participants: resolvedParticipants || undefined,
+        description: c.description || undefined,
+      }
+    })
 
   // 5. Persona Prompt
   let persona: BuiltAIContext['persona'] | undefined
@@ -301,21 +338,39 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
       and(eq(foreshadowingItems.projectId, projectId), eq(foreshadowingItems.status, 'open')),
     )
     const allItems = [...new Map([...chapterItems, ...openItems].map(i => [i.id, i])).values()]
-    foreshadowingContext = allItems.map(i =>
-      `- ${i.title} (${i.status}/${i.importance})${i.description ? `: ${i.description}` : ''}`,
-    )
+    foreshadowingContext = allItems.map((i) => {
+      const cIds = parseIds(i.characterIds)
+      const resolvedChars = cIds.length > 0
+        ? allCharacters.filter(char => cIds.includes(char.id)).map(char => char.name).join('、')
+        : i.relatedCharacters
+      return `- ${i.title} (${i.status}/${i.importance})${resolvedChars ? ` 相关角色:${resolvedChars}` : ''}${i.description ? `: ${i.description}` : ''}`
+    })
   }
 
   // 11. Fetch confirmed fact triples relevant to current chapter
   let factTripleContext: string[] = []
   if (currentChapterData) {
+    // 优先获取与本章登场角色相关的事实
+    const activeNames = allCharacters.filter(c => activeCharacterIds.has(c.id)).map(c => c.name)
+
     const triples = await db.select().from(storyFactTriples).where(
       and(
         eq(storyFactTriples.projectId, projectId),
         eq(storyFactTriples.status, 'confirmed'),
       ),
-    ).limit(20)
-    factTripleContext = triples.map(t =>
+    ).orderBy(desc(storyFactTriples.updatedAt))
+
+    // 过滤与活跃角色相关的
+    const activeTriples = triples.filter(t =>
+      activeNames.includes(t.subjectName) || activeNames.includes(t.objectName),
+    ).slice(0, 15)
+
+    // 补充其他最新事实，总数控制在 25 条以内
+    const otherTriples = triples.filter(t => !activeTriples.includes(t)).slice(0, 25 - activeTriples.length)
+
+    const finalTriples = [...activeTriples, ...otherTriples]
+
+    factTripleContext = finalTriples.map(t =>
       `- ${t.subjectName}(${t.subjectType}) --[${t.predicate}]--> ${t.objectName}(${t.objectType}) [置信度:${t.confidence}%]`,
     )
   }

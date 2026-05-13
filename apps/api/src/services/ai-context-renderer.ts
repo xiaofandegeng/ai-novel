@@ -65,7 +65,9 @@ export function renderAIContext(context: BuiltAIContext): string {
         c.arc ? `成长线: ${c.arc}` : null,
       ].filter(Boolean)
 
-      return `- ${c.name}\n  ${details.join('\n  ')}`
+      const prefix = c.isMajor ? '★ ' : '- '
+      const suffix = c.isMajor ? ' (本章核心角色，必须重点描写其行动与心理)' : ''
+      return `${prefix}${c.name}${suffix}\n  ${details.join('\n  ')}`
     }).join('\n')
 
     sections.push(`【登场人物】\n${charList}`)
