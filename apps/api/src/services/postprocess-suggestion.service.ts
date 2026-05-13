@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { chapterElements, chapterPostprocessSuggestions, foreshadowingItems, storyFactTriples } from '../db/schema'
+import { chapterElements, chapterPostprocessSuggestions, characters, conflicts, foreshadowingItems, storyFactTriples } from '../db/schema'
 import { generateId, now } from '../utils'
 
 export interface ApplyResult {
@@ -208,7 +208,51 @@ async function applyOneSuggestion(
       return 'applied'
     }
 
-    case 'character_state':
+    case 'character_state': {
+      if (!payload.characterName || !payload.change)
+        return 'acknowledged'
+
+      const [char] = await db.select().from(characters).where(and(
+        eq(characters.name, payload.characterName),
+        eq(characters.projectId, projectId),
+      ))
+
+      if (char) {
+        // Append the change to character's arc or personality (using arc as default for state change)
+        const updatedArc = char.arc
+          ? `${char.arc}\n- 章节 ${chapterId} 变化：${payload.change}`
+          : `- 章节 ${chapterId} 变化：${payload.change}`
+
+        await db.update(characters).set({
+          arc: updatedArc,
+          updatedAt: now(),
+        }).where(eq(characters.id, char.id))
+        return 'applied'
+      }
+      return 'acknowledged'
+    }
+
+    case 'conflict_update': {
+      const conflictId = payload.conflictId
+      if (!conflictId)
+        return 'acknowledged'
+
+      const updateData: any = { updatedAt: now() }
+      if (payload.newStatus)
+        updateData.status = payload.newStatus
+      if (payload.newIntensity)
+        updateData.intensity = payload.newIntensity
+
+      const [updated] = await db.update(conflicts).set(updateData).where(and(
+        eq(conflicts.id, conflictId),
+        eq(conflicts.projectId, projectId),
+      )).returning()
+
+      if (!updated)
+        throw new Error('未找到对应冲突记录')
+      return 'applied'
+    }
+
     case 'continuity_note':
     case 'style_note':
       return 'acknowledged'

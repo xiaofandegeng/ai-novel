@@ -1,3 +1,4 @@
+import type { ConsistencyGuardReport } from '@ai-novel/shared'
 import type { Ref } from 'vue'
 import { ref } from 'vue'
 import { T } from '@/utils/toast-message'
@@ -8,6 +9,8 @@ export interface PendingAIResult {
   selectionStart: number
   selectionEnd: number
   originalText: string
+  consistencyReport?: ConsistencyGuardReport
+  isCheckingConsistency?: boolean
 }
 
 export interface AIActionType {
@@ -84,9 +87,19 @@ export function useAIResultConfirm(
     }
   }
 
+  function updateConsistency(report?: ConsistencyGuardReport, loading?: boolean) {
+    if (pendingAIResult.value) {
+      if (report)
+        pendingAIResult.value.consistencyReport = report
+      if (loading !== undefined)
+        pendingAIResult.value.isCheckingConsistency = loading
+    }
+  }
+
   return {
     pendingAIResult,
     applyAIResult,
+    updateConsistency,
     confirmAIResult,
     buildAIPrompt,
     initPendingResult,

@@ -39,6 +39,7 @@ const typeLabels: Record<SuggestionType, string> = {
   character_state: '人物状态',
   continuity_note: '连续性提示',
   style_note: '风格记录',
+  conflict_update: '冲突进展',
 }
 
 const typeVariants: Record<SuggestionType, 'info' | 'warning' | 'success' | 'ai' | 'default' | 'primary'> = {
@@ -49,6 +50,7 @@ const typeVariants: Record<SuggestionType, 'info' | 'warning' | 'success' | 'ai'
   character_state: 'ai',
   continuity_note: 'default',
   style_note: 'default',
+  conflict_update: 'primary',
 }
 
 const groupedByType = computed(() => {
@@ -72,6 +74,12 @@ function parsePayload(payload: string): Record<string, unknown> {
 
 function suggestionTitle(item: typeof suggestionStore.suggestions[0]): string {
   const data = parsePayload(item.payload)
+  if (item.suggestionType === 'conflict_update') {
+    return `冲突更新：${data.title} (${data.newStatus || ''} 烈度:${data.newIntensity || ''})`
+  }
+  if (item.suggestionType === 'character_state') {
+    return `角色变化：${data.characterName} - ${data.change}`
+  }
   return (data.title as string) || (data.subjectName as string) || (data.characterName as string) || item.payload.slice(0, 60)
 }
 

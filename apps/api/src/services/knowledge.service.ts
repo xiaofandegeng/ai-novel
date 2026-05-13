@@ -99,7 +99,7 @@ export async function analyzeSource(projectId: string, sourceId: string, content
 
   try {
     // Basic chapter splitting by regex
-    const chapterPattern = /(第[一二三四五六七八九十百千万\d]+[章节卷篇]).*/g
+    const chapterPattern = /(?:第\s*)?[一二三四五六七八九十百千万\d]+\s*[章节卷篇].*/g
     const matches = [...content.matchAll(chapterPattern)]
 
     const chunksData: any[] = []

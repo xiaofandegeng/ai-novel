@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { KnowledgeSource } from '@ai-novel/shared'
+import { NTag } from '@ai-novel/ui'
 import { BookOpen } from 'lucide-vue-next'
 
 defineProps<{
@@ -10,6 +11,25 @@ defineProps<{
 const emit = defineEmits<{
   select: [source: KnowledgeSource]
 }>()
+
+function getStatusVariant(status: string) {
+  switch (status) {
+    case 'completed': return 'success'
+    case 'processing': return 'info'
+    case 'failed': return 'error'
+    default: return 'default'
+  }
+}
+
+function getStatusLabel(status: string) {
+  switch (status) {
+    case 'completed': return '分析完成'
+    case 'processing': return '分析中'
+    case 'failed': return '分析失败'
+    case 'pending': return '等待中'
+    default: return status
+  }
+}
 </script>
 
 <template>
@@ -31,13 +51,18 @@ const emit = defineEmits<{
           <div class="h-6 w-6 animate-spin border-2 border-primary/30 border-t-primary rounded-full" />
         </div>
       </div>
-      <div class="p-4 space-y-1">
+      <div class="p-4 space-y-3">
         <h4 class="truncate text-text-primary font-bold">
           {{ source.title }}
         </h4>
-        <p class="text-[10px] text-text-muted font-bold tracking-widest uppercase">
-          {{ source.status }} · {{ Math.round((source.fileSize || 0) / 1024) }}KB
-        </p>
+        <div class="flex items-center justify-between">
+          <NTag :variant="getStatusVariant(source.status)" size="sm">
+            {{ getStatusLabel(source.status) }}
+          </NTag>
+          <span class="text-[10px] text-text-muted font-bold tracking-widest uppercase">
+            {{ Math.round((source.fileSize || 0) / 1024) }}KB
+          </span>
+        </div>
       </div>
     </div>
   </div>

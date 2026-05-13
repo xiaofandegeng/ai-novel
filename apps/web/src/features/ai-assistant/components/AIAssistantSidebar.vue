@@ -27,6 +27,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'apply', content: string): void
+  (e: 'consistencyCheck', payload: { report?: any, loading: boolean }): void
 }>()
 
 const router = useRouter()
@@ -35,10 +36,20 @@ const { isStreaming, messages, selectedModel, aiNotConfigured, send, clearChat }
 const inputMessage = ref('')
 const chatContainer = ref<HTMLElement | null>(null)
 
-watch(() => messages.value[messages.value.length - 1]?.content, () => {
-  if (isStreaming.value)
-    scrollToBottom()
-})
+watch(() => messages.value[messages.value.length - 1], (last) => {
+  if (last && last.role === 'assistant') {
+    if (isStreaming.value)
+      scrollToBottom()
+
+    // Notify parent about consistency check status
+    if (last.isCheckingConsistency || last.consistencyReport) {
+      emit('consistencyCheck', {
+        report: last.consistencyReport,
+        loading: !!last.isCheckingConsistency,
+      })
+    }
+  }
+}, { deep: true })
 
 async function scrollToBottom() {
   await nextTick()

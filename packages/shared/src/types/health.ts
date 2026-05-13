@@ -29,4 +29,6 @@ export interface HealthRisk {
   message: string
   actionLabel: string
   targetRoute?: string
+  fixActionType?: 'plan_scenes' | 'suggest_conflicts' | 'analyze_quality' | 'brainstorm_foreshadowing'
+  fixActionPayload?: Record<string, any>
 }

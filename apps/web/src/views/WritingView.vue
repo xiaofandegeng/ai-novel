@@ -88,6 +88,7 @@ const selectionEnd = ref(0)
 const {
   pendingAIResult,
   applyAIResult,
+  updateConsistency,
   confirmAIResult,
   buildAIPrompt,
   initPendingResult,
@@ -389,6 +390,7 @@ async function handleUpdateMemory() {
         :project-id="projectId"
         :scene-id="sceneMode ? currentSceneId : null"
         @apply-a-i="applyAIResult"
+        @consistency-check="updateConsistency($event.report, $event.loading)"
       />
     </div>
   </NAppLayout>

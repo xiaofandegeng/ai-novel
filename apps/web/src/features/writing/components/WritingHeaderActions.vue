@@ -2,11 +2,11 @@
 import { NButton } from '@ai-novel/ui'
 import {
   Brain,
+  Clapperboard,
   Clock,
   History,
   Maximize2,
   Minimize2,
-  Clapperboard,
 } from 'lucide-vue-next'
 
 defineProps<{

@@ -67,7 +67,16 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
   const chapterNumMap = new Map(allChapters.map(c => [c.id, c.chapterNumber]))
   const conflictIntensityTrend = memories
     .filter(m => m.conflictProgress)
-    .map(m => ({ chapter: chapterNumMap.get(m.chapterId) || 0, avgIntensity: 5 }))
+    .map((m) => {
+      let intensity = 5
+      if (m.conflictProgress) {
+        // Simple heuristic: look for numbers or keywords in conflictProgress
+        const match = m.conflictProgress.match(/(\d+)/)
+        if (match)
+          intensity = Math.min(10, Math.max(1, Number.parseInt(match[1])))
+      }
+      return { chapter: chapterNumMap.get(m.chapterId) || 0, avgIntensity: intensity }
+    })
     .sort((a, b) => a.chapter - b.chapter)
 
   // Foreshadowing

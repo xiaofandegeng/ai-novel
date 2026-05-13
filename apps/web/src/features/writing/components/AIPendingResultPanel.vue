@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import type { PendingAIResult } from '../composables/useAIResultConfirm'
 import { NButton } from '@ai-novel/ui'
-import { Sparkles } from 'lucide-vue-next'
+import { AlertTriangle, CheckCircle2, Loader2, Sparkles, XCircle } from 'lucide-vue-next'
+import { computed } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   result: PendingAIResult | null
 }>()
 
 const emit = defineEmits<{
   (e: 'confirm', action: 'insert' | 'replace' | 'backup' | 'discard'): void
 }>()
+
+const isBlocked = computed(() => props.result?.consistencyReport?.overallStatus === 'blocked')
+const isChecking = computed(() => props.result?.isCheckingConsistency)
 </script>
 
 <template>
@@ -40,15 +44,54 @@ const emit = defineEmits<{
         {{ result.content }}
       </div>
 
+      <!-- Consistency Report -->
+      <div v-if="isChecking || result.consistencyReport" class="border border-border-light rounded-md bg-bg-page/50 p-2.5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-1.5">
+            <Loader2 v-if="isChecking" :size="14" class="animate-spin text-ai" />
+            <CheckCircle2 v-else-if="result.consistencyReport?.overallStatus === 'pass'" :size="14" class="text-semantic-success" />
+            <AlertTriangle v-else-if="result.consistencyReport?.overallStatus === 'warning'" :size="14" class="text-semantic-warning" />
+            <XCircle v-else :size="14" class="text-semantic-error" />
+            <span
+              class="text-[10px] font-bold tracking-wider uppercase" :class="{
+                'text-ai': isChecking,
+                'text-semantic-success': result.consistencyReport?.overallStatus === 'pass',
+                'text-semantic-warning': result.consistencyReport?.overallStatus === 'warning',
+                'text-semantic-error': result.consistencyReport?.overallStatus === 'blocked',
+              }"
+            >
+              {{ isChecking ? '正在审查创作一致性...' : `一致性守卫: ${result.consistencyReport?.overallStatus === 'pass' ? '通过' : result.consistencyReport?.overallStatus === 'warning' ? '提醒' : '阻断'}` }}
+            </span>
+          </div>
+          <span v-if="result.consistencyReport" class="text-[10px] text-text-muted font-mono">{{ result.consistencyReport.score }}分</span>
+        </div>
+        <p v-if="result.consistencyReport?.risks.length" class="mt-1.5 text-[11px] text-text-secondary leading-normal">
+          {{ result.consistencyReport.risks[0].message }}
+        </p>
+      </div>
+
       <div v-if="result.originalText" class="px-2 text-[10px] text-text-muted italic">
         将替换当前选中的文字：{{ result.originalText.substring(0, 40) }}{{ result.originalText.length > 40 ? '…' : '' }}
       </div>
 
       <div class="grid grid-cols-2 items-center gap-3 sm:flex">
-        <NButton v-if="result.originalText" class="flex-1" variant="ai" @click="emit('confirm', 'replace')">
+        <NButton
+          v-if="result.originalText"
+          class="flex-1"
+          variant="ai"
+          :disabled="isBlocked || isChecking"
+          :title="isBlocked ? '一致性检查未通过，禁止直接应用' : ''"
+          @click="emit('confirm', 'replace')"
+        >
           替换选中项
         </NButton>
-        <NButton class="flex-1" variant="ai" @click="emit('confirm', 'insert')">
+        <NButton
+          class="flex-1"
+          variant="ai"
+          :disabled="isBlocked || isChecking"
+          :title="isBlocked ? '一致性检查未通过，禁止直接应用' : ''"
+          @click="emit('confirm', 'insert')"
+        >
           {{ result.originalText ? '在选中处插入' : '在光标处插入' }}
         </NButton>
         <NButton class="flex-1" variant="secondary" @click="emit('confirm', 'backup')">

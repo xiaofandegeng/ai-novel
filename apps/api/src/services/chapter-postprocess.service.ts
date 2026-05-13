@@ -1,7 +1,7 @@
 import type { ChapterMemory, ChapterPostprocessResult } from '@ai-novel/shared'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, foreshadowingItems, novelProjects, storyBibles } from '../db/schema'
+import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, conflicts, foreshadowingItems, novelProjects, storyBibles } from '../db/schema'
 import { callAIJSON } from './ai.service'
 import { createSuggestion } from './postprocess-suggestion.service'
 
@@ -69,6 +69,7 @@ interface StructuredAnalysis {
   conflictProgress: string
   themeProgress: string
   styleNotes: StructuredStyleNote[] | string
+  conflictUpdates: Array<{ title: string, newStatus?: string, newIntensity?: number, reason: string }>
   // Legacy string fields for backward compatibility
   newFacts?: string
   foreshadowingResolved?: string
@@ -172,6 +173,14 @@ ${truncatedContent}
       "description": "风格描述",
       "confidence": 70
     }
+  ],
+  "conflictUpdates": [
+    {
+      "title": "矛盾标题",
+      "newStatus": "active/escalated/stalemate/resolved/abandoned",
+      "newIntensity": 1-10,
+      "reason": "更新理由"
+    }
   ]
 }
 
@@ -181,6 +190,7 @@ ${truncatedContent}
 - foreshadowingPayoffs 提取本章节回收的伏笔
 - characterStateChanges 提取角色的情感、立场或能力变化
 - styleNotes 提取叙事风格特征
+- conflictUpdates 提取本章节中涉及的已有矛盾的进展情况
 - 如果某类没有相关内容，返回空数组 []
 - confidence 范围 0-100`
 
@@ -318,6 +328,39 @@ ${truncatedContent}
       }
     }
 
+    const conflictUpdatesToReturn: any[] = []
+    if (parsed.conflictUpdates?.length) {
+      const projectConflicts = await db.select().from(conflicts).where(eq(conflicts.projectId, projectId))
+
+      for (const update of parsed.conflictUpdates) {
+        if (!update.title)
+          continue
+
+        const matched = projectConflicts.find(c =>
+          c.title === update.title
+          || update.title.includes(c.title)
+          || c.title.includes(update.title),
+        )
+
+        await createSuggestion(projectId, chapterId, runId, 'conflict_update', {
+          conflictId: matched?.id || null,
+          title: update.title,
+          newStatus: update.newStatus,
+          newIntensity: update.newIntensity,
+          reason: update.reason,
+        }, matched ? 80 : 50)
+
+        if (matched) {
+          conflictUpdatesToReturn.push({
+            conflictId: matched.id,
+            newStatus: update.newStatus,
+            newIntensity: update.newIntensity,
+            progressNote: update.reason,
+          })
+        }
+      }
+    }
+
     // Handle legacy string fields for backward compatibility
     if (!parsed.facts?.length && parsed.newFacts) {
       await createSuggestion(projectId, chapterId, runId, 'continuity_note', {
@@ -354,7 +397,7 @@ ${truncatedContent}
       finishedAt: new Date().toISOString(),
     }).where(eq(chapterPostprocessRuns.id, runId))
 
-    return { memory, warnings, conflictUpdates: [] }
+    return { memory, warnings, conflictUpdates: conflictUpdatesToReturn }
   }
   catch (error: any) {
     await db.update(chapterPostprocessRuns).set({
