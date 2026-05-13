@@ -9,9 +9,11 @@ import {
 } from '@ai-novel/ui'
 import {
   ArrowLeft,
+  Check,
   ChevronLeft,
   Heart,
   Info,
+  Loader2,
   Plus,
   Share2,
   Sparkles,
@@ -19,6 +21,7 @@ import {
   Trash2,
   UserCircle2,
   Users,
+  X,
 } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
@@ -31,6 +34,8 @@ const projectId = route.params.id as string
 const {
   loading,
   saving,
+  inferring,
+  suggestions,
   selectedRelId,
   showDeleteConfirm,
   relForm,
@@ -42,6 +47,8 @@ const {
   confirmDelete,
   handleConfirmDelete,
   handleInferRelationships,
+  handleAcceptSuggestion,
+  handleRejectSuggestion,
   getCharName,
 } = useRelationshipWorkspace(projectId)
 
@@ -120,9 +127,58 @@ const relationshipTypes = [
             </div>
           </button>
         </div>
+
+        <!-- Pending Suggestions -->
+        <div v-if="suggestions.length > 0" class="mt-4 px-2">
+          <div class="mb-2 flex items-center gap-2 px-2 text-[10px] text-primary font-bold tracking-wider uppercase">
+            <Sparkles :size="12" /> 待确认建议 (AI 推导)
+          </div>
+          <div class="space-y-2">
+            <div
+              v-for="s in suggestions"
+              :key="s.id"
+              class="group animate-in fade-in slide-in-from-left-2 relative border border-primary/20 rounded-lg bg-primary/5 p-3 duration-300"
+            >
+              <div class="mb-1 flex items-center gap-2">
+                <span class="text-xs text-text-primary font-bold">{{ s.payload.characterAName }}</span>
+                <span class="rounded bg-primary/10 px-1 py-0.5 text-[9px] text-primary">{{ s.payload.type }}</span>
+                <span class="text-xs text-text-primary font-bold">{{ s.payload.characterBName }}</span>
+              </div>
+              <p class="line-clamp-2 text-[10px] text-text-muted leading-tight">
+                {{ s.payload.description }}
+              </p>
+              <div class="mt-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                <NButton size="sm" variant="primary" class="h-6 flex-1 text-[10px]" @click="handleAcceptSuggestion(s.id)">
+                  <Check :size="10" class="mr-1" /> 采纳
+                </NButton>
+                <NButton size="sm" variant="ghost" class="h-6 flex-1 text-[10px]" @click="handleRejectSuggestion(s.id)">
+                  <X :size="10" class="mr-1" /> 忽略
+                </NButton>
+              </div>
+            </div>
+          </div>
+        </div>
       </aside>
 
-      <main class="flex-1 overflow-y-auto bg-bg-page p-8">
+      <main class="relative flex-1 overflow-y-auto bg-bg-page p-8">
+        <!-- AI Inference Overlay -->
+        <div v-if="inferring" class="animate-in fade-in absolute inset-0 z-50 flex items-center justify-center bg-bg-page/80 backdrop-blur-sm duration-300">
+          <div class="flex flex-col items-center gap-4 text-center">
+            <div class="relative">
+              <Sparkles :size="48" class="animate-pulse text-primary" />
+              <Loader2 :size="64" class="absolute left-1/2 top-1/2 animate-spin text-primary/30 -translate-x-1/2 -translate-y-1/2" />
+            </div>
+            <div>
+              <h3 class="text-lg text-text-primary font-bold">
+                正在深度推演关系网...
+              </h3>
+              <p class="mt-1 text-sm text-text-muted">
+                AI 正在根据角色档案分析潜在联系
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div v-if="loading" class="h-64 flex items-center justify-center">
           <NLoadingState />
         </div>

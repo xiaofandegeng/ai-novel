@@ -1,10 +1,17 @@
 import type { Hono } from 'hono'
 import type { ApplyResult } from '../services/postprocess-suggestion.service'
-import { acceptSuggestion, applyAcceptedSuggestions, getSuggestions, rejectSuggestion } from '../services/postprocess-suggestion.service'
+import { acceptSuggestion, applyAcceptedSuggestions, getProjectSuggestions, getSuggestions, rejectSuggestion } from '../services/postprocess-suggestion.service'
 import { runGraphInference } from '../services/story-graph-inference.service'
 import { fail, success } from '../utils'
 
 export function registerPostprocessSuggestionRoutes(app: Hono) {
+  app.get('/api/projects/:projectId/suggestions', async (c) => {
+    const projectId = c.req.param('projectId')
+    const type = c.req.query('type')
+    const rows = await getProjectSuggestions(projectId, type || undefined)
+    return c.json(success(rows))
+  })
+
   app.get('/api/projects/:projectId/chapters/:chapterId/suggestions', async (c) => {
     const projectId = c.req.param('projectId')
     const chapterId = c.req.param('chapterId')

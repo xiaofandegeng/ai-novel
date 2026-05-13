@@ -42,6 +42,16 @@ export async function getSuggestions(projectId: string, chapterId: string, runId
   return db.select().from(chapterPostprocessSuggestions).where(and(...conditions))
 }
 
+export async function getProjectSuggestions(projectId: string, type?: string) {
+  const conditions = [
+    eq(chapterPostprocessSuggestions.projectId, projectId),
+    eq(chapterPostprocessSuggestions.status, 'pending'),
+  ]
+  if (type)
+    conditions.push(eq(chapterPostprocessSuggestions.suggestionType, type as any))
+  return db.select().from(chapterPostprocessSuggestions).where(and(...conditions))
+}
+
 export async function acceptSuggestion(projectId: string, id: string) {
   const [row] = await db.update(chapterPostprocessSuggestions).set({
     status: 'accepted',

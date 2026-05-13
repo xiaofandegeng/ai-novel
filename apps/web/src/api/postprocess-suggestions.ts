@@ -6,6 +6,11 @@ export function fetchSuggestions(projectId: string, chapterId: string, runId?: s
   return apiGet<PostprocessSuggestion[]>(`/api/projects/${projectId}/chapters/${chapterId}/suggestions${query}`)
 }
 
+export function fetchProjectSuggestions(projectId: string, type?: string) {
+  const query = type ? `?type=${type}` : ''
+  return apiGet<PostprocessSuggestion[]>(`/api/projects/${projectId}/suggestions${query}`)
+}
+
 export function acceptSuggestion(projectId: string, id: string) {
   return apiPost<PostprocessSuggestion>(`/api/projects/${projectId}/suggestions/${id}/accept`, {})
 }

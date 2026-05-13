@@ -1,5 +1,6 @@
 import { useToast } from '@ai-novel/ui'
 import { onMounted, ref } from 'vue'
+import * as suggestionsApi from '@/api/postprocess-suggestions'
 import { useCharacterStore } from '@/stores/character.store'
 import { useProjectStore } from '@/stores/project.store'
 import { useRelationshipStore } from '@/stores/relationship.store'
@@ -14,6 +15,8 @@ export function useRelationshipWorkspace(projectId: string) {
 
   const loading = ref(true)
   const saving = ref(false)
+  const inferring = ref(false)
+  const suggestions = ref<any[]>([])
   const selectedRelId = ref<string | null>(null)
   const showDeleteConfirm = ref(false)
 
@@ -32,6 +35,7 @@ export function useRelationshipWorkspace(projectId: string) {
         projectStore.fetchProject(projectId),
         characterStore.fetchCharacters(projectId),
         relationshipStore.fetchRelationships(projectId),
+        fetchSuggestions(),
       ])
       if (relationshipStore.relationships.length > 0)
         selectRelationship(relationshipStore.relationships[0].id)
@@ -116,20 +120,56 @@ export function useRelationshipWorkspace(projectId: string) {
   }
 
   async function handleInferRelationships() {
-    loading.value = true
+    inferring.value = true
     try {
       const result = await characterStore.inferRelationships(projectId)
       toast.add(result.message, 'success')
       // 提示用户去章后分析查看或刷新
       if (result.suggestionsCreated > 0) {
-        toast.add('已生成建议，请在“章后分析”中确认应用', 'info')
+        toast.add('推导成功！已生成建议，请前往“章后分析”页面确认应用', 'info')
       }
     }
     catch (e: any) {
       toast.add(e.message || '推导失败', 'error')
     }
     finally {
-      loading.value = false
+      inferring.value = false
+      await fetchSuggestions()
+    }
+  }
+
+  async function fetchSuggestions() {
+    try {
+      const rows = await suggestionsApi.fetchProjectSuggestions(projectId, 'relationship_update')
+      suggestions.value = rows.map(r => ({
+        ...r,
+        payload: JSON.parse(r.payload),
+      }))
+    }
+    catch (e) {
+      console.error('Failed to fetch suggestions:', e)
+    }
+  }
+
+  async function handleAcceptSuggestion(id: string) {
+    try {
+      await suggestionsApi.acceptSuggestion(projectId, id)
+      toast.add('建议已采纳，请在“章后分析”中一键应用', 'success')
+      suggestions.value = suggestions.value.filter(s => s.id !== id)
+    }
+    catch (e: any) {
+      toast.add(e.message || '采纳失败', 'error')
+    }
+  }
+
+  async function handleRejectSuggestion(id: string) {
+    try {
+      await suggestionsApi.rejectSuggestion(projectId, id)
+      suggestions.value = suggestions.value.filter(s => s.id !== id)
+      toast.add('建议已忽略', 'info')
+    }
+    catch (e: any) {
+      toast.add(e.message || '忽略失败', 'error')
     }
   }
 
@@ -140,6 +180,8 @@ export function useRelationshipWorkspace(projectId: string) {
   return {
     loading,
     saving,
+    inferring,
+    suggestions,
     selectedRelId,
     showDeleteConfirm,
     relForm,
@@ -152,6 +194,8 @@ export function useRelationshipWorkspace(projectId: string) {
     confirmDelete,
     handleConfirmDelete,
     handleInferRelationships,
+    handleAcceptSuggestion,
+    handleRejectSuggestion,
     getCharName,
   }
 }
