@@ -112,6 +112,21 @@ export function useOutlineWorkspace(projectId: string) {
       return
     saving.value = true
     try {
+      // 最终一致性整理：确保登场角色和必须出场人物同步
+      // 1. 所有选中的角色 ID 必须在元素列表中存在
+      outlineForm.value.characterIds.forEach((id) => {
+        const exists = chapterElementDrafts.value.some(e => e.elementType === 'character' && e.elementId === id)
+        if (!exists) {
+          addCharacterElement(id, 'normal')
+        }
+      })
+      // 2. 所有角色类型的元素也必须包含在角色 ID 列表中
+      chapterElementDrafts.value.forEach((e) => {
+        if (e.elementType === 'character' && e.elementId && !outlineForm.value.characterIds.includes(e.elementId)) {
+          outlineForm.value.characterIds.push(e.elementId)
+        }
+      })
+
       const data = {
         ...outlineForm.value,
         characters: JSON.stringify(outlineForm.value.characterIds),
@@ -171,13 +186,24 @@ export function useOutlineWorkspace(projectId: string) {
 
   function toggleCharacter(charId: string) {
     const index = outlineForm.value.characterIds.indexOf(charId)
-    if (index === -1)
+    if (index === -1) {
       outlineForm.value.characterIds.push(charId)
-    else
+      // 自动同步：勾选登场角色时，自动添加为章节元素（默认普通重要程度）
+      addCharacterElement(charId, 'normal')
+    }
+    else {
       outlineForm.value.characterIds.splice(index, 1)
+      // 自动同步：取消登场时，如果该角色在元素列表中且是自动添加的（比如关系为 appears），则移除
+      const elementIndex = chapterElementDrafts.value.findIndex(
+        e => e.elementType === 'character' && e.elementId === charId && e.relationType === 'appears',
+      )
+      if (elementIndex !== -1) {
+        chapterElementDrafts.value.splice(elementIndex, 1)
+      }
+    }
   }
 
-  function addCharacterElement(charId: string) {
+  function addCharacterElement(charId: string, importance: 'major' | 'normal' = 'major') {
     const char = characterStore.characters.find(c => c.id === charId)
     if (!char)
       return
@@ -191,8 +217,13 @@ export function useOutlineWorkspace(projectId: string) {
       elementId: char.id,
       elementName: char.name,
       relationType: 'appears',
-      importance: 'major',
+      importance,
     })
+
+    // 同步反向更新 characterIds
+    if (!outlineForm.value.characterIds.includes(charId)) {
+      outlineForm.value.characterIds.push(charId)
+    }
   }
 
   function removeElement(index: number) {

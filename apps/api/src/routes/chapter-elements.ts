@@ -2,7 +2,7 @@ import type { Hono } from 'hono'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { chapterElements } from '../db/schema'
-import { assertChapterBelongsToProject } from '../services/ownership.service'
+import { assertChapterBelongsToProject, assertCharactersBelongToProject } from '../services/ownership.service'
 import { fail, generateId, success, updatedFields } from '../utils'
 
 interface NormalizedElement {
@@ -58,6 +58,18 @@ export function registerChapterElementRoutes(app: Hono) {
       seen.add(key)
     }
 
+    // 校验 elementId 归属（针对角色类型）及名称一致性
+    const charElementsWithId = incoming.filter((el: any) => el.elementType === 'character' && el.elementId)
+    if (charElementsWithId.length > 0) {
+      const charIds = charElementsWithId.map((el: any) => el.elementId)
+      try {
+        await assertCharactersBelongToProject(projectId, charIds)
+      }
+      catch {
+        return c.json(fail('包含不属于当前项目的角色ID'), 400)
+      }
+    }
+
     const normalized: NormalizedElement[] = incoming.map((el: any) => ({
       elementType: el.elementType as 'character' | 'location' | 'item' | 'organization' | 'event',
       elementId: el.elementId || null,
@@ -95,6 +107,16 @@ export function registerChapterElementRoutes(app: Hono) {
     const chapterId = c.req.param('chapterId')
     await assertChapterBelongsToProject(projectId, chapterId)
     const body = await c.req.json()
+
+    if (body.elementType === 'character' && body.elementId) {
+      try {
+        await assertCharactersBelongToProject(projectId, [body.elementId])
+      }
+      catch {
+        return c.json(fail('角色不属于当前项目'), 400)
+      }
+    }
+
     const id = generateId()
     const [row] = await db.insert(chapterElements).values({
       id,

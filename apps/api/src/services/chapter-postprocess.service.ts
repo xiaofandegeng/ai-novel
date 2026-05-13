@@ -52,6 +52,16 @@ interface StructuredStyleNote {
   confidence?: number
 }
 
+interface StructuredRelationshipUpdate {
+  characterAName: string
+  characterBName: string
+  type: string
+  strength: number
+  status: string
+  description: string
+  confidence?: number
+}
+
 interface StructuredEvent {
   title: string
   description?: string
@@ -70,6 +80,7 @@ interface StructuredAnalysis {
   themeProgress: string
   styleNotes: StructuredStyleNote[] | string
   conflictUpdates: Array<{ title: string, newStatus?: string, newIntensity?: number, reason: string }>
+  relationshipUpdates: StructuredRelationshipUpdate[]
   // Legacy string fields for backward compatibility
   newFacts?: string
   foreshadowingResolved?: string
@@ -181,6 +192,17 @@ ${truncatedContent}
       "newIntensity": 1-10,
       "reason": "更新理由"
     }
+  ],
+  "relationshipUpdates": [
+    {
+      "characterAName": "角色A名",
+      "characterBName": "角色B名",
+      "type": "ally/enemy/mentor/etc",
+      "strength": 1-10,
+      "status": "当前关系状态",
+      "description": "关系变化描述",
+      "confidence": 80
+    }
   ]
 }
 
@@ -191,6 +213,7 @@ ${truncatedContent}
 - characterStateChanges 提取角色的情感、立场或能力变化
 - styleNotes 提取叙事风格特征
 - conflictUpdates 提取本章节中涉及的已有矛盾的进展情况
+- relationshipUpdates 提取本章节中体现的人物关系变化或新增关系
 - 如果某类没有相关内容，返回空数组 []
 - confidence 范围 0-100`
 
@@ -358,6 +381,21 @@ ${truncatedContent}
             progressNote: update.reason,
           })
         }
+      }
+    }
+
+    if (parsed.relationshipUpdates?.length) {
+      for (const rel of parsed.relationshipUpdates) {
+        if (!rel.characterAName || !rel.characterBName)
+          continue
+        await createSuggestion(projectId, chapterId, runId, 'relationship_update', {
+          characterAName: rel.characterAName,
+          characterBName: rel.characterBName,
+          type: rel.type,
+          strength: rel.strength,
+          status: rel.status,
+          description: rel.description,
+        }, rel.confidence || 70)
       }
     }
 

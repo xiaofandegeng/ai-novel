@@ -12,6 +12,7 @@ export interface ForeshadowingItem {
   status: ForeshadowingStatus
   importance: ForeshadowingImportance
   relatedCharacters: string | null
+  characterIds: string[] | null
   relatedEvents: string | null
   notes: string | null
   createdAt: string
@@ -27,6 +28,7 @@ export interface CreateForeshadowingInput {
   status?: ForeshadowingStatus
   importance?: ForeshadowingImportance
   relatedCharacters?: string
+  characterIds?: string[]
   relatedEvents?: string
   notes?: string
 }
@@ -40,6 +42,7 @@ export interface UpdateForeshadowingInput {
   status?: ForeshadowingStatus
   importance?: ForeshadowingImportance
   relatedCharacters?: string | null
+  characterIds?: string[] | null
   relatedEvents?: string | null
   notes?: string | null
 }

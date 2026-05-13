@@ -101,6 +101,7 @@ export interface Conflict {
   intensity: number
   status: ConflictStatus
   participants?: string
+  participantIds?: string[]
   description?: string
   resolution?: string
   createdAt: string

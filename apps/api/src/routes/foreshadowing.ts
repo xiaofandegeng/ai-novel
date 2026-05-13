@@ -30,6 +30,7 @@ export function registerForeshadowingRoutes(app: Hono) {
       status: body.status || 'open',
       importance: body.importance || 'normal',
       relatedCharacters: body.relatedCharacters,
+      characterIds: body.characterIds ? JSON.stringify(body.characterIds) : null,
       relatedEvents: body.relatedEvents,
       notes: body.notes,
     }).returning()
@@ -52,6 +53,7 @@ export function registerForeshadowingRoutes(app: Hono) {
       status: body.status,
       importance: body.importance,
       relatedCharacters: body.relatedCharacters,
+      characterIds: body.characterIds ? JSON.stringify(body.characterIds) : undefined,
       relatedEvents: body.relatedEvents,
       notes: body.notes,
     })

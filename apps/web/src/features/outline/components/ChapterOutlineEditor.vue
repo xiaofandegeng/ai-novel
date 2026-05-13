@@ -81,9 +81,12 @@ const statusOptions = [
     </header>
 
     <section class="space-y-4">
-      <h3 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
-        <Users :size="16" /> 登场角色
-      </h3>
+      <div class="flex items-center justify-between">
+        <h3 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
+          <Users :size="16" /> 登场角色
+        </h3>
+        <span class="text-xs text-text-muted">勾选后将自动加入 AI 写作硬约束</span>
+      </div>
       <div class="flex flex-wrap gap-2">
         <button
           v-for="char in characters"
@@ -103,15 +106,16 @@ const statusOptions = [
     <!-- Chapter Structured Elements -->
     <section class="space-y-4">
       <h3 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
-        <Layers :size="16" /> 本章结构化元素
+        <Layers :size="16" /> AI 写作硬约束
       </h3>
       <div>
-        <label class="mb-2 block text-xs text-text-muted font-semibold">必须出场人物</label>
+        <label class="mb-2 block text-xs text-text-muted font-semibold">必须出场人物 (Character Constraints)</label>
         <div class="flex flex-wrap gap-2">
           <span
             v-for="(el, idx) in chapterElementDrafts.filter(e => e.elementType === 'character')"
             :key="idx"
             class="flex items-center gap-1 border border-primary/30 rounded-full bg-primary-soft px-3 py-1 text-xs text-primary"
+            :title="el.importance === 'major' ? '核心角色' : '普通角色'"
           >
             {{ el.elementName }}
             <button class="text-primary/60 hover:text-primary" @click="emit('removeElement', chapterElementDrafts.indexOf(el))">

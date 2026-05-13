@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { chapterElements, chapterPostprocessSuggestions, characters, conflicts, foreshadowingItems, storyFactTriples } from '../db/schema'
+import { chapterElements, chapterPostprocessSuggestions, characterRelationships, characters, conflicts, foreshadowingItems, storyFactTriples } from '../db/schema'
 import { generateId, now } from '../utils'
 
 export interface ApplyResult {
@@ -250,6 +250,51 @@ async function applyOneSuggestion(
 
       if (!updated)
         throw new Error('未找到对应冲突记录')
+      return 'applied'
+    }
+
+    case 'relationship_update': {
+      const { characterAName, characterBName, type, strength, status, description } = payload
+      if (!characterAName || !characterBName)
+        throw new Error('角色名称缺失')
+
+      const [charA] = await db.select().from(characters).where(and(eq(characters.name, characterAName), eq(characters.projectId, projectId)))
+      const [charB] = await db.select().from(characters).where(and(eq(characters.name, characterBName), eq(characters.projectId, projectId)))
+
+      if (!charA || !charB) {
+        throw new Error(`匹配不到角色：${!charA ? characterAName : ''} ${!charB ? characterBName : ''}`)
+      }
+
+      // 规范化 ID 顺序，避免重复
+      const [lowId, highId] = charA.id < charB.id ? [charA.id, charB.id] : [charB.id, charA.id]
+
+      const [existing] = await db.select().from(characterRelationships).where(and(
+        eq(characterRelationships.projectId, projectId),
+        eq(characterRelationships.characterAId, lowId),
+        eq(characterRelationships.characterBId, highId),
+      ))
+
+      if (existing) {
+        await db.update(characterRelationships).set({
+          type: type || existing.type,
+          strength: strength !== undefined ? strength : existing.strength,
+          status: status || existing.status,
+          description: description || existing.description,
+          updatedAt: now(),
+        }).where(eq(characterRelationships.id, existing.id))
+      }
+      else {
+        await db.insert(characterRelationships).values({
+          id: generateId(),
+          projectId,
+          characterAId: lowId,
+          characterBId: highId,
+          type: type || 'acquaintance',
+          strength: strength !== undefined ? strength : 1,
+          status: status || '',
+          description: description || '',
+        })
+      }
       return 'applied'
     }
 

@@ -64,6 +64,7 @@ export const foreshadowingItems = pgTable('foreshadowing_items', {
   status: text('status').$type<'open' | 'progressing' | 'paid_off' | 'abandoned'>().notNull().default('open'),
   importance: text('importance').$type<'major' | 'normal' | 'minor'>().notNull().default('normal'),
   relatedCharacters: text('related_characters'),
+  characterIds: text('character_ids'),
   relatedEvents: text('related_events'),
   notes: text('notes'),
   ...timestamps,

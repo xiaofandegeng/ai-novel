@@ -32,6 +32,7 @@ export const conflicts = pgTable('conflicts', {
   intensity: integer('intensity').notNull().default(1),
   status: text('status').$type<'latent' | 'forming' | 'escalating' | 'exploding' | 'resolved' | 'abandoned'>().notNull().default('latent'),
   participants: text('participants'),
+  participantIds: text('participant_ids'),
   description: text('description'),
   resolution: text('resolution'),
   ...timestamps,

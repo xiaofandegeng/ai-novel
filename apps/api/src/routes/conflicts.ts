@@ -23,6 +23,7 @@ export function registerConflictRoutes(app: Hono) {
       intensity: body.intensity,
       status: body.status,
       participants: body.participants,
+      participantIds: body.participantIds ? JSON.stringify(body.participantIds) : null,
       description: body.description,
       resolution: body.resolution,
     }).returning()
@@ -39,6 +40,7 @@ export function registerConflictRoutes(app: Hono) {
       intensity: body.intensity,
       status: body.status,
       participants: body.participants,
+      participantIds: body.participantIds ? JSON.stringify(body.participantIds) : undefined,
       description: body.description,
       resolution: body.resolution,
     })

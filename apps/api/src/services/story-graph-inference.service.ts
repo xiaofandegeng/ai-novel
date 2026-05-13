@@ -37,48 +37,65 @@ export async function runGraphInference(projectId: string) {
   }
 
   // Rule 1: Co-occurrence — characters appearing in same chapter suggest relationship
-  const chapterCharMap = new Map<string, Array<{ id: string, name: string }>>()
+  const chapterCharMap = new Map<string, Array<{ id: string, name: string, elementId?: string }>>()
   for (const el of elements.filter(e => e.elementType === 'character' && e.relationType === 'appears')) {
     if (!chapterCharMap.has(el.chapterId))
       chapterCharMap.set(el.chapterId, [])
-    chapterCharMap.get(el.chapterId)!.push({ id: el.id, name: el.elementName })
+    chapterCharMap.get(el.chapterId)!.push({ id: el.id, name: el.elementName, elementId: el.elementId || undefined })
   }
 
-  const existingPairs = new Set([
-    ...relationships.map(r => [r.characterAId, r.characterBId].sort().join(':')),
-    ...triples
-      .filter(t => t.subjectType === 'character' && t.objectType === 'character')
-      .map(t => [t.subjectName, t.objectName].sort().join(':')),
-  ])
+  const existingRelationshipIdPairs = new Set(relationships.map(r => [r.characterAId, r.characterBId].sort().join(':')))
+  const existingFactNamePairs = new Set(triples
+    .filter(t => t.subjectType === 'character' && t.objectType === 'character')
+    .map(t => [t.subjectName, t.objectName].sort().join(':')),
+  )
 
   for (const [chapterId, chars] of chapterCharMap) {
-    const uniqueChars = [...new Map(chars.map(c => [c.name, c])).values()]
+    // 按照 elementId 去重，如果 elementId 不存在则按名称去重
+    const uniqueChars = [...new Map(chars.map(c => [c.elementId || c.name, c])).values()]
     for (let i = 0; i < uniqueChars.length; i++) {
       for (let j = i + 1; j < uniqueChars.length; j++) {
         const left = uniqueChars[i]
         const right = uniqueChars[j]
-        const pairKey = [left.name, right.name].sort().join(':')
+
+        // 优先使用 ID 对进行去重
+        let pairKey: string
+        let hasExistingRelationship = false
+
+        if (left.elementId && right.elementId) {
+          pairKey = [left.elementId, right.elementId].sort().join(':')
+          hasExistingRelationship = existingRelationshipIdPairs.has(pairKey)
+        }
+        else {
+          pairKey = [left.name, right.name].sort().join(':')
+          hasExistingRelationship = existingFactNamePairs.has(pairKey)
+        }
+
         const inferenceKey = `co_occurrence:${chapterId}:${pairKey}`
-        if (existingPairs.has(pairKey) || existingInferenceKeys.has(inferenceKey))
+        if (hasExistingRelationship || existingInferenceKeys.has(inferenceKey))
           continue
 
-        await createSuggestion(projectId, chapterId, null, 'fact_triple', {
-          subjectType: 'character',
-          subjectName: left.name,
-          predicate: '与...共场',
-          objectType: 'character',
-          objectName: right.name,
+        // 共场推理生成 relationship_update 建议，而非直接的事实三元组
+        await createSuggestion(projectId, chapterId, null, 'relationship_update', {
+          characterAId: left.elementId,
+          characterBId: right.elementId,
+          characterAName: left.name,
+          characterBName: right.name,
+          type: 'acquaintance',
+          strength: 1,
+          status: '本章共场',
+          description: `系统通过章节共场推理发现：${left.name} 和 ${right.name} 在本章同时登场，建议建立人物关系。`,
           sourceType: 'auto_inferred',
           inferenceKey,
           inferenceRule: 'co_occurrence',
           sourceElementIds: [left.id, right.id],
-          sourceFacts: [
-            `${left.name} 在本章出场`,
-            `${right.name} 在本章出场`,
-          ],
-          reason: `角色 ${left.name} 和 ${right.name} 在同一章节共场，可能存在关系或剧情联系`,
         }, 50, `共场推理：${left.name} 与 ${right.name} 在同一章节出现`)
-        existingPairs.add(pairKey)
+
+        if (left.elementId && right.elementId)
+          existingRelationshipIdPairs.add(pairKey)
+        else
+          existingFactNamePairs.add(pairKey)
+
         markCreated(inferenceKey)
       }
     }
