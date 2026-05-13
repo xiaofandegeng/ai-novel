@@ -1,6 +1,6 @@
 import type { Chapter } from '@ai-novel/shared'
 import type { ComputedRef } from 'vue'
-import type { useChapterStore } from '../../../stores/projects'
+import type { useChapterStore } from '../../../stores/chapter.store'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 export function useWritingDraft(

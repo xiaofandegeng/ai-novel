@@ -18,7 +18,8 @@ import {
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
-import { useHealthStore, useProjectStore } from '../stores/projects'
+import { useHealthStore } from '../stores/health.store'
+import { useProjectStore } from '../stores/project.store'
 
 const route = useRoute()
 const router = useRouter()

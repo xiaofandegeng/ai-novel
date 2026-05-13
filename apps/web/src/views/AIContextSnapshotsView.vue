@@ -9,7 +9,8 @@ import { Bug, ChevronLeft } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
-import { useAIContextSnapshotStore, useProjectStore } from '../stores/projects'
+import { useAIContextSnapshotStore } from '../stores/ai-context-snapshot.store'
+import { useProjectStore } from '../stores/project.store'
 
 const route = useRoute()
 const projectId = route.params.id as string

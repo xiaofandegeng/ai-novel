@@ -9,11 +9,9 @@ import {
   TrendingUp,
 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
-import {
-  useCharacterStore,
-  useConflictStore,
-  useProjectStore,
-} from '@/stores/projects'
+import { useCharacterStore } from '@/stores/character.store'
+import { useConflictStore } from '@/stores/conflict.store'
+import { useProjectStore } from '@/stores/project.store'
 import { getErrorMessage } from '@/utils/error-message'
 import { T } from '@/utils/toast-message'
 

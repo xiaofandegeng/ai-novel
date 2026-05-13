@@ -23,13 +23,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { exportProject } from '../api/export'
 import { fetchAISettings } from '../api/settings'
 import AppSidebar from '../components/AppSidebar.vue'
-import {
-  useChapterStore,
-  useCharacterStore,
-  useProjectStore,
-  useStoryBibleStore,
-  useVolumeStore,
-} from '../stores/projects'
+import { useChapterStore } from '../stores/chapter.store'
+import { useCharacterStore } from '../stores/character.store'
+import { useProjectStore } from '../stores/project.store'
+import { useStoryBibleStore } from '../stores/story-bible.store'
+import { useVolumeStore } from '../stores/volume.store'
 
 const route = useRoute()
 const router = useRouter()

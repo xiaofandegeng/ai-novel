@@ -1,6 +1,6 @@
 import type { ChapterScene } from '@ai-novel/shared'
 import type { ComputedRef } from 'vue'
-import type { useSceneStore } from '../../../stores/projects'
+import type { useSceneStore } from '../../../stores/scene.store'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 export function useSceneDraft(

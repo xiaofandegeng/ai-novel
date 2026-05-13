@@ -8,7 +8,8 @@ import {
   XCircle,
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
-import { useProjectStore, useWritingJobStore } from '@/stores/projects'
+import { useProjectStore } from '@/stores/project.store'
+import { useWritingJobStore } from '@/stores/writing-job.store'
 import { getErrorMessage } from '@/utils/error-message'
 import { T } from '@/utils/toast-message'
 

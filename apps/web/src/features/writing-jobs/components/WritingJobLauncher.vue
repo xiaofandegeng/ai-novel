@@ -3,7 +3,8 @@ import type { WritingJobMode } from '@ai-novel/shared'
 import { NButton } from '@ai-novel/ui'
 import { Bot } from 'lucide-vue-next'
 import { computed, watch } from 'vue'
-import { useChapterStore, useSceneStore } from '../../../stores/projects'
+import { useChapterStore } from '../../../stores/chapter.store'
+import { useSceneStore } from '../../../stores/scene.store'
 import { MODE_LABEL } from '../composables/useWritingJobController'
 
 defineProps<{

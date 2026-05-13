@@ -22,10 +22,8 @@ import {
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
-import {
-  useChapterStore,
-  useProjectStore,
-} from '../stores/projects'
+import { useChapterStore } from '../stores/chapter.store'
+import { useProjectStore } from '../stores/project.store'
 import { useQualityStore } from '../stores/quality.store'
 
 const route = useRoute()

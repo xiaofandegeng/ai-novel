@@ -1,33 +1,25 @@
 <script setup lang="ts">
-import { NAppLayout, NButton, useToast } from '@ai-novel/ui'
-import {
-  Brain,
-  Clapperboard,
-  Clock,
-  History,
-  Maximize2,
-  Minimize2,
-} from 'lucide-vue-next'
+import { NAppLayout, useToast } from '@ai-novel/ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { triggerChapterPostprocess } from '../api/ai'
 import AIPendingResultPanel from '../features/writing/components/AIPendingResultPanel.vue'
+import AssemblePreviewOverlay from '../features/writing/components/AssemblePreviewOverlay.vue'
 import ChapterNavigator from '../features/writing/components/ChapterNavigator.vue'
 import EditorPane from '../features/writing/components/EditorPane.vue'
 import SceneDraftPanel from '../features/writing/components/SceneDraftPanel.vue'
 import WritingContextPanel from '../features/writing/components/WritingContextPanel.vue'
+import WritingHeaderActions from '../features/writing/components/WritingHeaderActions.vue'
 import { useAIResultConfirm } from '../features/writing/composables/useAIResultConfirm'
 import { useSceneDraft } from '../features/writing/composables/useSceneDraft'
 import { useWritingDraft } from '../features/writing/composables/useWritingDraft'
-import {
-  useChapterElementStore,
-  useChapterStore,
-  useCharacterStore,
-  useProjectStore,
-  useSceneStore,
-  useStoryBibleStore,
-  useVersionStore,
-} from '../stores/projects'
+import { useChapterElementStore } from '../stores/chapter-element.store'
+import { useChapterStore } from '../stores/chapter.store'
+import { useCharacterStore } from '../stores/character.store'
+import { useProjectStore } from '../stores/project.store'
+import { useSceneStore } from '../stores/scene.store'
+import { useStoryBibleStore } from '../stores/story-bible.store'
+import { useVersionStore } from '../stores/version.store'
 
 const route = useRoute()
 const router = useRouter()
@@ -325,55 +317,17 @@ async function handleUpdateMemory() {
     </template>
 
     <template #topbar-right>
-      <div class="flex items-center gap-4">
-        <button
-          class="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors"
-          :class="sceneMode ? 'bg-primary text-white' : 'bg-bg-surface text-text-muted hover:text-primary'"
-          @click="sceneMode = !sceneMode"
-        >
-          <Clapperboard :size="12" />
-          {{ sceneMode ? '场景模式' : '章节模式' }}
-        </button>
-        <div class="flex items-center gap-1.5 text-xs text-text-muted">
-          <template v-if="sceneMode && sceneSaveError">
-            <span class="h-1.5 w-1.5 rounded-full bg-red-500" />
-            <span class="text-red-500">场景保存失败</span>
-          </template>
-          <template v-else-if="activeSaving">
-            <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
-            保存中...
-          </template>
-          <template v-else>
-            <Clock :size="12" />
-            已保存
-          </template>
-        </div>
-        <NButton
-          variant="ghost"
-          size="sm"
-          class="text-text-muted hover:text-primary"
-          @click="handleSnapshot"
-        >
-          <History :size="16" class="mr-1.5" /> 保存快照
-        </NButton>
-        <NButton
-          variant="ghost"
-          size="sm"
-          :disabled="!draft || updatingMemory"
-          :loading="updatingMemory"
-          class="text-text-muted hover:text-ai"
-          @click="handleUpdateMemory"
-        >
-          <Brain :size="16" class="mr-1.5" /> 更新记忆
-        </NButton>
-        <div class="h-4 w-px bg-border-light" />
-        <div class="text-xs text-text-muted font-medium">
-          {{ activeWordCount }} 字
-        </div>
-        <NButton variant="ghost" size="sm" @click="fullScreen = !fullScreen">
-          <component :is="fullScreen ? Minimize2 : Maximize2" :size="16" />
-        </NButton>
-      </div>
+      <WritingHeaderActions
+        v-model:scene-mode="sceneMode"
+        v-model:full-screen="fullScreen"
+        :scene-save-error="!!sceneSaveError"
+        :active-saving="activeSaving"
+        :active-word-count="activeWordCount"
+        :updating-memory="updatingMemory"
+        :draft-exists="!!draft"
+        @snapshot="handleSnapshot"
+        @update-memory="handleUpdateMemory"
+      />
     </template>
 
     <div class="h-full flex overflow-hidden bg-bg-page">
@@ -387,34 +341,11 @@ async function handleUpdateMemory() {
       />
 
       <!-- Assemble confirmation overlay -->
-      <div
-        v-if="assemblePreview"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      >
-        <div class="max-w-lg w-full rounded-lg bg-bg-surface p-6 shadow-xl">
-          <h3 class="mb-4 text-sm text-text-primary font-bold">
-            确认组装章节
-          </h3>
-          <div class="mb-4 text-xs text-text-secondary space-y-2">
-            <p>当前章节草稿：<span class="text-text-primary font-medium">{{ assemblePreview.currentWordCount }}</span> 字</p>
-            <p>组装后内容：<span class="text-primary font-medium">{{ assemblePreview.assembledWordCount }}</span> 字（{{ assemblePreview.sceneCount }} 个场景）</p>
-            <p v-if="assemblePreview.currentWordCount > 0" class="text-yellow-600">
-              替换模式将覆盖当前章节草稿（替换前会自动保存快照）
-            </p>
-          </div>
-          <div class="flex gap-3">
-            <NButton variant="primary" size="sm" @click="confirmAssemble('replace')">
-              替换章节草稿
-            </NButton>
-            <NButton variant="ghost" size="sm" @click="confirmAssemble('append')">
-              追加到草稿末尾
-            </NButton>
-            <NButton variant="ghost" size="sm" @click="assemblePreview = null">
-              取消
-            </NButton>
-          </div>
-        </div>
-      </div>
+      <AssemblePreviewOverlay
+        :preview="assemblePreview"
+        @confirm="confirmAssemble"
+        @cancel="assemblePreview = null"
+      />
 
       <EditorPane
         :model-value="sceneMode ? sceneContent : draft"

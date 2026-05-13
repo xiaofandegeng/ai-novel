@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import type { ReferenceChapterAnalysisError } from '@ai-novel/shared'
-import type { WorkAnalysisSummary } from '../api/persona'
+import type { ReferenceChapter, ReferenceChapterAnalysisError, ReferenceWork, WorkAnalysisSummary, WorkStyleReport } from '@ai-novel/shared'
 import {
   NAppLayout,
   NButton,
@@ -25,9 +24,9 @@ const toast = useToast()
 const workId = route.params.workId as string
 
 const loading = ref(true)
-const work = ref<any>(null)
-const chapters = ref<any[]>([])
-const styleReport = ref<any>(null)
+const work = ref<ReferenceWork | null>(null)
+const chapters = ref<ReferenceChapter[]>([])
+const styleReport = ref<WorkStyleReport | null>(null)
 const analysisSummary = ref<WorkAnalysisSummary | null>(null)
 const analysisErrors = ref<ReferenceChapterAnalysisError[]>([])
 const analyzing = ref(false)

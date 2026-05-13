@@ -1,7 +1,8 @@
 import type { ForeshadowingImportance, ForeshadowingStatus } from '@ai-novel/shared'
 import { useToast } from '@ai-novel/ui'
 import { computed, onMounted, ref } from 'vue'
-import { useForeshadowingStore, useProjectStore } from '@/stores/projects'
+import { useForeshadowingStore } from '@/stores/foreshadowing.store'
+import { useProjectStore } from '@/stores/project.store'
 import { getErrorMessage } from '@/utils/error-message'
 import { T } from '@/utils/toast-message'
 

@@ -19,11 +19,9 @@ import {
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
-import {
-  useChapterStore,
-  useProjectStore,
-  useVersionStore,
-} from '../stores/projects'
+import { useChapterStore } from '../stores/chapter.store'
+import { useProjectStore } from '../stores/project.store'
+import { useVersionStore } from '../stores/version.store'
 
 const route = useRoute()
 const router = useRouter()

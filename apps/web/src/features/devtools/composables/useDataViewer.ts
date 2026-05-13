@@ -1,7 +1,11 @@
 import type { CharacterRole, NovelProject } from '@ai-novel/shared'
 import { useToast } from '@ai-novel/ui'
 import { onMounted, ref } from 'vue'
-import { useChapterStore, useCharacterStore, useProjectStore, useStoryBibleStore, useVolumeStore } from '@/stores/projects'
+import { useChapterStore } from '@/stores/chapter.store'
+import { useCharacterStore } from '@/stores/character.store'
+import { useProjectStore } from '@/stores/project.store'
+import { useStoryBibleStore } from '@/stores/story-bible.store'
+import { useVolumeStore } from '@/stores/volume.store'
 import { getErrorMessage } from '@/utils/error-message'
 import { T } from '@/utils/toast-message'
 

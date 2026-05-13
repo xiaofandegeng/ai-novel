@@ -2,7 +2,7 @@ import type { ProjectStatus, UpdateProjectInput } from '@ai-novel/shared'
 import { useToast } from '@ai-novel/ui'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useProjectStore } from '@/stores/projects'
+import { useProjectStore } from '@/stores/project.store'
 import { getErrorMessage } from '@/utils/error-message'
 import { T } from '@/utils/toast-message'
 

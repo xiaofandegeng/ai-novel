@@ -19,7 +19,7 @@ import {
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProjectLabels } from '../composables/useProjectLabels'
-import { useProjectStore } from '../stores/projects'
+import { useProjectStore } from '../stores/project.store'
 
 const router = useRouter()
 const projectStore = useProjectStore()

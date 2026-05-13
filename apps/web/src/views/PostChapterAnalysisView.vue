@@ -16,11 +16,9 @@ import {
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
-import {
-  useChapterStore,
-  usePostprocessSuggestionStore,
-  useProjectStore,
-} from '../stores/projects'
+import { useChapterStore } from '../stores/chapter.store'
+import { usePostprocessSuggestionStore } from '../stores/postprocess-suggestion.store'
+import { useProjectStore } from '../stores/project.store'
 
 const route = useRoute()
 const projectId = route.params.id as string

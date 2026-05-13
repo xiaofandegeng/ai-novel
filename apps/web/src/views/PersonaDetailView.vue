@@ -52,7 +52,7 @@ function statusLabel(status: string) {
   return map[status] || status
 }
 
-const ruleFields = [
+const ruleFields: Array<{ key: keyof WritingPersona, label: string }> = [
   { key: 'coreAppeal', label: '核心爽点' },
   { key: 'pacingRules', label: '节奏规则' },
   { key: 'conflictRules', label: '冲突规则' },
@@ -117,7 +117,7 @@ const ruleFields = [
                 {{ field.label }}
               </div>
               <div class="border border-border-light rounded-lg bg-bg-subtle p-3 text-sm text-text-secondary leading-relaxed">
-                {{ (persona as any)[field.key] || '未设定' }}
+                {{ persona[field.key] || '未设定' }}
               </div>
             </div>
           </div>

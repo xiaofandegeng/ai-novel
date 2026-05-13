@@ -2,14 +2,12 @@ import type { ChapterScene, ChapterStatus, CreateChapterElementInput } from '@ai
 import { useToast } from '@ai-novel/ui'
 import { onMounted, ref } from 'vue'
 import { useAIStream } from '@/composables/useAIStream'
-import {
-  useChapterElementStore,
-  useChapterStore,
-  useCharacterStore,
-  useProjectStore,
-  useSceneStore,
-  useVolumeStore,
-} from '@/stores/projects'
+import { useChapterElementStore } from '@/stores/chapter-element.store'
+import { useChapterStore } from '@/stores/chapter.store'
+import { useCharacterStore } from '@/stores/character.store'
+import { useProjectStore } from '@/stores/project.store'
+import { useSceneStore } from '@/stores/scene.store'
+import { useVolumeStore } from '@/stores/volume.store'
 import { getErrorMessage } from '@/utils/error-message'
 import { T } from '@/utils/toast-message'
 

@@ -43,6 +43,7 @@ const {
   aiError,
   proposedFieldItems,
   candidateRoleLabel,
+  proposedCandidates,
   filteredCharacters,
   projectStore,
   selectCharacter,
@@ -52,8 +53,11 @@ const {
   handleConfirmDelete,
   handleAIAnalyze,
   handleAINewCharacter,
+  handleAIMinorCharacters,
   applyAIToCurrentCharacter,
   createCharacterFromAI,
+  createCandidateFromAI,
+  createAllMinorCharactersFromAI,
   clearAIProposal,
   retryAIRequest,
 } = useCharacterWorkspace(projectId)
@@ -267,6 +271,15 @@ const activeTab = ref('profile')
             >
               <UserPlus :size="14" class="mr-1.5" /> AI 推荐新角色
             </NButton>
+            <NButton
+              variant="ghost"
+              size="sm"
+              class="mt-2 w-full"
+              :loading="isAnalyzing"
+              @click="handleAIMinorCharacters"
+            >
+              批量生成小角色
+            </NButton>
 
             <div v-if="isAnalyzing || aiProposal !== null || aiError" class="animate-in fade-in slide-in-from-top-2 mt-4 border border-ai/20 rounded-lg bg-white p-3 shadow-sm space-y-3">
               <div class="flex items-center justify-between">
@@ -312,13 +325,16 @@ const activeTab = ref('profile')
                   </div>
                 </div>
 
-                <div v-else class="space-y-3">
+                <div v-else-if="aiProposal.kind === 'create'" class="space-y-3">
                   <div class="border border-border-light rounded-md bg-bg-subtle p-3">
                     <p class="text-sm text-text-primary font-semibold">
                       {{ aiProposal.candidate?.name || 'AI 推荐角色' }}
                     </p>
                     <p class="mt-1 text-xs text-text-muted">
                       {{ candidateRoleLabel }}
+                    </p>
+                    <p v-if="aiProposal.candidate?.relationSuggestions?.length" class="mt-2 text-[10px] text-text-muted">
+                      将自动关联 {{ aiProposal.candidate.relationSuggestions.length }} 段人物关系
                     </p>
                   </div>
                   <div class="max-h-56 overflow-y-auto space-y-2">
@@ -338,6 +354,54 @@ const activeTab = ref('profile')
                   <NButton size="sm" variant="ai" class="w-full text-xs" @click="createCharacterFromAI">
                     创建并选中该角色
                   </NButton>
+                </div>
+
+                <div v-else class="space-y-3">
+                  <div class="flex items-center justify-between gap-2">
+                    <p class="text-xs text-text-muted">
+                      共 {{ proposedCandidates.length }} 个小角色候选
+                    </p>
+                    <NButton
+                      v-if="proposedCandidates.length > 0"
+                      size="sm"
+                      variant="ai"
+                      class="text-xs"
+                      @click="createAllMinorCharactersFromAI"
+                    >
+                      全部创建
+                    </NButton>
+                  </div>
+
+                  <div class="max-h-80 overflow-y-auto space-y-2">
+                    <div
+                      v-for="candidate in proposedCandidates"
+                      :key="candidate.name"
+                      class="border border-border-light rounded-md bg-bg-subtle p-3 space-y-2"
+                    >
+                      <div class="flex items-start justify-between gap-2">
+                        <div>
+                          <p class="text-sm text-text-primary font-semibold">
+                            {{ candidate.name }}
+                          </p>
+                          <p class="mt-0.5 text-[10px] text-text-muted">
+                            {{ getCharacterRoleLabel(candidate.role) }}
+                          </p>
+                        </div>
+                        <NButton size="sm" variant="ghost" class="shrink-0 text-xs" @click="createCandidateFromAI(candidate)">
+                          创建
+                        </NButton>
+                      </div>
+                      <p v-if="candidate.personality" class="text-xs text-text-secondary leading-relaxed">
+                        {{ candidate.personality }}
+                      </p>
+                      <p v-if="candidate.goal" class="text-[10px] text-text-muted leading-relaxed">
+                        用途：{{ candidate.goal }}
+                      </p>
+                      <p v-if="candidate.relationSuggestions?.length" class="text-[10px] text-text-muted leading-relaxed">
+                        关系：{{ candidate.relationSuggestions.map(rel => rel.targetName).join('、') }}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </template>
               <NButton v-if="aiError" size="sm" variant="ghost" class="w-full text-xs" @click="retryAIRequest">

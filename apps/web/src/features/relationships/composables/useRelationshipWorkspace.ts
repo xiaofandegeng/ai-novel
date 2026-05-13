@@ -1,10 +1,8 @@
 import { useToast } from '@ai-novel/ui'
 import { onMounted, ref } from 'vue'
-import {
-  useCharacterStore,
-  useProjectStore,
-  useRelationshipStore,
-} from '@/stores/projects'
+import { useCharacterStore } from '@/stores/character.store'
+import { useProjectStore } from '@/stores/project.store'
+import { useRelationshipStore } from '@/stores/relationship.store'
 import { getErrorMessage } from '@/utils/error-message'
 import { T, W } from '@/utils/toast-message'
 

@@ -27,13 +27,11 @@ import KnowledgeSourceList from '../features/knowledge/components/KnowledgeSourc
 import KnowledgeUploadPanel from '../features/knowledge/components/KnowledgeUploadPanel.vue'
 import { useKnowledgeUpload } from '../features/knowledge/composables/useKnowledgeUpload'
 import { useKnowledgeStore } from '../stores/knowledge.store'
-import {
-  useCharacterStore,
-  useConflictStore,
-  useProjectStore,
-  useRelationshipStore,
-  useStoryBibleStore,
-} from '../stores/projects'
+import { useCharacterStore } from '../stores/character.store'
+import { useConflictStore } from '../stores/conflict.store'
+import { useProjectStore } from '../stores/project.store'
+import { useRelationshipStore } from '../stores/relationship.store'
+import { useStoryBibleStore } from '../stores/story-bible.store'
 import { getCharacterRoleLabel } from '../utils/character-labels'
 
 const route = useRoute()

@@ -22,7 +22,8 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAIStream } from '@/composables/useAIStream'
 import AppSidebar from '../components/AppSidebar.vue'
-import { useProjectStore, useStoryBibleStore } from '../stores/projects'
+import { useProjectStore } from '../stores/project.store'
+import { useStoryBibleStore } from '../stores/story-bible.store'
 
 const route = useRoute()
 const router = useRouter()
