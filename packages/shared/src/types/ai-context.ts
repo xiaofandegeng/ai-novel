@@ -1,9 +1,10 @@
-export type AIScene = 'outline' | 'draft' | 'polish' | 'quality' | 'story_bible' | 'knowledge' | 'persona_training' | 'persona_drift' | 'chat'
+export type AIScene = 'outline' | 'project_outline' | 'volume_outline' | 'draft' | 'polish' | 'quality' | 'story_bible' | 'knowledge' | 'persona_training' | 'persona_drift' | 'chat'
 
 export interface AIContextRequest {
   projectId: string
   scene: AIScene
   chapterId?: string
+  volumeId?: string
   sceneId?: string
   selectedText?: string
   userInstruction?: string
@@ -88,6 +89,11 @@ export interface BuiltAIContext {
     foreshadowing?: string
     endingHook?: string
     draftExcerpt?: string
+  }
+  currentVolume?: {
+    id: string
+    title: string
+    summary?: string
   }
   currentScene?: {
     id: string

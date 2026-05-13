@@ -297,26 +297,58 @@ export function useOutlineWorkspace(projectId: string) {
   }
 
   async function handleAIBrainstorm() {
-    if (!selectedChapterId.value)
+    if (!selectedId.value)
       return
 
     try {
-      aiSuggestion.value = await streamAI({
-        projectId,
-        scene: 'outline',
-        chapterId: selectedChapterId.value,
-        userInstruction: `请根据当前故事设定、人物档案和前文剧情，为本章进行深度“灵感风暴”。
-           输出要求：
-           1. 必须使用中文。
-           2. 必须包含以下结构化模块，并用【】括起标题：
-           【创作目标】：本章在全书结构中的定位和必须达成的目的。
-           【核心冲突】：本章最核心的对抗点（内部或外部）。
-           【情感基调】：希望带给读者的情绪体验及转变。
-           【剧情拆解】：详细的行动步骤（1. 2. 3. ...）。
-           【结尾悬念】：如何留住读者，引向下一章。
-           
-           语气要专业、富有戏剧张力，字数约 300-500 字。`,
-      })
+      if (selectedType.value === 'project') {
+        aiSuggestion.value = await streamAI({
+          projectId,
+          scene: 'project_outline',
+          userInstruction: `请根据当前的作品基本设定，为全书进行全局性的“大纲规划”。
+             输出要求：
+             1. 必须使用中文。
+             2. 必须包含以下结构化模块，并用【】括起标题：
+             【核心主题】：深入探讨全书的核心表达和哲学思考。
+             【类型基调】：明确作品的市场定位、语言风格和情感底色。
+             【全书大纲】：梳理作品的主要线索、高潮转折和最终结局。
+             
+             语气要宏大且具有启发性。`,
+        })
+      }
+      else if (selectedType.value === 'volume') {
+        aiSuggestion.value = await streamAI({
+          projectId,
+          scene: 'volume_outline',
+          volumeId: selectedId.value,
+          userInstruction: `请根据全书设定和当前分卷信息，为本卷进行详细的“分卷规划”。
+             输出要求：
+             1. 必须使用中文。
+             2. 必须包含以下结构化模块，并用【】括起标题：
+             【核心任务】：本卷在全书结构中承载的主要功能。
+             【分卷大纲】：本卷的具体起因、发展、高潮和收尾逻辑。
+             
+             要注重剧情的连贯性和矛盾的升级感。`,
+        })
+      }
+      else {
+        aiSuggestion.value = await streamAI({
+          projectId,
+          scene: 'outline',
+          chapterId: selectedId.value,
+          userInstruction: `请根据当前故事设定、人物档案和前文剧情，为本章进行深度“灵感风暴”。
+             输出要求：
+             1. 必须使用中文。
+             2. 必须包含以下结构化模块，并用【】括起标题：
+             【创作目标】：本章在全书结构中的定位和必须达成的目的。
+             【核心冲突】：本章最核心的对抗点（内部或外部）。
+             【情感基调】：希望带给读者的情绪体验及转变。
+             【剧情拆解】：详细的行动步骤（1. 2. 3. ...）。
+             【结尾悬念】：如何留住读者，引向下一章。
+             
+             语气要专业、富有戏剧张力，字数约 300-500 字。`,
+        })
+      }
     }
     catch (error: any) {
       toast.add(error.message || getErrorMessage('ai_brainstorm'), 'error')
@@ -331,13 +363,14 @@ export function useOutlineWorkspace(projectId: string) {
       return text.match(pattern)?.[1]?.trim() || ''
     }
 
-    const goals = extract('创作目标') || extract('本章目标')
+    const goals = extract('创作目标') || extract('本章目标') || extract('核心任务')
     const conflicts = extract('核心冲突')
-    const emotionalArc = extract('情感基调') || extract('情绪基调')
-    const events = extract('剧情拆解') || extract('关键事件') || extract('情节拆解')
+    const emotionalArc = extract('情感基调') || extract('情绪基调') || extract('类型基调')
+    const events = extract('剧情拆解') || extract('关键事件') || extract('情节拆解') || extract('分卷大纲') || extract('全书大纲')
     const endingHook = extract('结尾悬念') || extract('钩子')
+    const theme = extract('核心主题')
 
-    return { goals, conflicts, emotionalArc, events, endingHook }
+    return { goals, conflicts, emotionalArc, events, endingHook, theme }
   }
 
   function confirmOutlineAIResult(action: 'insert' | 'replace' | 'backup' | 'discard') {
@@ -346,27 +379,61 @@ export function useOutlineWorkspace(projectId: string) {
 
     if (action === 'insert' || action === 'replace') {
       const parsed = parseOutlineSuggestion(aiSuggestion.value)
-
-      // 检查是否完全没解析到（可能是 AI 没按格式输出）
       const hasParsedAny = Object.values(parsed).some(v => v.length > 0)
 
-      if (action === 'replace') {
-        if (hasParsedAny) {
-          outlineForm.value.goals = parsed.goals
-          outlineForm.value.conflicts = parsed.conflicts
-          outlineForm.value.emotionalArc = parsed.emotionalArc
-          outlineForm.value.events = parsed.events
-          outlineForm.value.endingHook = parsed.endingHook
+      if (selectedType.value === 'project') {
+        if (action === 'replace') {
+          if (hasParsedAny) {
+            projectForm.value.theme = parsed.theme || projectForm.value.theme
+            projectForm.value.genre = parsed.emotionalArc || projectForm.value.genre
+            projectForm.value.description = parsed.events || projectForm.value.description
+          }
+          else {
+            projectForm.value.description = aiSuggestion.value
+          }
         }
         else {
-          // 解析失败的回退方案：全部填入剧情拆解
-          outlineForm.value.events = aiSuggestion.value
+          if (parsed.theme)
+            projectForm.value.theme = (projectForm.value.theme ? `${projectForm.value.theme}\n` : '') + parsed.theme
+          if (parsed.emotionalArc)
+            projectForm.value.genre = (projectForm.value.genre ? `${projectForm.value.genre}\n` : '') + parsed.emotionalArc
+          if (parsed.events)
+            projectForm.value.description = (projectForm.value.description ? `${projectForm.value.description}\n` : '') + parsed.events
+          if (!hasParsedAny)
+            projectForm.value.description = (projectForm.value.description ? `${projectForm.value.description}\n\n` : '') + aiSuggestion.value
         }
-        toast.add('大纲已更新', 'success')
+      }
+      else if (selectedType.value === 'volume') {
+        if (action === 'replace') {
+          if (hasParsedAny) {
+            volumeForm.value.summary = parsed.events || volumeForm.value.summary
+          }
+          else {
+            volumeForm.value.summary = aiSuggestion.value
+          }
+        }
+        else {
+          if (parsed.events)
+            volumeForm.value.summary = (volumeForm.value.summary ? `${volumeForm.value.summary}\n` : '') + parsed.events
+          if (!hasParsedAny)
+            volumeForm.value.summary = (volumeForm.value.summary ? `${volumeForm.value.summary}\n\n` : '') + aiSuggestion.value
+        }
       }
       else {
-        // 智能插入
-        if (hasParsedAny) {
+        // Chapter logic (existing)
+        if (action === 'replace') {
+          if (hasParsedAny) {
+            outlineForm.value.goals = parsed.goals
+            outlineForm.value.conflicts = parsed.conflicts
+            outlineForm.value.emotionalArc = parsed.emotionalArc
+            outlineForm.value.events = parsed.events
+            outlineForm.value.endingHook = parsed.endingHook
+          }
+          else {
+            outlineForm.value.events = aiSuggestion.value
+          }
+        }
+        else {
           if (parsed.goals)
             outlineForm.value.goals = (outlineForm.value.goals ? `${outlineForm.value.goals}\n` : '') + parsed.goals
           if (parsed.conflicts)
@@ -377,12 +444,11 @@ export function useOutlineWorkspace(projectId: string) {
             outlineForm.value.events = (outlineForm.value.events ? `${outlineForm.value.events}\n` : '') + parsed.events
           if (parsed.endingHook)
             outlineForm.value.endingHook = (outlineForm.value.endingHook ? `${outlineForm.value.endingHook}\n` : '') + parsed.endingHook
+          if (!hasParsedAny)
+            outlineForm.value.events = (outlineForm.value.events ? `${outlineForm.value.events}\n\n` : '') + aiSuggestion.value
         }
-        else {
-          outlineForm.value.events = (outlineForm.value.events ? `${outlineForm.value.events}\n\n` : '') + aiSuggestion.value
-        }
-        toast.add('内容已追加', 'success')
       }
+      toast.add('大纲已更新', 'success')
     }
     else if (action === 'backup') {
       outlineAlternatives.value.unshift(aiSuggestion.value)

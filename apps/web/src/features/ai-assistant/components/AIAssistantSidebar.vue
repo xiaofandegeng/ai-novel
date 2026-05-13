@@ -28,6 +28,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'apply', content: string): void
   (e: 'consistencyCheck', payload: { report?: any, loading: boolean }): void
+  (e: 'runAI', type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'): void
 }>()
 
 const router = useRouter()
@@ -35,6 +36,16 @@ const { isStreaming, messages, selectedModel, aiNotConfigured, send, clearChat }
 
 const inputMessage = ref('')
 const chatContainer = ref<HTMLElement | null>(null)
+
+function handleQuickAction(type: 'draft' | 'continue' | 'brainstorm') {
+  if (type === 'brainstorm') {
+    inputMessage.value = '请根据当前大纲和设定，为我发散一下接下来的剧情走向。'
+    handleSend()
+  }
+  else {
+    emit('runAI', type)
+  }
+}
 
 watch(() => messages.value[messages.value.length - 1], (last) => {
   if (last && last.role === 'assistant') {
@@ -118,11 +129,25 @@ defineExpose({
       ref="chatContainer"
       class="flex-1 overflow-y-auto scroll-smooth p-4 space-y-4"
     >
-      <div v-if="messages.length === 0" class="h-full flex flex-col items-center justify-center px-6 text-center opacity-40">
-        <Bot :size="48" class="mb-4 text-text-muted" stroke-width="1" />
-        <p class="text-xs text-text-muted leading-relaxed">
+      <div v-if="messages.length === 0" class="h-full flex flex-col items-center justify-center px-6 text-center">
+        <Bot :size="48" class="mb-4 text-text-muted opacity-40" stroke-width="1" />
+        <p class="mb-6 text-xs text-text-muted leading-relaxed opacity-60">
           我是你的创作伙伴。可以让我头脑风暴情节、打磨角色语言，或检查逻辑漏洞。
         </p>
+
+        <div class="grid grid-cols-1 w-full gap-2">
+          <NButton variant="ai" size="sm" class="w-full" @click="handleQuickAction('draft')">
+            <Sparkles :size="14" class="mr-2" /> 开始起草初稿
+          </NButton>
+          <div class="grid grid-cols-2 gap-2">
+            <NButton variant="ghost" size="sm" @click="handleQuickAction('continue')">
+              续写下文
+            </NButton>
+            <NButton variant="ghost" size="sm" @click="handleQuickAction('brainstorm')">
+              灵感发散
+            </NButton>
+          </div>
+        </div>
       </div>
 
       <div

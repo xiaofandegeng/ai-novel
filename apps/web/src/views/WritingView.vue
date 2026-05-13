@@ -240,7 +240,7 @@ function handleSelection(payload: { text: string, start: number, end: number }) 
   selectionEnd.value = payload.end
 }
 
-function handleRunAI(type: 'continue' | 'polish' | 'expand' | 'shorten') {
+function handleRunAI(type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft') {
   if (sceneMode.value && !currentSceneId.value) {
     toast.add('请先选择一个场景，再使用 AI 生成场景正文。', 'warning')
     return
@@ -251,10 +251,12 @@ function handleRunAI(type: 'continue' | 'polish' | 'expand' | 'shorten') {
     polish: '润色',
     expand: '扩写',
     shorten: '精简',
+    draft: '起草初稿',
   }
   const sceneMap = {
     continue: 'draft' as const,
     expand: 'draft' as const,
+    draft: 'draft' as const,
     polish: 'polish' as const,
     shorten: 'polish' as const,
   }
@@ -391,6 +393,7 @@ async function handleUpdateMemory() {
         :scene-id="sceneMode ? currentSceneId : null"
         @apply-a-i="applyAIResult"
         @consistency-check="updateConsistency($event.report, $event.loading)"
+        @run-ai="handleRunAI"
       />
     </div>
   </NAppLayout>

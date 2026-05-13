@@ -5,6 +5,7 @@ import { Sparkles } from 'lucide-vue-next'
 defineProps<{
   aiSuggestion: string | null
   isBrainstorming: boolean
+  selectedType: 'project' | 'volume' | 'chapter'
   theme?: string
   alternatives: string[]
 }>()
@@ -15,6 +16,18 @@ const emit = defineEmits<{
   applyAlternative: [index: number, action: 'insert' | 'replace']
   removeAlternative: [index: number]
 }>()
+
+const titles = {
+  project: '全书大纲灵感',
+  volume: '分卷规划建议',
+  chapter: '章节灵感风暴',
+}
+
+const descriptions = {
+  project: '我将根据您的核心设定，构思全书的起承转合与高潮。',
+  volume: '我将结合前后文，为您规划本卷的核心冲突与走向。',
+  chapter: '我将根据您的故事设定集，构思本章的关键事件与悬念。',
+}
 </script>
 
 <template>
@@ -28,7 +41,7 @@ const emit = defineEmits<{
       <div v-if="aiSuggestion !== null || isBrainstorming" class="animate-in fade-in slide-in-from-right-4 border border-ai/10 rounded-xl bg-ai-soft p-4">
         <div class="mb-2 flex items-center justify-between">
           <p class="flex items-center gap-2 text-sm text-text-primary font-bold">
-            <Sparkles :size="14" class="text-ai" /> AI 建议方案
+            <Sparkles :size="14" class="text-ai" /> {{ titles[selectedType] }}
           </p>
         </div>
         <div v-if="isBrainstorming && !aiSuggestion" class="py-4 space-y-2">
@@ -56,10 +69,10 @@ const emit = defineEmits<{
 
       <div v-else class="group border border-border-light rounded-xl bg-bg-surface p-4 transition-colors hover:border-ai/30">
         <p class="mb-1 text-sm text-text-primary font-medium">
-          生成章节计划
+          {{ titles[selectedType] }}
         </p>
         <p class="mb-4 text-xs text-text-secondary leading-relaxed">
-          我将根据您的故事设定集，构思本章的关键事件与悬念。
+          {{ descriptions[selectedType] }}
         </p>
         <NButton variant="ghost" size="sm" class="w-full group-hover:bg-ai/5 group-hover:text-ai" @click="emit('brainstorm')">
           建议方案

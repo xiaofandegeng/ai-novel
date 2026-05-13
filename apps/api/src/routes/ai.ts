@@ -12,7 +12,7 @@ export function registerAiRoutes(app: Hono) {
   // 统一 AI 生成接口 (基于上下文工程)
   app.post('/api/projects/:projectId/ai/generate', async (c) => {
     const projectId = c.req.param('projectId')
-    const { scene, chapterId, sceneId, selectedText, userInstruction } = await c.req.json()
+    const { scene, chapterId, volumeId, sceneId, selectedText, userInstruction } = await c.req.json()
 
     try {
       await assertAIConfigured()
@@ -20,6 +20,7 @@ export function registerAiRoutes(app: Hono) {
         projectId,
         scene,
         chapterId,
+        volumeId,
         sceneId,
         selectedText,
         userInstruction,

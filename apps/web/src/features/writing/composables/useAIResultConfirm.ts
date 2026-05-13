@@ -5,7 +5,7 @@ import { T } from '@/utils/toast-message'
 
 export interface PendingAIResult {
   content: string
-  source: 'continue' | 'polish' | 'expand' | 'shorten' | 'chat'
+  source: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft' | 'chat'
   selectionStart: number
   selectionEnd: number
   originalText: string
@@ -14,7 +14,7 @@ export interface PendingAIResult {
 }
 
 export interface AIActionType {
-  type: 'continue' | 'polish' | 'expand' | 'shorten'
+  type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'
 }
 
 type ToastType = 'success' | 'info' | 'warning' | 'error'
@@ -71,10 +71,18 @@ export function useAIResultConfirm(
   }
 
   function buildAIPrompt(type: AIActionType['type']): string {
-    if (type === 'continue') {
-      return `Continue writing the story from this exact point. Stay consistent with the current style and tone. Current draft ending: "${draft.value.slice(-500)}"`
+    if (type === 'draft') {
+      return '请根据本章大纲、创作目标、关键事件及登场人物设定，为我撰写本章的正文初稿。要求：保持叙事张力，注重细节描写，字数在1000-2000字左右。'
     }
-    return `Please ${type === 'polish' ? 'polish and improve the prose of' : type === 'expand' ? 'expand and add more sensory details to' : 'summarize and make more concise'} the following text while maintaining its core meaning: "${selectedText.value}"`
+    if (type === 'continue') {
+      return `请根据前文剧情和已有风格，继续续写后续内容。确保语气连贯，逻辑自洽。当前正文末尾：\n"${draft.value.slice(-500)}"`
+    }
+    const actionMap = {
+      polish: '润色并优化以下文字的文采和表达',
+      expand: '扩写以下文字，增加更多的感官细节和心理描写',
+      shorten: '精简并概括以下文字，保持核心意思不变',
+    }
+    return `请${actionMap[type]}，确保符合作品整体风格：\n"${selectedText.value}"`
   }
 
   function initPendingResult(type: AIActionType['type']) {

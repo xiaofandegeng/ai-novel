@@ -17,7 +17,7 @@ const emit = defineEmits<{
   (e: 'save'): void
   (e: 'snapshot'): void
   (e: 'selection', payload: { text: string, start: number, end: number }): void
-  (e: 'runAI', type: 'continue' | 'polish' | 'expand' | 'shorten'): void
+  (e: 'runAI', type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'): void
 }>()
 
 const draft = defineModel<string>({ required: true })
@@ -51,7 +51,7 @@ function handleSelection(e: Event) {
   })
 }
 
-function triggerAI(type: 'continue' | 'polish' | 'expand' | 'shorten') {
+function triggerAI(type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft') {
   showFloatingBar.value = false
   emit('runAI', type)
 }
@@ -108,6 +108,26 @@ defineExpose({
           placeholder="从这里开始写作..."
           @select="handleSelection"
         />
+
+        <!-- Empty State AI Button -->
+        <div v-if="!draft && !loading" class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-bg-page/40 backdrop-blur-[1px]">
+          <div class="border border-ai/20 rounded-2xl bg-bg-surface/80 p-8 shadow-2xl space-y-4">
+            <div class="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-ai-soft text-ai">
+              <Sparkles :size="24" />
+            </div>
+            <div class="text-center">
+              <h3 class="text-base text-text-primary font-bold">
+                快速开始起草
+              </h3>
+              <p class="mt-1 text-xs text-text-muted leading-relaxed">
+                我将根据您的大纲和设定，自动撰写本章初稿
+              </p>
+            </div>
+            <NButton variant="ai" class="w-full shadow-lg" @click="triggerAI('draft')">
+              <Sparkles :size="16" class="mr-2" /> AI 起草初稿
+            </NButton>
+          </div>
+        </div>
 
         <!-- Floating Toolbar -->
         <Transition

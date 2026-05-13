@@ -57,7 +57,7 @@ function buildKnowledgeSearchTerms(input: {
 }
 
 export async function buildProjectAIContext(input: AIContextRequest): Promise<BuiltAIContext> {
-  const { projectId, scene, chapterId, sceneId, selectedText, userInstruction } = input
+  const { projectId, scene, chapterId, volumeId, sceneId, selectedText, userInstruction } = input
 
   // 1. Fetch Project & Story Bible
   const [project] = await db.select().from(novelProjects).where(eq(novelProjects.id, projectId))
@@ -391,6 +391,16 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     }
   }
 
+  // 2c. Fetch Current Volume (if volumeId provided or via chapterId)
+  let currentVolumeData: any = null
+  const targetVolumeId = volumeId || currentChapterData?.volumeId
+  if (targetVolumeId) {
+    const [vol] = await db.select().from(volumes).where(and(eq(volumes.id, targetVolumeId), eq(volumes.projectId, projectId)))
+    if (vol) {
+      currentVolumeData = vol
+    }
+  }
+
   return {
     scene,
     task: userInstruction || '根据上下文完成创作任务',
@@ -410,6 +420,13 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
           theme: bible.theme || undefined,
           rules: bible.rules || undefined,
           timeline: bible.timeline || undefined,
+        }
+      : undefined,
+    currentVolume: currentVolumeData
+      ? {
+          id: currentVolumeData.id,
+          title: currentVolumeData.title,
+          summary: currentVolumeData.summary || undefined,
         }
       : undefined,
     currentChapter: currentChapterData

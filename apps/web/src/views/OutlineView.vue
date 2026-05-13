@@ -176,6 +176,7 @@ const {
       <OutlineAIPanel
         :ai-suggestion="aiSuggestion"
         :is-brainstorming="isBrainstorming"
+        :selected-type="selectedType"
         :theme="projectStore.currentProject?.theme"
         :alternatives="outlineAlternatives"
         @brainstorm="handleAIBrainstorm"

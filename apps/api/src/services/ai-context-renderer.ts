@@ -11,6 +11,10 @@ export function renderAIContext(context: BuiltAIContext): string {
     sections.push(`【故事设定】\n世界观: ${context.storyBible.worldview || '未定义'}\n主冲突: ${context.storyBible.mainConflict || '未定义'}\n规则: ${context.storyBible.rules || '未定义'}`)
   }
 
+  if (context.currentVolume) {
+    sections.push(`【当前分卷】\n标题: ${context.currentVolume.title}\n分卷大纲: ${context.currentVolume.summary || '未定义'}`)
+  }
+
   if (context.currentChapter) {
     const chapterLines = [
       `标题: ${context.currentChapter.title}`,
