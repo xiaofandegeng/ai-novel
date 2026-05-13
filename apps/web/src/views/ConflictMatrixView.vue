@@ -9,13 +9,17 @@ import {
 } from '@ai-novel/ui'
 import {
   ArrowLeft,
+  Check,
   ChevronLeft,
   HelpCircle,
   LayoutGrid,
+  Loader2,
   Plus,
+  Sparkles,
   Trash2,
   TrendingUp,
   Users,
+  X,
   Zap,
 } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
@@ -42,6 +46,10 @@ const {
   handleConfirmDelete,
   toggleParticipant,
   getStatusStyle,
+  suggestions,
+  inferring,
+  handleAcceptSuggestion,
+  handleRejectSuggestion,
 } = useConflictWorkspace(projectId)
 
 const statusOptions = CONFLICT_STATUS_OPTIONS
@@ -112,6 +120,38 @@ const types = CONFLICT_TYPES
             </div>
           </button>
         </div>
+
+        <!-- Pending Suggestions -->
+        <div v-if="suggestions.length > 0" class="mt-4 px-2 pb-4">
+          <div class="mb-2 flex items-center gap-2 px-2 text-[10px] text-primary font-bold tracking-wider uppercase">
+            <Sparkles :size="12" /> 待确认建议 (AI 推导)
+          </div>
+          <div class="space-y-2">
+            <div
+              v-for="s in suggestions"
+              :key="s.id"
+              class="group relative border border-primary/10 rounded-xl bg-primary/5 p-3 transition-all hover:bg-primary/10"
+            >
+              <div class="mb-1 flex items-center justify-between">
+                <span class="text-xs text-text-primary font-bold">{{ s.payload.title }}</span>
+                <NTag size="sm" variant="ai">
+                  {{ s.payload.type === 'internal' ? '内部矛盾' : '外部矛盾' }}
+                </NTag>
+              </div>
+              <p class="line-clamp-2 text-[10px] text-text-muted leading-tight">
+                {{ s.reason || s.payload.description }}
+              </p>
+              <div class="mt-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                <NButton size="sm" variant="primary" class="h-6 flex-1 text-[10px]" @click="handleAcceptSuggestion(s.id)">
+                  <Check :size="10" class="mr-1" /> 采纳
+                </NButton>
+                <NButton size="sm" variant="ghost" class="h-6 flex-1 text-[10px]" @click="handleRejectSuggestion(s.id)">
+                  <X :size="10" class="mr-1" /> 忽略
+                </NButton>
+              </div>
+            </div>
+          </div>
+        </div>
       </aside>
 
       <main class="flex-1 overflow-y-auto bg-bg-page p-8">
@@ -143,6 +183,21 @@ const types = CONFLICT_TYPES
               </NButton>
             </div>
           </header>
+
+          <!-- AI Inference Overlay (Optional, for future full-scan) -->
+          <div v-if="inferring" class="animate-in fade-in absolute inset-0 z-50 flex items-center justify-center bg-bg-page/80 backdrop-blur-sm duration-300">
+            <div class="flex flex-col items-center gap-4 text-center">
+              <div class="relative">
+                <Sparkles :size="48" class="animate-pulse text-primary" />
+                <Loader2 :size="64" class="absolute left-1/2 top-1/2 animate-spin text-primary/30 -translate-x-1/2 -translate-y-1/2" />
+              </div>
+              <div>
+                <h3 class="text-lg text-text-primary font-bold">
+                  正在扫描剧情冲突...
+                </h3>
+              </div>
+            </div>
+          </div>
 
           <div class="grid grid-cols-5 gap-2">
             <button

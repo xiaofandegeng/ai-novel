@@ -80,6 +80,7 @@ interface StructuredAnalysis {
   themeProgress: string
   styleNotes: StructuredStyleNote[] | string
   conflictUpdates: Array<{ title: string, newStatus?: string, newIntensity?: number, reason: string }>
+  newConflicts: Array<{ title: string, type: 'internal' | 'external', intensity: number, participants: string, description: string }>
   relationshipUpdates: StructuredRelationshipUpdate[]
   // Legacy string fields for backward compatibility
   newFacts?: string
@@ -203,6 +204,15 @@ ${truncatedContent}
       "description": "关系变化描述",
       "confidence": 80
     }
+  ],
+  "newConflicts": [
+    {
+      "title": "新冲突标题",
+      "type": "internal/external",
+      "intensity": 1-10,
+      "participants": "涉及角色名，逗号分隔",
+      "description": "冲突起因和表现"
+    }
   ]
 }
 
@@ -214,6 +224,7 @@ ${truncatedContent}
 - styleNotes 提取叙事风格特征
 - conflictUpdates 提取本章节中涉及的已有矛盾的进展情况
 - relationshipUpdates 提取本章节中体现的人物关系变化或新增关系
+- newConflicts 提取本章节中由于剧情走向新产生的、尚未记录在案的矛盾/冲突
 - 如果某类没有相关内容，返回空数组 []
 - confidence 范围 0-100`
 
@@ -323,6 +334,20 @@ ${truncatedContent}
           characterName: cs.characterName,
           change: cs.change,
         }, cs.confidence || 70)
+      }
+    }
+
+    if (parsed.newConflicts?.length) {
+      for (const conflict of parsed.newConflicts) {
+        if (!conflict.title)
+          continue
+        await createSuggestion(projectId, chapterId, runId, 'conflict_add', {
+          title: conflict.title,
+          type: conflict.type,
+          intensity: conflict.intensity,
+          participants: conflict.participants,
+          description: conflict.description,
+        }, 75, `剧情走向：${conflict.title}`)
       }
     }
 

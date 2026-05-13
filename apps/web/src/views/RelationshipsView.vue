@@ -16,6 +16,7 @@ import {
   Loader2,
   Plus,
   Share2,
+  Shield,
   Sparkles,
   Sword,
   Trash2,
@@ -23,6 +24,7 @@ import {
   Users,
   X,
 } from 'lucide-vue-next'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useRelationshipWorkspace } from '../features/relationships/composables/useRelationshipWorkspace'
@@ -56,10 +58,46 @@ const relationshipTypes = [
   { value: 'ally', label: '盟友 / 朋友', icon: Users },
   { value: 'enemy', label: '敌人 / 仇敌', icon: Sword },
   { value: 'lover', label: '恋人 / 情侣', icon: Heart },
-  { value: 'family', label: '家族 / 血缘', icon: Info },
+  { value: 'family', label: '家人 / 血缘', icon: Info },
   { value: 'mentor', label: '导师 / 徒弟', icon: Info },
   { value: 'rival', label: '竞争对手', icon: Sword },
+  { value: 'victim', label: '受害者', icon: Info },
+  { value: 'key_holder', label: '关键持有人', icon: Info },
+  { value: 'connected', label: '关联', icon: Info },
+  { value: 'source', label: '来源', icon: Info },
+  { value: 'former_lover', label: '前恋人', icon: Heart },
+  { value: 'manipulator', label: '操纵者', icon: Sword },
+  { value: 'buyer', label: '买家', icon: Users },
+  { value: 'acquaintance', label: '点头之交', icon: Users },
+  { value: 'anchor', label: '锚点 / 精神寄托', icon: Info },
+  { value: 'deceiver', label: '欺骗者', icon: Sword },
+  { value: 'protector', label: '保护者', icon: Shield },
+  { value: 'obsessive', label: '执念 / 迷恋', icon: Heart },
+  { value: 'betrayer', label: '背叛者', icon: Sword },
 ]
+
+function getRelTypeLabel(type: string): string {
+  if (!type)
+    return '未知'
+  const lowerType = type.toLowerCase()
+  // 处理 slash 分隔的情况，如 source/connected
+  if (lowerType.includes('/')) {
+    return lowerType.split('/').map(t => getRelTypeLabel(t.trim())).join('/')
+  }
+  return relationshipTypes.find(t => t.value === lowerType)?.label || type
+}
+
+const relationshipOptions = computed(() => {
+  const options = [...relationshipTypes]
+  if (relForm.value.type && !options.find(o => o.value === relForm.value.type)) {
+    options.push({
+      value: relForm.value.type,
+      label: relForm.value.type,
+      icon: Info,
+    })
+  }
+  return options
+})
 </script>
 
 <template>
@@ -121,7 +159,7 @@ const relationshipTypes = [
             </div>
             <div class="flex items-center justify-between">
               <NTag size="sm" :variant="rel.type === 'enemy' || rel.type === 'rival' ? 'error' : 'info'">
-                {{ rel.type }}
+                {{ getRelTypeLabel(rel.type) }}
               </NTag>
               <span class="text-[10px] text-text-muted">亲密度: {{ rel.strength }}/10</span>
             </div>
@@ -141,7 +179,7 @@ const relationshipTypes = [
             >
               <div class="mb-1 flex items-center gap-2">
                 <span class="text-xs text-text-primary font-bold">{{ s.payload.characterAName }}</span>
-                <span class="rounded bg-primary/10 px-1 py-0.5 text-[9px] text-primary">{{ s.payload.type }}</span>
+                <span class="rounded bg-primary/10 px-1 py-0.5 text-[9px] text-primary">{{ getRelTypeLabel(s.payload.type) }}</span>
                 <span class="text-xs text-text-primary font-bold">{{ s.payload.characterBName }}</span>
               </div>
               <p class="line-clamp-2 text-[10px] text-text-muted leading-tight">
@@ -230,7 +268,7 @@ const relationshipTypes = [
               <div class="space-y-2">
                 <label class="text-xs text-text-muted font-bold tracking-wider uppercase">羁绊类型</label>
                 <select v-model="relForm.type" class="w-full border border-border-light rounded-lg bg-bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
-                  <option v-for="type in relationshipTypes" :key="type.value" :value="type.value">
+                  <option v-for="type in relationshipOptions" :key="type.value" :value="type.value">
                     {{ type.label }}
                   </option>
                 </select>

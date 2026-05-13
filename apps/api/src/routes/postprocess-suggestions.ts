@@ -1,6 +1,6 @@
 import type { Hono } from 'hono'
 import type { ApplyResult } from '../services/postprocess-suggestion.service'
-import { acceptSuggestion, applyAcceptedSuggestions, getProjectSuggestions, getSuggestions, rejectSuggestion } from '../services/postprocess-suggestion.service'
+import { acceptSuggestion, applyAcceptedSuggestions, applySuggestion, getProjectSuggestions, getSuggestions, rejectSuggestion } from '../services/postprocess-suggestion.service'
 import { runGraphInference } from '../services/story-graph-inference.service'
 import { fail, success } from '../utils'
 
@@ -26,6 +26,13 @@ export function registerPostprocessSuggestionRoutes(app: Hono) {
     const row = await acceptSuggestion(projectId, id)
     if (!row)
       return c.json(fail('建议不存在或已处理'), 404)
+    return c.json(success(row))
+  })
+
+  app.post('/api/projects/:projectId/suggestions/:id/apply', async (c) => {
+    const projectId = c.req.param('projectId')
+    const id = c.req.param('id')
+    const row = await applySuggestion(projectId, id)
     return c.json(success(row))
   })
 

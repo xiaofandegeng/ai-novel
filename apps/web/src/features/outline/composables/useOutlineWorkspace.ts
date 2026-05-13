@@ -23,7 +23,11 @@ export function useOutlineWorkspace(projectId: string) {
 
   const loading = ref(true)
   const saving = ref(false)
-  const selectedChapterId = ref<string | null>(null)
+
+  const selectedType = ref<'project' | 'volume' | 'chapter'>('chapter')
+  const selectedId = ref<string | null>(null)
+  const selectedChapterId = ref<string | null>(null) // Keep for backward compat or specific chapter logic
+
   const expandedVolumes = ref<Record<string, boolean>>({})
 
   const outlineForm = ref({
@@ -36,6 +40,18 @@ export function useOutlineWorkspace(projectId: string) {
     endingHook: '',
     status: 'planning' as ChapterStatus,
     characterIds: [] as string[],
+  })
+
+  const volumeForm = ref({
+    title: '',
+    summary: '',
+  })
+
+  const projectForm = ref({
+    title: '',
+    description: '',
+    genre: '',
+    theme: '',
   })
 
   const chapterElementDrafts = ref<CreateChapterElementInput[]>([])
@@ -59,6 +75,8 @@ export function useOutlineWorkspace(projectId: string) {
 
       if (chapterStore.chapters.length > 0)
         selectChapter(chapterStore.chapters[0].id)
+      else
+        selectProject()
     }
     catch {
       toast.add(getErrorMessage('outline_load'), 'error')
@@ -68,7 +86,38 @@ export function useOutlineWorkspace(projectId: string) {
     }
   })
 
+  function selectProject() {
+    selectedType.value = 'project'
+    selectedId.value = projectId
+    selectedChapterId.value = null
+
+    if (projectStore.currentProject) {
+      projectForm.value = {
+        title: projectStore.currentProject.title,
+        description: projectStore.currentProject.description || '',
+        genre: projectStore.currentProject.genre || '',
+        theme: projectStore.currentProject.theme || '',
+      }
+    }
+  }
+
+  function selectVolume(id: string) {
+    selectedType.value = 'volume'
+    selectedId.value = id
+    selectedChapterId.value = null
+
+    const vol = volumeStore.volumes.find(v => v.id === id)
+    if (vol) {
+      volumeForm.value = {
+        title: vol.title,
+        summary: vol.summary || '',
+      }
+    }
+  }
+
   async function selectChapter(id: string) {
+    selectedType.value = 'chapter'
+    selectedId.value = id
     selectedChapterId.value = id
     const ch = chapterStore.chapters.find(c => c.id === id)
     if (ch) {
@@ -95,47 +144,51 @@ export function useOutlineWorkspace(projectId: string) {
         appearanceOrder: e.appearanceOrder || undefined,
         notes: e.notes || undefined,
       }))
+
+      await sceneStore.fetchScenes(projectId, id)
     }
     catch {
       chapterElementDrafts.value = []
     }
-    try {
-      await sceneStore.fetchScenes(projectId, id)
-    }
-    catch {
-      // scenes fetch failure is non-critical
-    }
   }
 
   async function handleSave() {
-    if (!selectedChapterId.value)
+    if (!selectedId.value)
       return
     saving.value = true
     try {
-      // 最终一致性整理：确保登场角色和必须出场人物同步
-      // 1. 所有选中的角色 ID 必须在元素列表中存在
-      outlineForm.value.characterIds.forEach((id) => {
-        const exists = chapterElementDrafts.value.some(e => e.elementType === 'character' && e.elementId === id)
-        if (!exists) {
-          addCharacterElement(id, 'normal')
-        }
-      })
-      // 2. 所有角色类型的元素也必须包含在角色 ID 列表中
-      chapterElementDrafts.value.forEach((e) => {
-        if (e.elementType === 'character' && e.elementId && !outlineForm.value.characterIds.includes(e.elementId)) {
-          outlineForm.value.characterIds.push(e.elementId)
-        }
-      })
-
-      const data = {
-        ...outlineForm.value,
-        characters: JSON.stringify(outlineForm.value.characterIds),
+      if (selectedType.value === 'project') {
+        await projectStore.updateProject(projectId, projectForm.value)
+        toast.add(T.outline_saved, 'success')
       }
-      await chapterStore.updateChapter(projectId, selectedChapterId.value, data)
-      await chapterElementStore.replaceElements(projectId, selectedChapterId.value, {
-        elements: chapterElementDrafts.value,
-      })
-      toast.add(T.outline_saved, 'success')
+      else if (selectedType.value === 'volume') {
+        await volumeStore.updateVolume(projectId, selectedId.value, volumeForm.value)
+        toast.add(T.outline_saved, 'success')
+      }
+      else if (selectedType.value === 'chapter') {
+        // 最终一致性整理：确保登场角色和必须出场人物同步
+        outlineForm.value.characterIds.forEach((id) => {
+          const exists = chapterElementDrafts.value.some(e => e.elementType === 'character' && e.elementId === id)
+          if (!exists) {
+            addCharacterElement(id, 'normal')
+          }
+        })
+        chapterElementDrafts.value.forEach((e) => {
+          if (e.elementType === 'character' && e.elementId && !outlineForm.value.characterIds.includes(e.elementId)) {
+            outlineForm.value.characterIds.push(e.elementId)
+          }
+        })
+
+        const data = {
+          ...outlineForm.value,
+          characters: JSON.stringify(outlineForm.value.characterIds),
+        }
+        await chapterStore.updateChapter(projectId, selectedId.value, data)
+        await chapterElementStore.replaceElements(projectId, selectedId.value, {
+          elements: chapterElementDrafts.value,
+        })
+        toast.add(T.outline_saved, 'success')
+      }
     }
     catch {
       toast.add(getErrorMessage('outline_save'), 'error')
@@ -252,9 +305,17 @@ export function useOutlineWorkspace(projectId: string) {
         projectId,
         scene: 'outline',
         chapterId: selectedChapterId.value,
-        userInstruction: `Based on the context, brainstorm a detailed outline for this chapter.
-           Please provide: 1. Core Conflict, 2. Three Key Events, 3. An Ending Hook.
-           Keep it concise and dramatic.`,
+        userInstruction: `请根据当前故事设定、人物档案和前文剧情，为本章进行深度“灵感风暴”。
+           输出要求：
+           1. 必须使用中文。
+           2. 必须包含以下结构化模块，并用【】括起标题：
+           【创作目标】：本章在全书结构中的定位和必须达成的目的。
+           【核心冲突】：本章最核心的对抗点（内部或外部）。
+           【情感基调】：希望带给读者的情绪体验及转变。
+           【剧情拆解】：详细的行动步骤（1. 2. 3. ...）。
+           【结尾悬念】：如何留住读者，引向下一章。
+           
+           语气要专业、富有戏剧张力，字数约 300-500 字。`,
       })
     }
     catch (error: any) {
@@ -263,17 +324,65 @@ export function useOutlineWorkspace(projectId: string) {
     }
   }
 
+  function parseOutlineSuggestion(text: string) {
+    // 更加宽容的正则，支持各种冒号和空格
+    const extract = (key: string) => {
+      const pattern = new RegExp(`【${key}】[:：\\s]*([\\s\\S]*?)(?=【|$)`, 'i')
+      return text.match(pattern)?.[1]?.trim() || ''
+    }
+
+    const goals = extract('创作目标') || extract('本章目标')
+    const conflicts = extract('核心冲突')
+    const emotionalArc = extract('情感基调') || extract('情绪基调')
+    const events = extract('剧情拆解') || extract('关键事件') || extract('情节拆解')
+    const endingHook = extract('结尾悬念') || extract('钩子')
+
+    return { goals, conflicts, emotionalArc, events, endingHook }
+  }
+
   function confirmOutlineAIResult(action: 'insert' | 'replace' | 'backup' | 'discard') {
     if (!aiSuggestion.value)
       return
 
-    if (action === 'insert') {
-      outlineForm.value.events = (outlineForm.value.events ? `${outlineForm.value.events}\n\n` : '') + aiSuggestion.value
-      toast.add(T.ai_inserted, 'success')
-    }
-    else if (action === 'replace') {
-      outlineForm.value.events = aiSuggestion.value
-      toast.add(T.ai_replaced, 'success')
+    if (action === 'insert' || action === 'replace') {
+      const parsed = parseOutlineSuggestion(aiSuggestion.value)
+
+      // 检查是否完全没解析到（可能是 AI 没按格式输出）
+      const hasParsedAny = Object.values(parsed).some(v => v.length > 0)
+
+      if (action === 'replace') {
+        if (hasParsedAny) {
+          outlineForm.value.goals = parsed.goals
+          outlineForm.value.conflicts = parsed.conflicts
+          outlineForm.value.emotionalArc = parsed.emotionalArc
+          outlineForm.value.events = parsed.events
+          outlineForm.value.endingHook = parsed.endingHook
+        }
+        else {
+          // 解析失败的回退方案：全部填入剧情拆解
+          outlineForm.value.events = aiSuggestion.value
+        }
+        toast.add('大纲已更新', 'success')
+      }
+      else {
+        // 智能插入
+        if (hasParsedAny) {
+          if (parsed.goals)
+            outlineForm.value.goals = (outlineForm.value.goals ? `${outlineForm.value.goals}\n` : '') + parsed.goals
+          if (parsed.conflicts)
+            outlineForm.value.conflicts = (outlineForm.value.conflicts ? `${outlineForm.value.conflicts}\n` : '') + parsed.conflicts
+          if (parsed.emotionalArc)
+            outlineForm.value.emotionalArc = (outlineForm.value.emotionalArc ? `${outlineForm.value.emotionalArc}\n` : '') + parsed.emotionalArc
+          if (parsed.events)
+            outlineForm.value.events = (outlineForm.value.events ? `${outlineForm.value.events}\n` : '') + parsed.events
+          if (parsed.endingHook)
+            outlineForm.value.endingHook = (outlineForm.value.endingHook ? `${outlineForm.value.endingHook}\n` : '') + parsed.endingHook
+        }
+        else {
+          outlineForm.value.events = (outlineForm.value.events ? `${outlineForm.value.events}\n\n` : '') + aiSuggestion.value
+        }
+        toast.add('内容已追加', 'success')
+      }
     }
     else if (action === 'backup') {
       outlineAlternatives.value.unshift(aiSuggestion.value)
@@ -291,13 +400,39 @@ export function useOutlineWorkspace(projectId: string) {
     if (!text)
       return
 
-    if (action === 'insert') {
-      outlineForm.value.events = (outlineForm.value.events ? `${outlineForm.value.events}\n\n` : '') + text
-      toast.add(T.alt_inserted, 'success')
+    const parsed = parseOutlineSuggestion(text)
+    const hasParsedAny = Object.values(parsed).some(v => v.length > 0)
+
+    if (action === 'replace') {
+      if (hasParsedAny) {
+        outlineForm.value.goals = parsed.goals
+        outlineForm.value.conflicts = parsed.conflicts
+        outlineForm.value.emotionalArc = parsed.emotionalArc
+        outlineForm.value.events = parsed.events
+        outlineForm.value.endingHook = parsed.endingHook
+      }
+      else {
+        outlineForm.value.events = text
+      }
+      toast.add('已应用该备选方案', 'success')
     }
     else {
-      outlineForm.value.events = text
-      toast.add(T.alt_replaced, 'success')
+      if (hasParsedAny) {
+        if (parsed.goals)
+          outlineForm.value.goals = (outlineForm.value.goals ? `${outlineForm.value.goals}\n` : '') + parsed.goals
+        if (parsed.conflicts)
+          outlineForm.value.conflicts = (outlineForm.value.conflicts ? `${outlineForm.value.conflicts}\n` : '') + parsed.conflicts
+        if (parsed.emotionalArc)
+          outlineForm.value.emotionalArc = (outlineForm.value.emotionalArc ? `${outlineForm.value.emotionalArc}\n` : '') + parsed.emotionalArc
+        if (parsed.events)
+          outlineForm.value.events = (outlineForm.value.events ? `${outlineForm.value.events}\n` : '') + parsed.events
+        if (parsed.endingHook)
+          outlineForm.value.endingHook = (outlineForm.value.endingHook ? `${outlineForm.value.endingHook}\n` : '') + parsed.endingHook
+      }
+      else {
+        outlineForm.value.events = (outlineForm.value.events ? `${outlineForm.value.events}\n\n` : '') + text
+      }
+      toast.add('备选方案内容已追加', 'success')
     }
   }
 
@@ -468,9 +603,13 @@ export function useOutlineWorkspace(projectId: string) {
   return {
     loading,
     saving,
+    selectedType,
+    selectedId,
     selectedChapterId,
     expandedVolumes,
     outlineForm,
+    projectForm,
+    volumeForm,
     chapterElementDrafts,
     newEventName,
     isBrainstorming,
@@ -481,6 +620,8 @@ export function useOutlineWorkspace(projectId: string) {
     characterStore,
     volumeStore,
     chapterStore,
+    selectProject,
+    selectVolume,
     selectChapter,
     handleSave,
     handleAddChapter,

@@ -13,7 +13,6 @@ export async function inferRelationshipsFromBios(projectId: string) {
 
   // 2. 获取现有关系，用于去重
   const existingRels = await db.select().from(characterRelationships).where(eq(characterRelationships.projectId, projectId))
-  const existingPairKeys = new Set(existingRels.map(r => [r.characterAId, r.characterBId].sort().join(':')))
 
   // 3. 构建 AI 提示词
   const characterBios = allCharacters.map(c => ({
@@ -43,7 +42,8 @@ ${JSON.stringify(characterBios, null, 2)}
 【输出要求】
 1. 只输出那些在资料中有明确根据或强烈暗示的关系。
 2. 返回严格的 JSON 格式列表。
-3. 如果角色 A 与 B 已经有关系（见下文），请不要重复推导。
+3. 如果 A 与 B 之间有相互的影响（例如 A 崇拜 B，而 B 利用 A），请分别作为两条关系输出。
+4. type 字段请直接使用中文。
 
 【返回格式】
 {
@@ -53,7 +53,7 @@ ${JSON.stringify(characterBios, null, 2)}
       "characterAName": "名字1",
       "characterBId": "ID2",
       "characterBName": "名字2",
-      "type": "关系类型(如: rival, ally, family, mentor, enemy等)",
+      "type": "关系类型(如: 宿敌, 盟友, 亲人, 导师, 恋人, 竞争对手, 受害者, 操纵者等)",
       "strength": 1-10 (数字),
       "status": "当前状态简述",
       "description": "详细的关系描述和推导理由"
@@ -61,7 +61,9 @@ ${JSON.stringify(characterBios, null, 2)}
   ]
 }
 
-注意：只返回你认为高度确信的关系。`
+注意：
+1. 只返回你认为高度确信的关系。
+2. 即使已经存在 A->B 的关系，如果存在反向的 B->A 关系且意义不同，也可以输出。`
 
   const aiResult = await callAIJSON<{
     suggestions: Array<{
@@ -84,17 +86,14 @@ ${JSON.stringify(characterBios, null, 2)}
     if (!s.characterAId || !s.characterBId || s.characterAId === s.characterBId)
       continue
 
-    // 规范化 ID
-    const [lowId, highId] = s.characterAId < s.characterBId ? [s.characterAId, s.characterBId] : [s.characterBId, s.characterAId]
-    const pairKey = `${lowId}:${highId}`
-
-    if (existingPairKeys.has(pairKey))
+    // 检查是否已存在（仅完全相同的 A->B 去重）
+    if (existingRels.some(r => r.characterAId === s.characterAId && r.characterBId === s.characterBId))
       continue
 
     // 创建建议
     await createSuggestion(projectId, chapterId, null, 'relationship_update', {
-      characterAId: lowId,
-      characterBId: highId,
+      characterAId: s.characterAId,
+      characterBId: s.characterBId,
       characterAName: s.characterAName,
       characterBName: s.characterBName,
       type: s.type,
@@ -106,7 +105,6 @@ ${JSON.stringify(characterBios, null, 2)}
       reason: '系统通过角色档案分析自动推导',
     }, 60, `档案分析：${s.characterAName} 与 ${s.characterBName} 的潜在关系`)
 
-    existingPairKeys.add(pairKey)
     suggestionsCreated++
   }
 

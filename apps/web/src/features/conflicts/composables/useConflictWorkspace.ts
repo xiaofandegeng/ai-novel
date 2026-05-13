@@ -9,6 +9,7 @@ import {
   TrendingUp,
 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
+import * as suggestionsApi from '@/api/postprocess-suggestions'
 import { useCharacterStore } from '@/stores/character.store'
 import { useConflictStore } from '@/stores/conflict.store'
 import { useProjectStore } from '@/stores/project.store'
@@ -38,6 +39,8 @@ export function useConflictWorkspace(projectId: string) {
   const saving = ref(false)
   const selectedConflictId = ref<string | null>(null)
   const showDeleteConfirm = ref(false)
+  const suggestions = ref<any[]>([])
+  const inferring = ref(false)
 
   const conflictForm = ref({
     title: '',
@@ -56,6 +59,12 @@ export function useConflictWorkspace(projectId: string) {
         characterStore.fetchCharacters(projectId),
         conflictStore.fetchConflicts(projectId),
       ])
+      const [sAdd, sUpdate] = await Promise.all([
+        suggestionsApi.fetchProjectSuggestions(projectId, 'conflict_add'),
+        suggestionsApi.fetchProjectSuggestions(projectId, 'conflict_update'),
+      ])
+      suggestions.value = [...sAdd, ...sUpdate]
+
       if (conflictStore.conflicts.length > 0)
         selectConflict(conflictStore.conflicts[0].id)
     }
@@ -151,6 +160,30 @@ export function useConflictWorkspace(projectId: string) {
     return CONFLICT_STATUS_OPTIONS.find(s => s.value === status)
   }
 
+  async function handleAcceptSuggestion(id: string) {
+    try {
+      await suggestionsApi.acceptSuggestion(projectId, id)
+      await suggestionsApi.applySuggestion(projectId, id)
+      toast.add('冲突建议已采纳并更新', 'success')
+      suggestions.value = suggestions.value.filter(s => s.id !== id)
+      await conflictStore.fetchConflicts(projectId)
+    }
+    catch {
+      toast.add('采纳建议失败', 'error')
+    }
+  }
+
+  async function handleRejectSuggestion(id: string) {
+    try {
+      await suggestionsApi.rejectSuggestion(projectId, id)
+      suggestions.value = suggestions.value.filter(s => s.id !== id)
+      toast.add('已忽略该建议', 'info')
+    }
+    catch {
+      toast.add('操作失败', 'error')
+    }
+  }
+
   return {
     loading,
     saving,
@@ -167,5 +200,9 @@ export function useConflictWorkspace(projectId: string) {
     handleConfirmDelete,
     toggleParticipant,
     getStatusStyle,
+    suggestions,
+    inferring,
+    handleAcceptSuggestion,
+    handleRejectSuggestion,
   }
 }

@@ -13,11 +13,14 @@ defineProps<{
   volumes: Volume[]
   chapters: Chapter[]
   expandedVolumes: Record<string, boolean>
-  selectedChapterId: string | null
+  selectedType: 'project' | 'volume' | 'chapter'
+  selectedId: string | null
 }>()
 
 const emit = defineEmits<{
   select: [id: string]
+  selectVolume: [id: string]
+  selectProject: []
   toggleVolume: [id: string]
   addChapter: [volumeId: string]
   addVolume: []
@@ -26,11 +29,11 @@ const emit = defineEmits<{
 
 <template>
   <aside class="w-72 flex shrink-0 flex-col border-r border-border-light bg-bg-surface">
-    <div class="flex items-center justify-between border-b border-border-light p-4">
-      <h2 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
+    <div class="flex items-center justify-between border-b border-border-light p-4 transition-colors hover:bg-bg-subtle" :class="{ 'bg-primary/5': selectedType === 'project' }" @click="emit('selectProject')">
+      <h2 class="flex cursor-pointer items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
         <Layers :size="16" /> 故事结构
       </h2>
-      <NButton variant="ghost" size="sm" aria-label="添加分卷" @click="emit('addVolume')">
+      <NButton variant="ghost" size="sm" aria-label="添加分卷" @click.stop="emit('addVolume')">
         <Plus :size="16" />
       </NButton>
     </div>
@@ -46,26 +49,29 @@ const emit = defineEmits<{
       </div>
 
       <div v-for="vol in volumes" :key="vol.id" class="space-y-1">
-        <button
-          class="group w-full flex items-center gap-2 rounded-md px-2 py-2 transition-colors hover:bg-bg-subtle"
-          @click="emit('toggleVolume', vol.id)"
+        <div
+          class="group w-full flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 transition-colors"
+          :class="selectedType === 'volume' && selectedId === vol.id ? 'bg-primary/10 ring-1 ring-primary/20' : 'hover:bg-bg-subtle'"
+          @click="emit('selectVolume', vol.id)"
         >
-          <component :is="expandedVolumes[vol.id] ? ChevronDown : ChevronRight" :size="14" class="text-text-muted" />
-          <Library :size="16" class="text-text-secondary" />
-          <span class="flex-1 truncate text-left text-sm text-text-primary font-bold">{{ vol.title }}</span>
+          <button class="rounded p-1 transition-colors hover:bg-bg-subtle" @click.stop="emit('toggleVolume', vol.id)">
+            <component :is="expandedVolumes[vol.id] ? ChevronDown : ChevronRight" :size="14" class="text-text-muted" />
+          </button>
+          <Library :size="16" :class="selectedType === 'volume' && selectedId === vol.id ? 'text-primary' : 'text-text-secondary'" />
+          <span class="flex-1 truncate text-left text-sm font-bold" :class="selectedType === 'volume' && selectedId === vol.id ? 'text-primary' : 'text-text-primary'">{{ vol.title }}</span>
           <Plus
             :size="14"
             class="text-text-muted opacity-0 transition-all hover:text-primary group-hover:opacity-100"
             @click.stop="emit('addChapter', vol.id)"
           />
-        </button>
+        </div>
 
         <div v-if="expandedVolumes[vol.id]" class="pl-6 space-y-1">
           <button
             v-for="ch in chapters.filter(c => c.volumeId === vol.id).sort((a, b) => a.chapterNumber - b.chapterNumber)"
             :key="ch.id"
             class="w-full flex items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-all"
-            :class="selectedChapterId === ch.id
+            :class="selectedType === 'chapter' && selectedId === ch.id
               ? 'bg-primary/10 text-primary font-medium'
               : 'text-text-secondary hover:bg-bg-subtle'"
             @click="emit('select', ch.id)"

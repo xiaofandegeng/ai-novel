@@ -154,8 +154,10 @@ export function useRelationshipWorkspace(projectId: string) {
   async function handleAcceptSuggestion(id: string) {
     try {
       await suggestionsApi.acceptSuggestion(projectId, id)
-      toast.add('建议已采纳，请在“章后分析”中一键应用', 'success')
+      await suggestionsApi.applySuggestion(projectId, id)
+      toast.add('建议已采纳并应用', 'success')
       suggestions.value = suggestions.value.filter(s => s.id !== id)
+      await relationshipStore.fetchRelationships(projectId)
     }
     catch (e: any) {
       toast.add(e.message || '采纳失败', 'error')

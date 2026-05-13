@@ -19,6 +19,10 @@ export function rejectSuggestion(projectId: string, id: string) {
   return apiPost<PostprocessSuggestion>(`/api/projects/${projectId}/suggestions/${id}/reject`, {})
 }
 
+export function applySuggestion(projectId: string, id: string) {
+  return apiPost<PostprocessSuggestion>(`/api/projects/${projectId}/suggestions/${id}/apply`, {})
+}
+
 export function applyAcceptedSuggestions(projectId: string, chapterId: string) {
   return apiPost<{ applied: number, acknowledged: number, failed: number, skipped: number }>(`/api/projects/${projectId}/chapters/${chapterId}/suggestions/apply-accepted`, {})
 }
