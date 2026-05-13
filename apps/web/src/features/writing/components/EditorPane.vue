@@ -11,6 +11,7 @@ defineProps<{
   projectId: string
   saving: boolean
   wordCount: number
+  hasPendingResult?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -30,7 +31,7 @@ const selectionEnd = ref(0)
 
 function resizeEditor() {
   if (editorRef.value) {
-    editorRef.value.style.height = 'auto'
+    editorRef.value.style.height = '0'
     editorRef.value.style.height = `${editorRef.value.scrollHeight}px`
   }
 }
@@ -114,19 +115,19 @@ defineExpose({
       <slot name="ai-pending-result" />
 
       <!-- Editor Plane -->
-      <div class="relative rounded-lg focus-within:ring-2 focus-within:ring-primary/20">
+      <div class="relative">
         <textarea
           ref="editorRef"
           v-model="draft"
           aria-label="章节正文编辑器"
-          class="w-full resize-none overflow-hidden border-none bg-transparent text-lg text-text-primary leading-[2] font-writing placeholder:text-text-muted/30 focus:outline-none"
+          class="w-full resize-none border-none bg-transparent text-lg text-text-primary leading-[2] font-writing !overflow-hidden placeholder:text-text-muted/30 focus:outline-none"
           placeholder="从这里开始写作..."
           @select="handleSelection"
           @input="resizeEditor"
         />
 
         <!-- Empty State AI Button -->
-        <div v-if="!draft && !loading" class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-bg-page/40 backdrop-blur-[1px]">
+        <div v-if="!draft && !loading && !hasPendingResult" class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-bg-page/40 backdrop-blur-[1px]">
           <div class="border border-ai/20 rounded-2xl bg-bg-surface/80 p-8 shadow-2xl space-y-4">
             <div class="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-ai-soft text-ai">
               <Sparkles :size="24" />
@@ -182,8 +183,5 @@ defineExpose({
 <style scoped>
 .font-writing {
   font-family: serif;
-}
-textarea {
-  min-height: calc(100vh - 300px);
 }
 </style>

@@ -92,6 +92,7 @@ const {
   confirmAIResult,
   buildAIPrompt,
   initPendingResult,
+  clearPendingResult,
 } = useAIResultConfirm(activeContent, selectedText, selectionStart, selectionEnd)
 
 // --- Refs for child components ---
@@ -100,12 +101,18 @@ const contextPanelRef = ref<InstanceType<typeof WritingContextPanel> | null>(nul
 // --- Data loading ---
 onMounted(async () => {
   try {
-    await Promise.all([
+    const promises: Promise<any>[] = [
       projectStore.fetchProject(projectId),
-      chapterStore.fetchChapters(projectId),
       characterStore.fetchCharacters(projectId),
       bibleStore.fetchStoryBible(projectId),
-    ])
+    ]
+
+    // Only fetch chapters if the list is empty to prevent overwriting local updates (e.g. from version restore)
+    if (chapterStore.chapters.length === 0) {
+      promises.push(chapterStore.fetchChapters(projectId))
+    }
+
+    await Promise.all(promises)
 
     if (!currentChapterId.value && chapterStore.chapters.length > 0) {
       const target = chapterStore.chapters.find(c => c.status !== 'completed')
@@ -125,8 +132,11 @@ onMounted(async () => {
 })
 
 watch(currentChapter, (newCh) => {
-  if (newCh)
+  if (newCh) {
     loadChapter(newCh)
+    // Clear AI suggestions when chapter content is refreshed from store (e.g. restored from history)
+    clearPendingResult()
+  }
 }, { immediate: true })
 
 watch(currentChapterId, async (id) => {
@@ -275,6 +285,11 @@ async function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discar
     currentChapterId: currentChapterId.value,
     versionStore,
     toast,
+    onExtractTitle: (title) => {
+      if (currentChapterId.value) {
+        chapterStore.updateChapter(projectId, currentChapterId.value, { title })
+      }
+    },
   })
   if (sceneMode.value && (action === 'insert' || action === 'replace')) {
     await handleSceneSave()
@@ -384,6 +399,7 @@ async function handleUpdateMemory() {
         :project-id="projectId"
         :saving="activeSaving"
         :word-count="activeWordCount"
+        :has-pending-result="!!pendingAIResult"
         @update:model-value="sceneMode ? (sceneContent = $event) : (draft = $event)"
         @save="sceneMode ? handleSceneSave() : handleSave()"
         @snapshot="handleSnapshot"

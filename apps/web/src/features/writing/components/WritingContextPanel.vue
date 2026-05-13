@@ -103,7 +103,7 @@ defineExpose({
     <!-- Tab Content -->
     <div class="flex-1 overflow-y-auto p-6 space-y-6">
       <!-- Outline Tab -->
-      <div v-if="activeContextTab === 'outline'" class="space-y-6">
+      <div v-show="activeContextTab === 'outline'" class="space-y-6">
         <div v-if="chapter?.goals">
           <h4 class="mb-2 border-b border-border-light pb-1 text-[10px] text-text-muted font-bold tracking-widest uppercase">
             创作目标
@@ -165,7 +165,7 @@ defineExpose({
       </div>
 
       <!-- Characters Tab -->
-      <div v-if="activeContextTab === 'characters'" class="space-y-4">
+      <div v-show="activeContextTab === 'characters'" class="space-y-4">
         <div v-if="presentCharacters.length === 0" class="py-10 text-center opacity-30">
           <Users :size="48" class="mx-auto mb-2" />
           <p class="text-xs">
@@ -208,7 +208,7 @@ defineExpose({
       </div>
 
       <!-- Bible Tab -->
-      <div v-if="activeContextTab === 'bible'" class="space-y-6">
+      <div v-show="activeContextTab === 'bible'" class="space-y-6">
         <div v-if="storyBible?.worldview">
           <h4 class="mb-2 border-b border-border-light pb-1 text-[10px] text-text-muted font-bold tracking-widest uppercase">
             世界观设定
@@ -228,7 +228,7 @@ defineExpose({
       </div>
 
       <!-- AI Tab -->
-      <div v-if="activeContextTab === 'ai'" class="h-full">
+      <div v-show="activeContextTab === 'ai'" class="h-full">
         <AIAssistantSidebar
           ref="aiSidebarRef"
           :project-id="projectId"
