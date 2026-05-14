@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { chapterElements, chapterPostprocessSuggestions, characterRelationships, characters, conflicts, foreshadowingItems, storyFactTriples } from '../db/schema'
+import { chapterElements, chapterPostprocessSuggestions, characterArcEvents, characterRelationships, characters, conflicts, conflictTimelineEvents, foreshadowingItems, storyFactTriples } from '../db/schema'
 import { generateId, now } from '../utils'
 import { normalizeCharacterPair } from './character-utils.service'
 
@@ -271,6 +271,23 @@ async function applyOneSuggestion(
           arc: updatedArc,
           updatedAt: now(),
         }).where(eq(characters.id, char.id))
+
+        // Also create a character arc event for structured tracking
+        const timestamp = now()
+        await db.insert(characterArcEvents).values({
+          id: generateId(),
+          projectId,
+          characterId: char.id,
+          chapterId,
+          sceneId: payload.sceneId || null,
+          eventType: 'belief_changed',
+          afterState: payload.change,
+          evidence: payload.change,
+          sourceType: 'ai_extracted',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }).onConflictDoNothing()
+
         return 'applied'
       }
       return 'acknowledged'
@@ -287,6 +304,12 @@ async function applyOneSuggestion(
       if (payload.newIntensity)
         updateData.intensity = payload.newIntensity
 
+      // Fetch the conflict before update to capture before-state
+      const [beforeConflict] = await db.select().from(conflicts).where(and(
+        eq(conflicts.id, conflictId),
+        eq(conflicts.projectId, projectId),
+      ))
+
       const [updated] = await db.update(conflicts).set(updateData).where(and(
         eq(conflicts.id, conflictId),
         eq(conflicts.projectId, projectId),
@@ -294,6 +317,32 @@ async function applyOneSuggestion(
 
       if (!updated)
         throw new Error('未找到对应冲突记录')
+
+      // Create a timeline event to record this transition
+      if (beforeConflict) {
+        const intensityBefore = beforeConflict.intensity
+        const intensityAfter = updateData.intensity !== undefined ? updateData.intensity : intensityBefore
+        const statusBefore = beforeConflict.status
+        const statusAfter = updateData.status || statusBefore
+
+        if (intensityBefore !== intensityAfter || statusBefore !== statusAfter) {
+          await db.insert(conflictTimelineEvents).values({
+            id: generateId(),
+            projectId,
+            conflictId,
+            chapterId,
+            sceneId: null,
+            intensityBefore,
+            intensityAfter,
+            statusBefore,
+            statusAfter,
+            reason: payload.reason || null,
+            evidence: null,
+            sourceType: 'ai_extracted',
+          })
+        }
+      }
+
       return 'applied'
     }
 

@@ -64,6 +64,14 @@ export function registerSceneRoutes(app: Hono) {
           orderIndex: s.orderIndex ?? (existingCount + i + 1),
           status: (s.status as 'planned' | 'drafting' | 'reviewed' | 'completed') || 'planned',
           conflict: s.conflict || null,
+          beatType: s.beatType || null,
+          entryHook: s.entryHook || null,
+          turningPoint: s.turningPoint || null,
+          exitHook: s.exitHook || null,
+          emotionStart: s.emotionStart || null,
+          emotionEnd: s.emotionEnd || null,
+          conflictLevel: s.conflictLevel ?? null,
+          requiredElements: s.requiredElements || null,
           updatedAt: now(),
         }))
 
@@ -102,6 +110,14 @@ export function registerSceneRoutes(app: Hono) {
       orderIndex: body.orderIndex,
       status: body.status || 'planned',
       conflict: body.conflict,
+      beatType: body.beatType,
+      entryHook: body.entryHook,
+      turningPoint: body.turningPoint,
+      exitHook: body.exitHook,
+      emotionStart: body.emotionStart,
+      emotionEnd: body.emotionEnd,
+      conflictLevel: body.conflictLevel,
+      requiredElements: body.requiredElements,
     }).returning()
     return c.json(success(row), 201)
   })
@@ -158,6 +174,14 @@ export function registerSceneRoutes(app: Hono) {
       orderIndex: body.orderIndex,
       status: body.status,
       conflict: body.conflict,
+      beatType: body.beatType,
+      entryHook: body.entryHook,
+      turningPoint: body.turningPoint,
+      exitHook: body.exitHook,
+      emotionStart: body.emotionStart,
+      emotionEnd: body.emotionEnd,
+      conflictLevel: body.conflictLevel,
+      requiredElements: body.requiredElements,
     })
     const [row] = await db.update(chapterScenes).set(fields).where(and(
       eq(chapterScenes.id, id),

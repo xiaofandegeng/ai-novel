@@ -22,7 +22,9 @@ import { useRoute, useRouter } from 'vue-router'
 import ProjectBreadcrumb from '@/components/ProjectBreadcrumb.vue'
 import { exportProject } from '../api/export'
 import { fetchAISettings } from '../api/settings'
+import * as goalsApi from '../api/writing-goals'
 import AppSidebar from '../components/AppSidebar.vue'
+import WritingGoalPanel from '../features/writing/components/WritingGoalPanel.vue'
 import { useChapterStore } from '../stores/chapter.store'
 import { useCharacterStore } from '../stores/character.store'
 import { useProjectStore } from '../stores/project.store'
@@ -42,6 +44,8 @@ const storyBibleStore = useStoryBibleStore()
 
 const loading = ref(true)
 const aiConfigured = ref(false)
+const goalProgress = ref<any>(null)
+const todayStats = ref<{ wordsAdded: number, aiWordsAccepted: number, manualWordsAdded: number } | null>(null)
 
 onMounted(async () => {
   try {
@@ -59,6 +63,25 @@ onMounted(async () => {
     catch {
       aiConfigured.value = false
       toast.add('AI 配置状态读取失败，可前往项目设置重新检测', 'warning')
+    }
+    // Load writing goal progress
+    try {
+      const goals = await goalsApi.fetchActiveGoals(projectId)
+      if (goals.length > 0) {
+        goalProgress.value = await goalsApi.fetchGoalProgress(projectId, goals[0].id)
+      }
+      const today = new Date().toISOString().slice(0, 10)
+      const stats = await goalsApi.fetchDailyStats(projectId, today, today)
+      if (stats.length > 0) {
+        todayStats.value = {
+          wordsAdded: stats[0].wordsAdded,
+          aiWordsAccepted: stats[0].aiWordsAccepted,
+          manualWordsAdded: stats[0].manualWordsAdded,
+        }
+      }
+    }
+    catch {
+      // Goals not available yet, silently ignore
     }
   }
   catch {
@@ -277,6 +300,14 @@ function handleExploreCharacters() {
 
         <!-- Overview Sections -->
         <div class="grid gap-6 md:grid-cols-2">
+          <!-- Writing Goals -->
+          <WritingGoalPanel
+            :progress="goalProgress"
+            :today-stats="todayStats"
+            :loading="loading"
+            @set-goal="() => {}"
+          />
+
           <NPanel
             title="开写前检查"
             :description="canStartWriting ? '核心配置已经就绪，可以进入正文写作。' : '先补齐关键配置，AI 才能稳定遵守设定和写作方向。'"

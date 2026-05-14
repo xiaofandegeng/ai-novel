@@ -5,6 +5,7 @@ import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { registerActRoutes } from './routes/acts'
 import { registerAiRoutes } from './routes/ai'
+import { registerAICandidateRoutes } from './routes/ai-candidates'
 import { registerAIContextSnapshotRoutes } from './routes/ai-context-snapshots'
 import { registerAIQualityFeedbackRoutes } from './routes/ai-quality-feedback'
 import { registerAIUsageRoutes } from './routes/ai-usage'
@@ -12,12 +13,15 @@ import { registerAuthoringEventRoutes } from './routes/authoring-events'
 import { registerAuthoringReportRoutes } from './routes/authoring-reports'
 import { registerChapterElementRoutes } from './routes/chapter-elements'
 import { registerChapterRoutes } from './routes/chapters'
+import { registerCharacterArcRoutes } from './routes/character-arc'
 import { registerCharacterRoutes } from './routes/characters'
+import { registerConflictTimelineRoutes } from './routes/conflict-timeline'
 import { registerConflictRoutes } from './routes/conflicts'
 import { registerContinuityRoutes } from './routes/continuity'
 import { registerDataPortabilityRoutes } from './routes/data-portability'
 
 import { registerForeshadowingRoutes } from './routes/foreshadowing'
+import { registerForeshadowingAnalysisRoutes } from './routes/foreshadowing-analysis'
 import { registerHealthRoutes } from './routes/health'
 import { registerHealthMetricsRoutes } from './routes/health-metrics'
 import { registerKnowledgeRoutes } from './routes/knowledge'
@@ -34,6 +38,7 @@ import { registerStoryStructureRoutes } from './routes/story-structure'
 import { registerTripleRoutes } from './routes/triples'
 import { registerVersionRoutes } from './routes/versions'
 import { registerVolumeRoutes } from './routes/volumes'
+import { registerWritingGoalRoutes } from './routes/writing-goals'
 import { registerWritingJobRoutes } from './routes/writing-jobs'
 
 const app = new Hono()
@@ -75,6 +80,11 @@ registerAuthoringEventRoutes(app)
 registerAIQualityFeedbackRoutes(app)
 registerAIUsageRoutes(app)
 registerAuthoringReportRoutes(app)
+registerCharacterArcRoutes(app)
+registerConflictTimelineRoutes(app)
+registerForeshadowingAnalysisRoutes(app)
+registerWritingGoalRoutes(app)
+registerAICandidateRoutes(app)
 
 app.notFound((c) => {
   return c.json({ error: 'Not Found' }, 404)

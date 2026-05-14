@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ChapterScene, SceneStatus } from '@ai-novel/shared'
+import type { BeatType, ChapterScene, SceneStatus } from '@ai-novel/shared'
 import { NButton, NTextArea } from '@ai-novel/ui'
 import {
   ChevronDown,
@@ -57,6 +57,28 @@ const statusOptions: Array<{ value: SceneStatus, label: string }> = [
   { value: 'reviewed', label: '待审核' },
   { value: 'completed', label: '已完成' },
 ]
+
+const beatTypeOptions: Array<{ value: BeatType, label: string }> = [
+  { value: 'hook', label: '开篇钩子' },
+  { value: 'setup', label: '铺垫' },
+  { value: 'reveal', label: '揭示' },
+  { value: 'conflict', label: '冲突' },
+  { value: 'reversal', label: '反转' },
+  { value: 'payoff', label: '兑现' },
+  { value: 'transition', label: '过渡' },
+  { value: 'cliffhanger', label: '悬念结尾' },
+]
+
+const beatTypeColorMap: Record<string, string> = {
+  hook: 'bg-purple-100 text-purple-700',
+  setup: 'bg-gray-100 text-gray-600',
+  reveal: 'bg-amber-100 text-amber-700',
+  conflict: 'bg-red-100 text-red-700',
+  reversal: 'bg-orange-100 text-orange-700',
+  payoff: 'bg-green-100 text-green-700',
+  transition: 'bg-blue-100 text-blue-700',
+  cliffhanger: 'bg-indigo-100 text-indigo-700',
+}
 
 function toggleExpand(id: string) {
   expandedSceneId.value = expandedSceneId.value === id ? null : id
@@ -164,6 +186,9 @@ function moveScene(index: number, direction: -1 | 1) {
           >
             {{ statusConfig[scene.status].label }}
           </span>
+          <span v-if="scene.beatType" class="rounded-full px-2 py-0.5 text-xs font-medium" :class="beatTypeColorMap[scene.beatType] || 'bg-gray-100 text-gray-600'">
+            {{ beatTypeOptions.find(b => b.value === scene.beatType)?.label || scene.beatType }}
+          </span>
           <button
             class="text-text-muted/40 hover:text-text-primary"
             @click="toggleExpand(scene.id)"
@@ -249,6 +274,86 @@ function moveScene(index: number, direction: -1 | 1) {
                 </option>
               </select>
             </div>
+          </div>
+
+          <!-- Beat / Pacing Section -->
+          <div class="border-t border-border-light pt-4 space-y-3">
+            <h4 class="text-xs text-text-muted font-bold tracking-wider uppercase">
+              节拍 / 节奏
+            </h4>
+            <div class="grid gap-4 md:grid-cols-2">
+              <div class="space-y-2">
+                <label class="block text-xs text-text-muted font-semibold">节拍类型</label>
+                <select
+                  :value="scene.beatType || ''"
+                  class="w-full border border-border-light rounded-md bg-bg-page px-3 py-1.5 text-sm"
+                  @change="handleFieldChange(scene, 'beatType', ($event.target as HTMLSelectElement).value || null)"
+                >
+                  <option value="">
+                    未设定
+                  </option>
+                  <option v-for="opt in beatTypeOptions" :key="opt.value" :value="opt.value">
+                    {{ opt.label }}
+                  </option>
+                </select>
+              </div>
+              <div class="space-y-2">
+                <label class="block text-xs text-text-muted font-semibold">冲突强度 (1-10)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  :value="scene.conflictLevel || ''"
+                  class="w-full border border-border-light rounded-md bg-bg-page px-3 py-1.5 text-sm"
+                  placeholder="1-10"
+                  @change="handleFieldChange(scene, 'conflictLevel', Number(($event.target as HTMLInputElement).value) || null)"
+                >
+              </div>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+              <NTextArea
+                :model-value="scene.emotionStart || ''"
+                label="情绪起点"
+                placeholder="场景开始时的情绪状态"
+                :rows="1"
+                @update:model-value="handleFieldChange(scene, 'emotionStart', $event)"
+              />
+              <NTextArea
+                :model-value="scene.emotionEnd || ''"
+                label="情绪终点"
+                placeholder="场景结束时的情绪状态"
+                :rows="1"
+                @update:model-value="handleFieldChange(scene, 'emotionEnd', $event)"
+              />
+            </div>
+            <NTextArea
+              :model-value="scene.entryHook || ''"
+              label="入场钩子"
+              placeholder="如何吸引读者进入场景"
+              :rows="1"
+              @update:model-value="handleFieldChange(scene, 'entryHook', $event)"
+            />
+            <NTextArea
+              :model-value="scene.turningPoint || ''"
+              label="转折点"
+              placeholder="场景中的关键转折"
+              :rows="1"
+              @update:model-value="handleFieldChange(scene, 'turningPoint', $event)"
+            />
+            <NTextArea
+              :model-value="scene.exitHook || ''"
+              label="出场钩子"
+              placeholder="如何让读者想继续看下一场景"
+              :rows="1"
+              @update:model-value="handleFieldChange(scene, 'exitHook', $event)"
+            />
+            <NTextArea
+              :model-value="scene.requiredElements || ''"
+              label="必须出现的元素"
+              placeholder="角色、地点、道具等（逗号分隔）"
+              :rows="1"
+              @update:model-value="handleFieldChange(scene, 'requiredElements', $event)"
+            />
           </div>
         </div>
       </div>

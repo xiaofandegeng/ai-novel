@@ -3,6 +3,7 @@ import { NAppLayout, useToast } from '@ai-novel/ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { triggerChapterPostprocess } from '../api/ai'
+import AIMultiCandidatePanel from '../features/writing/components/AIMultiCandidatePanel.vue'
 import AIPendingResultPanel from '../features/writing/components/AIPendingResultPanel.vue'
 import AssemblePreviewOverlay from '../features/writing/components/AssemblePreviewOverlay.vue'
 import ChapterNavigator from '../features/writing/components/ChapterNavigator.vue'
@@ -11,6 +12,7 @@ import SceneDraftPanel from '../features/writing/components/SceneDraftPanel.vue'
 import WritingContextPanel from '../features/writing/components/WritingContextPanel.vue'
 import WritingHeaderActions from '../features/writing/components/WritingHeaderActions.vue'
 import { useAIResultConfirm } from '../features/writing/composables/useAIResultConfirm'
+import { useMultiCandidate } from '../features/writing/composables/useMultiCandidate'
 import { useSceneDraft } from '../features/writing/composables/useSceneDraft'
 import { useWritingDraft } from '../features/writing/composables/useWritingDraft'
 import { useChapterElementStore } from '../stores/chapter-element.store'
@@ -119,6 +121,29 @@ const {
 
 // --- Refs for child components ---
 const contextPanelRef = ref<InstanceType<typeof WritingContextPanel> | null>(null)
+
+// --- Multi-candidate comparison ---
+const showMultiCandidate = ref(false)
+const {
+  candidates: multiCandidates,
+  loading: _multiLoading,
+  selecting: multiSelecting,
+  rating: multiRating,
+  loadCandidates: loadMultiCandidates,
+  handleSelect: handleSelectCandidate,
+  handleRate: handleRateCandidate,
+} = useMultiCandidate(projectId)
+
+function openMultiCandidatePanel() {
+  showMultiCandidate.value = true
+  loadMultiCandidates({
+    chapterId: currentChapterId.value || undefined,
+  })
+}
+
+function closeMultiCandidatePanel() {
+  showMultiCandidate.value = false
+}
 
 // --- Data loading ---
 onMounted(async () => {
@@ -323,7 +348,7 @@ async function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discar
   }
 }
 
-async function handleInsertAI(content: string, metadata?: { provider?: string, model?: string, requestId?: string }) {
+async function handleInsertAI(content: string) {
   const start = selectionStart.value
   const end = selectionEnd.value
   if (start !== end) {
@@ -332,14 +357,6 @@ async function handleInsertAI(content: string, metadata?: { provider?: string, m
   else {
     activeContent.value = activeContent.value.substring(0, start) + content + activeContent.value.substring(start)
   }
-
-  // Update pending result metadata if it matches
-  if (pendingAIResult.value && pendingAIResult.value.content === content) {
-    pendingAIResult.value.modelProvider = metadata?.provider
-    pendingAIResult.value.modelName = metadata?.model
-    pendingAIResult.value.contextSnapshotId = metadata?.requestId
-  }
-
   toast.add('已应用到编辑器', 'success')
   if (sceneMode.value) {
     await handleSceneSave()
@@ -374,14 +391,6 @@ async function handleUpdateMemory() {
   finally {
     updatingMemory.value = false
   }
-}
-
-function handleApplyAIResult(content: string, metadata?: any) {
-  applyAIResult(content, { provider: metadata?.provider, model: metadata?.model, snapshotId: metadata?.requestId })
-}
-
-function handleStreamAIResult(content: string, metadata?: any) {
-  applyAIResult(content, { provider: metadata?.provider, model: metadata?.model, snapshotId: metadata?.requestId })
 }
 </script>
 
@@ -456,6 +465,14 @@ function handleStreamAIResult(content: string, metadata?: any) {
           >
             <History :size="12" class="mr-1" /> 查看版本历史
           </NButton>
+          <NButton
+            variant="ghost"
+            size="sm"
+            class="text-text-muted hover:text-primary"
+            @click="openMultiCandidatePanel"
+          >
+            <Columns :size="12" class="mr-1" /> 多模型对比
+          </NButton>
         </template>
         <template #ai-pending-result>
           <AIPendingResultPanel
@@ -477,12 +494,23 @@ function handleStreamAIResult(content: string, metadata?: any) {
         :scene-id="sceneMode ? currentSceneId : null"
         :project-summary="projectSummary"
         :story-path="storyPath"
-        @apply-a-i="handleApplyAIResult"
+        @apply-a-i="applyAIResult"
         @insert-a-i="handleInsertAI"
         @consistency-check="updateConsistency($event.report, $event.loading)"
         @run-ai="handleRunAI"
-        @stream-a-i="handleStreamAIResult"
+        @stream-a-i="applyAIResult"
       />
     </div>
+
+    <!-- Multi-candidate comparison panel -->
+    <AIMultiCandidatePanel
+      v-if="showMultiCandidate"
+      :candidates="multiCandidates"
+      :selecting="multiSelecting"
+      :rating="multiRating"
+      @close="closeMultiCandidatePanel"
+      @select="handleSelectCandidate"
+      @rate="handleRateCandidate"
+    />
   </NAppLayout>
 </template>

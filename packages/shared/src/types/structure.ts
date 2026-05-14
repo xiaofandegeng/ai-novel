@@ -34,6 +34,8 @@ export interface UpdateActInput {
 
 export type SceneStatus = 'planned' | 'drafting' | 'reviewed' | 'completed'
 
+export type BeatType = 'hook' | 'setup' | 'reveal' | 'conflict' | 'reversal' | 'payoff' | 'transition' | 'cliffhanger'
+
 export interface ChapterScene {
   id: string
   projectId: string
@@ -50,6 +52,14 @@ export interface ChapterScene {
   orderIndex: number
   status: SceneStatus
   conflict: string | null
+  beatType: BeatType | null
+  entryHook: string | null
+  turningPoint: string | null
+  exitHook: string | null
+  emotionStart: string | null
+  emotionEnd: string | null
+  conflictLevel: number | null
+  requiredElements: string | null
   createdAt: string
   updatedAt: string
 }
@@ -67,6 +77,14 @@ export interface CreateSceneInput {
   orderIndex: number
   status?: SceneStatus
   conflict?: string
+  beatType?: BeatType
+  entryHook?: string
+  turningPoint?: string
+  exitHook?: string
+  emotionStart?: string
+  emotionEnd?: string
+  conflictLevel?: number
+  requiredElements?: string
 }
 
 export interface UpdateSceneInput {
@@ -82,6 +100,14 @@ export interface UpdateSceneInput {
   orderIndex?: number
   status?: SceneStatus
   conflict?: string | null
+  beatType?: BeatType | null
+  entryHook?: string | null
+  turningPoint?: string | null
+  exitHook?: string | null
+  emotionStart?: string | null
+  emotionEnd?: string | null
+  conflictLevel?: number | null
+  requiredElements?: string | null
 }
 
 export interface BulkCreateScenesInput {

@@ -9,7 +9,9 @@ import {
 } from '@ai-novel/ui'
 import {
   Check,
+  ChevronDown,
   ChevronLeft,
+  ChevronRight,
   HelpCircle,
   LayoutGrid,
   Loader2,
@@ -21,9 +23,13 @@ import {
   X,
   Zap,
 } from 'lucide-vue-next'
+import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ProjectBreadcrumb from '@/components/ProjectBreadcrumb.vue'
+import { useChapterStore } from '@/stores/chapter.store'
 import AppSidebar from '../components/AppSidebar.vue'
+import ConflictIntensityCurve from '../features/conflicts/components/ConflictIntensityCurve.vue'
+import { useConflictTimeline } from '../features/conflicts/composables/useConflictTimeline'
 import { CONFLICT_STATUS_OPTIONS, CONFLICT_TYPES, useConflictWorkspace } from '../features/conflicts/composables/useConflictWorkspace'
 
 const route = useRoute()
@@ -52,8 +58,20 @@ const {
   handleRejectSuggestion,
 } = useConflictWorkspace(projectId)
 
+const chapterStore = useChapterStore()
+const timeline = useConflictTimeline(projectId)
+
+const showIntensityCurve = ref(false)
+
 const statusOptions = CONFLICT_STATUS_OPTIONS
 const types = CONFLICT_TYPES
+
+onMounted(async () => {
+  await Promise.all([
+    chapterStore.fetchChapters(projectId),
+    timeline.loadTimeline(),
+  ])
+})
 </script>
 
 <template>
@@ -257,6 +275,27 @@ const types = CONFLICT_TYPES
                 一个引人入胜的故事通常包含从**潜伏**到**激化**的矛盾过程。
                 **顶点爆发**点即是你的剧情高潮。仔细追踪这一过程，确保你的叙事节奏不会拖沓。
               </p>
+            </div>
+          </div>
+
+          <!-- Intensity Curve Section -->
+          <div class="overflow-hidden border border-border-light rounded-xl bg-bg-surface">
+            <button
+              class="w-full flex items-center justify-between px-4 py-3 text-sm text-text-primary font-bold transition-colors hover:bg-bg-subtle"
+              @click="showIntensityCurve = !showIntensityCurve"
+            >
+              <div class="flex items-center gap-2">
+                <TrendingUp :size="16" class="text-primary" />
+                强度曲线
+              </div>
+              <component :is="showIntensityCurve ? ChevronDown : ChevronRight" :size="16" class="text-text-muted" />
+            </button>
+            <div v-if="showIntensityCurve" class="border-t border-border-light px-4 py-4">
+              <ConflictIntensityCurve
+                :conflicts="conflictStore.conflicts"
+                :events="timeline.allEvents.value"
+                :chapters="chapterStore.chapters"
+              />
             </div>
           </div>
         </div>

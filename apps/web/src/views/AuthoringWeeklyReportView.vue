@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DailyWritingStats } from '@ai-novel/shared'
 import { NAppLayout, NButton, NLoadingState } from '@ai-novel/ui'
 import {
   AlertTriangle,
@@ -11,8 +12,9 @@ import {
 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { useProjectStore } from '@/stores/project.store'
+import * as goalsApi from '../api/writing-goals'
 import AppSidebar from '../components/AppSidebar.vue'
-import { useProjectStore } from '../stores/project'
 
 const route = useRoute()
 const projectId = route.params.id as string
@@ -20,6 +22,7 @@ const projectStore = useProjectStore()
 
 const loading = ref(true)
 const report = ref<any>(null)
+const dailyStats = ref<DailyWritingStats[]>([])
 
 async function fetchReport() {
   loading.value = true
@@ -28,6 +31,17 @@ async function fetchReport() {
     const data = await res.json()
     if (data.success) {
       report.value = data.data
+      // Load daily stats for the same week
+      if (data.data.startDate && data.data.endDate) {
+        try {
+          dailyStats.value = await goalsApi.fetchDailyStats(
+            projectId,
+            data.data.startDate,
+            data.data.endDate,
+          )
+        }
+        catch { /* ignore */ }
+      }
     }
   }
   catch (err) {
@@ -195,6 +209,29 @@ function formatDate(dateStr: string) {
               开始复盘
               <ArrowRight :size="14" class="ml-2" />
             </NButton>
+          </div>
+
+          <!-- Daily Writing Stats -->
+          <div v-if="dailyStats.length > 0" class="col-span-1 rounded-2xl bg-white p-8 shadow-sm ring-1 ring-border-light md:col-span-3">
+            <h2 class="mb-6 flex items-center gap-2 text-lg text-text-primary font-bold">
+              <TrendingUp :size="20" class="text-primary" />
+              每日字数统计
+            </h2>
+            <div class="flex items-end gap-2" style="height: 120px">
+              <div
+                v-for="stat in dailyStats"
+                :key="stat.id"
+                class="flex flex-1 flex-col items-center justify-end"
+              >
+                <div class="w-full rounded-t bg-primary/80" :style="{ height: `${Math.max(4, (stat.wordsAdded / Math.max(...dailyStats.map(s => s.wordsAdded), 1)) * 100)}px` }" :title="`${stat.wordsAdded} 字`" />
+                <span class="mt-1 text-xs text-text-muted">{{ new Date(stat.date).toLocaleDateString('zh-CN', { weekday: 'short' }) }}</span>
+              </div>
+            </div>
+            <div class="mt-3 flex gap-4 text-xs text-text-muted">
+              <span>总字数: {{ dailyStats.reduce((s, d) => s + d.wordsAdded, 0) }}</span>
+              <span>手写: {{ dailyStats.reduce((s, d) => s + d.manualWordsAdded, 0) }}</span>
+              <span>AI 接受: {{ dailyStats.reduce((s, d) => s + d.aiWordsAccepted, 0) }}</span>
+            </div>
           </div>
         </div>
       </div>

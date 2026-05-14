@@ -69,6 +69,14 @@ export const chapterScenes = pgTable('chapter_scenes', {
   orderIndex: integer('order_index').notNull(),
   status: text('status').$type<'planned' | 'drafting' | 'reviewed' | 'completed'>().notNull().default('planned'),
   conflict: text('conflict'),
+  beatType: text('beat_type').$type<'hook' | 'setup' | 'reveal' | 'conflict' | 'reversal' | 'payoff' | 'transition' | 'cliffhanger'>(),
+  entryHook: text('entry_hook'),
+  turningPoint: text('turning_point'),
+  exitHook: text('exit_hook'),
+  emotionStart: text('emotion_start'),
+  emotionEnd: text('emotion_end'),
+  conflictLevel: integer('conflict_level'),
+  requiredElements: text('required_elements'),
   ...timestamps,
 })
 

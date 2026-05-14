@@ -538,6 +538,14 @@ export function useOutlineWorkspace(projectId: string) {
         conflict: scene.conflict,
         targetWords: scene.targetWords,
         status: scene.status,
+        beatType: scene.beatType,
+        entryHook: scene.entryHook,
+        turningPoint: scene.turningPoint,
+        exitHook: scene.exitHook,
+        emotionStart: scene.emotionStart,
+        emotionEnd: scene.emotionEnd,
+        conflictLevel: scene.conflictLevel,
+        requiredElements: scene.requiredElements,
       })
     }
     catch {

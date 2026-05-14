@@ -7,6 +7,7 @@ import {
   Bot,
   ChevronRight,
   Download,
+  FileText,
   HelpCircle,
   RefreshCw,
   Save,
@@ -20,13 +21,14 @@ import { onMounted, reactive, ref } from 'vue'
 
 import { useRoute, useRouter } from 'vue-router'
 import { exportProject, importProject } from '../api/data-portability'
-
 import {
   getProjectPersonaConfig,
   listPublishedPersonas,
   updateProjectPersonaConfig,
 } from '../api/persona'
+
 import { deleteProject, fetchProject, updateProject } from '../api/projects'
+import ProjectExportPanel from '../features/settings/components/ProjectExportPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -402,6 +404,18 @@ onMounted(() => {
               </div>
             </div>
           </NPanel>
+        </section>
+
+        <!-- Manuscript Export Section -->
+        <section class="space-y-4">
+          <h2 class="flex items-center gap-2 px-1 text-lg text-text-primary font-bold">
+            <FileText class="text-primary" :size="18" />
+            手稿导出
+          </h2>
+          <ProjectExportPanel
+            :project-id="projectId"
+            :project-title="project?.title || ''"
+          />
         </section>
       </section>
     </div>

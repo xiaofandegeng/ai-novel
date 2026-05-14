@@ -11,6 +11,7 @@ import {
 import {
   ChevronLeft,
   ChevronRight,
+  Clock,
   Info,
   Save,
   Search,
@@ -19,10 +20,12 @@ import {
   UserCircle,
   UserPlus,
 } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ProjectBreadcrumb from '@/components/ProjectBreadcrumb.vue'
 import AppSidebar from '../components/AppSidebar.vue'
+import CharacterArcTimeline from '../features/characters/components/CharacterArcTimeline.vue'
+import { useCharacterArcTimeline } from '../features/characters/composables/useCharacterArcTimeline'
 import { useCharacterWorkspace } from '../features/characters/composables/useCharacterWorkspace'
 import { characterRoleOptions, getCharacterRoleLabel } from '../utils/character-labels'
 
@@ -62,12 +65,28 @@ const {
   retryAIRequest,
 } = useCharacterWorkspace(projectId)
 
+const {
+  loading: arcLoading,
+  eventsGroupedByChapter,
+  showAddForm,
+  newEventForm,
+  addEvent,
+  removeEvent,
+  resetForm,
+} = useCharacterArcTimeline(projectId, selectedCharId)
+
 const sections = [
   { id: 'profile', label: '侧写基础', icon: UserCircle },
   { id: 'inner', label: '内心世界', icon: Info },
   { id: 'arc', label: '成长弧光', icon: Sparkles },
 ]
 const activeTab = ref('profile')
+const arcDetailTab = ref<'info' | 'timeline'>('info')
+
+watch(activeTab, (tab) => {
+  if (tab === 'arc')
+    arcDetailTab.value = 'info'
+})
 </script>
 
 <template>
@@ -209,18 +228,55 @@ const activeTab = ref('profile')
                 <NTextArea v-model="charForm.weakness" label="性格软肋" placeholder="可能导致其毁灭的性格缺陷..." :rows="4" />
               </div>
             </div>
-            <div v-if="activeTab === 'arc'" class="grid gap-6">
-              <NTextArea
-                v-model="charForm.arc"
-                label="成长曲线（转变历程）"
-                placeholder="角色从故事开始到结束发生了怎样的转变？"
-                :rows="8"
-              />
-              <div class="flex gap-3 border border-accent/10 rounded-lg bg-accent-soft p-4">
-                <Info :size="16" class="mt-0.5 shrink-0 text-accent" />
-                <p class="text-xs text-text-secondary leading-relaxed">
-                  一个精彩的角色弧光通常涉及角色克服**核心恐惧**或**性格软肋**以实现其**核心欲望**，或者在悲剧中因无法克服而毁灭。
-                </p>
+            <div v-if="activeTab === 'arc'" class="space-y-6">
+              <div class="flex border-b border-border-light">
+                <button
+                  class="relative px-4 py-2 text-sm font-medium transition-all"
+                  :class="arcDetailTab === 'info' ? 'text-primary' : 'text-text-muted hover:text-text-primary'"
+                  @click="arcDetailTab = 'info'"
+                >
+                  基本信息
+                  <div v-if="arcDetailTab === 'info'" class="absolute bottom-0 left-0 right-0 h-0.5 rounded-full bg-primary" />
+                </button>
+                <button
+                  class="relative flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-all"
+                  :class="arcDetailTab === 'timeline' ? 'text-primary' : 'text-text-muted hover:text-text-primary'"
+                  @click="arcDetailTab = 'timeline'"
+                >
+                  <Clock :size="14" />
+                  弧光时间线
+                  <div v-if="arcDetailTab === 'timeline'" class="absolute bottom-0 left-0 right-0 h-0.5 rounded-full bg-primary" />
+                </button>
+              </div>
+
+              <div v-if="arcDetailTab === 'info'" class="grid gap-6">
+                <NTextArea
+                  v-model="charForm.arc"
+                  label="成长曲线（转变历程）"
+                  placeholder="角色从故事开始到结束发生了怎样的转变？"
+                  :rows="8"
+                />
+                <div class="flex gap-3 border border-accent/10 rounded-lg bg-accent-soft p-4">
+                  <Info :size="16" class="mt-0.5 shrink-0 text-accent" />
+                  <p class="text-xs text-text-secondary leading-relaxed">
+                    一个精彩的角色弧光通常涉及角色克服**核心恐惧**或**性格软肋**以实现其**核心欲望**，或者在悲剧中因无法克服而毁灭。
+                  </p>
+                </div>
+              </div>
+
+              <div v-if="arcDetailTab === 'timeline'">
+                <CharacterArcTimeline
+                  :loading="arcLoading"
+                  :events-grouped-by-chapter="eventsGroupedByChapter"
+                  :show-add-form="showAddForm"
+                  :new-event-form="newEventForm"
+                  @add="addEvent"
+                  @remove="removeEvent($event)"
+                  @toggle-form="showAddForm = !showAddForm"
+                  @reset-form="resetForm"
+                  @update:show-add-form="showAddForm = $event"
+                  @update:new-event-form="Object.assign(newEventForm, $event)"
+                />
               </div>
             </div>
           </div>
