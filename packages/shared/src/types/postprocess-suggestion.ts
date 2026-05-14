@@ -1,4 +1,4 @@
-export type SuggestionType = 'fact_triple' | 'foreshadowing_add' | 'foreshadowing_payoff' | 'chapter_element' | 'character_state' | 'conflict_update' | 'continuity_note' | 'style_note' | 'relationship_update'
+export type SuggestionType = 'fact_triple' | 'foreshadowing_add' | 'foreshadowing_payoff' | 'chapter_element' | 'character_state' | 'conflict_add' | 'conflict_update' | 'continuity_note' | 'style_note' | 'relationship_update'
 export type SuggestionStatus = 'pending' | 'accepted' | 'rejected' | 'applied' | 'acknowledged' | 'apply_failed'
 
 export interface PostprocessSuggestion {

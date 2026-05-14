@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { chapterElements, chapterPostprocessSuggestions, characterRelationships, characters, conflicts, foreshadowingItems, storyFactTriples } from '../db/schema'
 import { generateId, now } from '../utils'
+import { normalizeCharacterPair } from './character-utils.service'
 
 export interface ApplyResult {
   applied: number
@@ -325,7 +326,7 @@ async function applyOneSuggestion(
       }
 
       // 规范化 ID 顺序，确保数据库中 A < B，符合唯一索引要求
-      const [charAId, charBId] = charA.id < charB.id ? [charA.id, charB.id] : [charB.id, charA.id]
+      const [charAId, charBId] = normalizeCharacterPair(charA.id, charB.id)
 
       const [existing] = await db.select().from(characterRelationships).where(and(
         eq(characterRelationships.projectId, projectId),

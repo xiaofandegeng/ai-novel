@@ -153,6 +153,60 @@ export function useOutlineWorkspace(projectId: string) {
     }
   }
 
+  function ensureCharacterElement(charId: string) {
+    const char = characterStore.characters.find(c => c.id === charId)
+    if (!char)
+      return
+
+    const exists = chapterElementDrafts.value.some(
+      e => e.elementType === 'character' && e.elementId === charId && e.relationType === 'appears',
+    )
+    if (!exists) {
+      chapterElementDrafts.value.push({
+        elementType: 'character',
+        elementId: char.id,
+        elementName: char.name,
+        relationType: 'appears',
+        importance: 'normal',
+      })
+    }
+  }
+
+  function removeCharacterElement(charId: string, options?: { keepRequired?: boolean }) {
+    const index = chapterElementDrafts.value.findIndex(
+      e => e.elementType === 'character' && e.elementId === charId && e.relationType === 'appears',
+    )
+    if (index !== -1) {
+      const el = chapterElementDrafts.value[index]
+      if (options?.keepRequired && el.importance === 'major')
+        return
+      chapterElementDrafts.value.splice(index, 1)
+    }
+  }
+
+  function normalizeOutlineCharacterElements() {
+    // 1. Ensure all characterIds have corresponding elements
+    outlineForm.value.characterIds.forEach(id => ensureCharacterElement(id))
+
+    // 2. Ensure all 'appears' character elements are reflected in characterIds
+    chapterElementDrafts.value.forEach((e) => {
+      if (e.elementType === 'character' && e.elementId && e.relationType === 'appears') {
+        if (!outlineForm.value.characterIds.includes(e.elementId))
+          outlineForm.value.characterIds.push(e.elementId)
+      }
+    })
+
+    // 3. Deduplicate elements by type + id/name + relation
+    const seen = new Set<string>()
+    chapterElementDrafts.value = chapterElementDrafts.value.filter((e) => {
+      const key = `${e.elementType}:${e.elementId || e.elementName}:${e.relationType}`
+      if (seen.has(key))
+        return false
+      seen.add(key)
+      return true
+    })
+  }
+
   async function handleSave() {
     if (!selectedId.value)
       return
@@ -167,34 +221,7 @@ export function useOutlineWorkspace(projectId: string) {
         toast.add(T.outline_saved, 'success')
       }
       else if (selectedType.value === 'chapter') {
-        // --- 强制双向一致性整理 ---
-        // 1. 确保所有勾选的角色都在元素列表中有 'appears' 记录
-        outlineForm.value.characterIds.forEach((id) => {
-          const char = characterStore.characters.find(c => c.id === id)
-          if (!char)
-            return
-
-          const exists = chapterElementDrafts.value.some(
-            e => e.elementType === 'character' && e.elementId === id && e.relationType === 'appears',
-          )
-          if (!exists) {
-            chapterElementDrafts.value.push({
-              elementType: 'character',
-              elementId: char.id,
-              elementName: char.name,
-              relationType: 'appears',
-              importance: 'normal',
-            })
-          }
-        })
-
-        // 2. 确保所有 'appears' 记录的角色都被勾选了
-        chapterElementDrafts.value.forEach((e) => {
-          if (e.elementType === 'character' && e.elementId && e.relationType === 'appears') {
-            if (!outlineForm.value.characterIds.includes(e.elementId))
-              outlineForm.value.characterIds.push(e.elementId)
-          }
-        })
+        normalizeOutlineCharacterElements()
 
         const data = {
           ...outlineForm.value,
@@ -258,17 +285,11 @@ export function useOutlineWorkspace(projectId: string) {
     const index = outlineForm.value.characterIds.indexOf(charId)
     if (index === -1) {
       outlineForm.value.characterIds.push(charId)
-      // 自动同步到硬约束
-      addCharacterElement(charId, 'normal')
+      ensureCharacterElement(charId)
     }
     else {
       outlineForm.value.characterIds.splice(index, 1)
-      // 自动移除对应的 'appears' 硬约束
-      const elementIndex = chapterElementDrafts.value.findIndex(
-        e => e.elementType === 'character' && e.elementId === charId && e.relationType === 'appears',
-      )
-      if (elementIndex !== -1)
-        chapterElementDrafts.value.splice(elementIndex, 1)
+      removeCharacterElement(charId)
     }
   }
 
@@ -276,6 +297,7 @@ export function useOutlineWorkspace(projectId: string) {
     const char = characterStore.characters.find(c => c.id === charId)
     if (!char)
       return
+
     const exists = chapterElementDrafts.value.some(
       e => e.elementType === 'character' && e.elementId === charId && e.relationType === 'appears',
     )
@@ -287,6 +309,12 @@ export function useOutlineWorkspace(projectId: string) {
         relationType: 'appears',
         importance,
       })
+    }
+    else if (importance === 'major') {
+      // Update existing element to major if requested
+      const el = chapterElementDrafts.value.find(e => e.elementType === 'character' && e.elementId === charId && e.relationType === 'appears')
+      if (el)
+        el.importance = 'major'
     }
 
     if (!outlineForm.value.characterIds.includes(charId))

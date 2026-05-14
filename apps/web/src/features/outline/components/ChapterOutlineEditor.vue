@@ -85,7 +85,7 @@ const statusOptions = [
         <h3 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
           <Users :size="16" /> 登场角色
         </h3>
-        <span class="text-xs text-text-muted">勾选后将自动加入 AI 写作硬约束</span>
+        <span class="text-xs text-text-muted">参与本章剧情的角色</span>
       </div>
       <div class="flex flex-wrap gap-2">
         <button
@@ -109,10 +109,10 @@ const statusOptions = [
         <h3 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
           <Layers :size="16" /> AI 写作硬约束
         </h3>
-        <span class="text-[10px] text-text-muted font-medium">角色与上方列表同步，事件由 AI 优先参考</span>
+        <span class="text-[10px] text-text-muted font-medium">AI 写作时必须纳入的强制约束</span>
       </div>
       <div>
-        <label class="mb-2 block text-xs text-text-muted font-semibold">必须出场人物 (Character Constraints)</label>
+        <label class="mb-2 block text-xs text-text-muted font-semibold">必须出场人物 (Characters to Include)</label>
         <div class="flex flex-wrap gap-2">
           <span
             v-for="(el, idx) in chapterElementDrafts.filter(e => e.elementType === 'character')"

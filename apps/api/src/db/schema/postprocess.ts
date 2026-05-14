@@ -25,7 +25,7 @@ export const chapterPostprocessSuggestions = pgTable('chapter_postprocess_sugges
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
   chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
   runId: text('run_id').references(() => chapterPostprocessRuns.id, { onDelete: 'cascade' }),
-  suggestionType: text('suggestion_type').$type<'fact_triple' | 'foreshadowing_add' | 'foreshadowing_payoff' | 'chapter_element' | 'character_state' | 'continuity_note' | 'style_note'>().notNull(),
+  suggestionType: text('suggestion_type').$type<'fact_triple' | 'foreshadowing_add' | 'foreshadowing_payoff' | 'chapter_element' | 'character_state' | 'conflict_add' | 'conflict_update' | 'continuity_note' | 'style_note' | 'relationship_update'>().notNull(),
   payload: text('payload').notNull(),
   confidence: integer('confidence').notNull().default(70),
   status: text('status').$type<'pending' | 'accepted' | 'rejected' | 'applied' | 'acknowledged' | 'apply_failed'>().notNull().default('pending'),

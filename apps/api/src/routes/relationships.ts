@@ -2,6 +2,7 @@ import type { Hono } from 'hono'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { characterRelationships } from '../db/schema'
+import { normalizeCharacterPair } from '../services/character-utils.service'
 import { assertCharactersBelongToProject } from '../services/ownership.service'
 import { fail, generateId, success, updatedFields } from '../utils'
 
@@ -29,8 +30,8 @@ export function registerRelationshipRoutes(app: Hono) {
       return c.json(fail('角色不属于当前项目'), 400)
     }
 
-    // 规范化 ID 顺序，确保数据库中 A < B
-    const [lowId, highId] = charAId < charBId ? [charAId, charBId] : [charBId, charAId]
+    // 规范化 ID 顺序，确保数据库中 A < b
+    const [lowId, highId] = normalizeCharacterPair(charAId, charBId)
 
     // 检查是否已存在关系
     const [existing] = await db.select().from(characterRelationships).where(and(

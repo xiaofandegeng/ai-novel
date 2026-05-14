@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../db'
 import { chapters, characters, volumes } from '../db/schema'
 
@@ -19,15 +19,23 @@ export async function assertChapterBelongsToProject(projectId: string, chapterId
 }
 
 export async function assertCharactersBelongToProject(projectId: string, ids: string[]) {
-  const results = []
-  for (const id of ids) {
-    const [row] = await db.select().from(characters).where(
-      and(eq(characters.id, id), eq(characters.projectId, projectId)),
-    )
-    if (!row)
-      throw new Error(`角色 ${id} 不属于当前项目`)
-    results.push(row)
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)))
+  if (uniqueIds.length === 0)
+    return []
+
+  const results = await db.select().from(characters).where(
+    and(
+      eq(characters.projectId, projectId),
+      inArray(characters.id, uniqueIds),
+    ),
+  )
+
+  if (results.length !== uniqueIds.length) {
+    const foundIds = results.map(r => r.id)
+    const missing = uniqueIds.find(id => !foundIds.includes(id))
+    throw new Error(`角色 ${missing} 不属于当前项目或不存在`)
   }
+
   return results
 }
 

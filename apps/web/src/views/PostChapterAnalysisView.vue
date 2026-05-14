@@ -39,6 +39,7 @@ const typeLabels: Record<SuggestionType, string> = {
   character_state: '人物状态',
   continuity_note: '连续性提示',
   style_note: '风格记录',
+  conflict_add: '新增矛盾',
   conflict_update: '冲突进展',
   relationship_update: '人物关系变更',
 }
@@ -51,6 +52,7 @@ const typeVariants: Record<SuggestionType, 'info' | 'warning' | 'success' | 'ai'
   character_state: 'ai',
   continuity_note: 'default',
   style_note: 'default',
+  conflict_add: 'warning',
   conflict_update: 'primary',
   relationship_update: 'success',
 }
@@ -76,11 +78,14 @@ function parsePayload(payload: string): Record<string, unknown> {
 
 function suggestionTitle(item: typeof suggestionStore.suggestions[0]): string {
   const data = parsePayload(item.payload)
+  if (item.suggestionType === 'conflict_add') {
+    return `新增冲突：${data.title} (${data.type === 'internal' ? '内在' : '外部'} 烈度:${data.intensity || ''})`
+  }
   if (item.suggestionType === 'conflict_update') {
     return `冲突更新：${data.title} (${data.newStatus || ''} 烈度:${data.newIntensity || ''})`
   }
   if (item.suggestionType === 'relationship_update') {
-    return `关系变更：${data.characterAName} & ${data.characterBName} (${data.type || ''} 强度:${data.strength || ''})`
+    return `${data.characterAName} ↔ ${data.characterBName}：${data.type || ''} (强度:${data.strength || ''})`
   }
   if (item.suggestionType === 'character_state') {
     return `角色变化：${data.characterName} - ${data.change}`

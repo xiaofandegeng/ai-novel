@@ -27,3 +27,10 @@ export async function matchCharacterIdsFromText(projectId: string, text: string 
 
   return matchedIds.size > 0 ? Array.from(matchedIds) : null
 }
+
+/**
+ * 规范化角色对 ID 顺序，确保 a < b，用于唯一索引匹配
+ */
+export function normalizeCharacterPair(aId: string, bId: string): [string, string] {
+  return aId < bId ? [aId, bId] : [bId, aId]
+}
