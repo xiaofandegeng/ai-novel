@@ -3,7 +3,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../db'
 import { knowledgeEmbeddings } from '../db/schema'
 import { generateId, now } from '../utils'
-import { callAIEmbedding } from './ai.service'
+import { callAIEmbedding, getEffectiveAISettings } from './ai.service'
 
 export type EmbeddingContentType
   = | 'knowledge_summary'
@@ -21,6 +21,15 @@ export interface EmbeddingInput {
   chunkId?: string
 }
 
+async function getEmbeddingConfig() {
+  const settings = await getEffectiveAISettings()
+  // 暂时使用通用模型名，后续可扩展专用 embedding 配置
+  return {
+    model: settings.provider === 'openai' ? 'text-embedding-3-small' : settings.model,
+    provider: settings.provider,
+  }
+}
+
 /**
  * 计算文本哈希，用于幂等性校验
  */
@@ -33,7 +42,7 @@ function getContentHash(text: string): string {
  */
 export async function getOrCreateEmbedding(input: EmbeddingInput): Promise<number[]> {
   const contentHash = getContentHash(input.text)
-  const model = 'text-embedding-3-small' // 暂时写死或从 settings 扩展
+  const { model } = await getEmbeddingConfig()
 
   // 1. 尝试从数据库查找已有记录
   const [existing] = await db
@@ -88,9 +97,10 @@ export async function searchSimilarEmbeddings(params: {
   limit?: number
 }) {
   const { projectId, query, contentType, limit = 5 } = params
+  const { model } = await getEmbeddingConfig()
 
   // 1. 生成查询向量
-  const queryVector = await callAIEmbedding(query)
+  const queryVector = await callAIEmbedding(query, { model })
 
   // 2. 使用 pgvector 进行余弦相似度检索
   // 1 - (v1 <=> v2) = cosine similarity

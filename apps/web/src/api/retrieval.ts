@@ -1,4 +1,4 @@
-import { client } from './client'
+import { apiPost } from './client'
 
 export interface RetrievalResult {
   id: string
@@ -18,5 +18,5 @@ export interface RetrievalResult {
 
 export const retrievalApi = {
   test: (projectId: string, query: string, limit = 5) =>
-    client.post<{ results: RetrievalResult[], terms: string[] }>(`/projects/${projectId}/retrieval/test`, { query, limit }),
+    apiPost<{ query: string, results: RetrievalResult[], terms: string[] }>(`/api/projects/${projectId}/retrieval/test`, { query, limit }),
 }

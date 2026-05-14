@@ -1,4 +1,4 @@
-import { client } from './client'
+import { apiGet, apiPost } from './client'
 
 export interface PromptTemplate {
   id: string
@@ -21,13 +21,13 @@ export interface PromptOverride {
 }
 
 export const promptTemplateApi = {
-  listTemplates: () => client.get<PromptTemplate[]>('/prompt-templates'),
+  listTemplates: () => apiGet<PromptTemplate[]>('/api/prompt-templates'),
 
-  getOverrides: (projectId: string) => client.get<PromptOverride[]>(`/projects/${projectId}/prompt-overrides`),
+  getOverrides: (projectId: string) => apiGet<PromptOverride[]>(`/api/projects/${projectId}/prompt-overrides`),
 
   saveOverride: (projectId: string, data: Partial<PromptOverride>) =>
-    client.post<{ id: string }>(`/projects/${projectId}/prompt-overrides`, data),
+    apiPost<{ id: string }>(`/api/projects/${projectId}/prompt-overrides`, data),
 
   testTemplate: (projectId: string, key: string, variables: Record<string, any>) =>
-    client.post<{ system: string, user: string }>(`/projects/${projectId}/prompt-templates/${key}/test`, variables),
+    apiPost<{ system: string, user: string }>(`/api/projects/${projectId}/prompt-templates/${key}/test`, variables),
 }

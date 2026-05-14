@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { RetrievalResult } from '../../../api/retrieval'
-import { NButton, NInput, NPanel, NTag } from '@ai-novel/ui'
+import { NButton, NInput, NPanel, NTag, useToast } from '@ai-novel/ui'
 import {
+  AlertCircle,
   BarChart3,
   BookOpen,
   HelpCircle,
@@ -18,23 +19,32 @@ const props = defineProps<{
   projectId: string
 }>()
 
+const toast = useToast()
 const query = ref('')
 const searching = ref(false)
 const results = ref<RetrievalResult[]>([])
 const terms = ref<string[]>([])
+const errorMessage = ref('')
 
 async function handleSearch() {
   if (!query.value.trim())
     return
 
   searching.value = true
+  errorMessage.value = ''
   try {
     const data = await retrievalApi.test(props.projectId, query.value)
     results.value = data.results
     terms.value = data.terms
+    if (results.value.length === 0) {
+      errorMessage.value = '没有找到相关知识片段'
+    }
   }
-  catch (e) {
+  catch (e: any) {
     console.error(e)
+    const msg = e.message || '检索失败，请检查知识库分析状态或 AI 配置'
+    errorMessage.value = msg
+    toast.add(msg, 'error')
   }
   finally {
     searching.value = false
@@ -152,7 +162,27 @@ function getSourceColor(source: string) {
       </div>
     </div>
 
-    <div v-else-if="!searching" class="bg-bg-card/30 border-2 border-border-light rounded-2xl border-dashed py-20 text-center">
+    <div v-if="searching" class="bg-bg-card/30 animate-pulse border-2 border-primary/20 rounded-2xl border-dashed py-20 text-center">
+      <Zap :size="48" class="mx-auto mb-4 text-primary/40" />
+      <h3 class="text-text-primary font-bold">
+        正在检索...
+      </h3>
+      <p class="mt-1 text-sm text-text-muted">
+        正在从知识库、章节记忆和人物设定中融合检索结果
+      </p>
+    </div>
+
+    <div v-else-if="errorMessage" class="bg-bg-card/30 border-destructive/20 border-2 rounded-2xl border-dashed py-20 text-center">
+      <AlertCircle :size="48" class="text-destructive/40 mx-auto mb-4" />
+      <h3 class="text-text-primary font-bold">
+        {{ errorMessage }}
+      </h3>
+      <p class="mt-1 text-sm text-text-muted">
+        请尝试调整搜索词，或检查 AI 服务连接状态
+      </p>
+    </div>
+
+    <div v-else-if="results.length === 0" class="bg-bg-card/30 border-2 border-border-light rounded-2xl border-dashed py-20 text-center">
       <HelpCircle :size="48" class="mx-auto mb-4 text-text-muted/20" />
       <h3 class="text-text-primary font-bold">
         暂无测试结果

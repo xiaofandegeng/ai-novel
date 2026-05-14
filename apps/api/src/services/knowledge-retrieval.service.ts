@@ -1,5 +1,5 @@
 import type { KnowledgeContextSnippet } from '@ai-novel/shared'
-import { and, eq, or, sql } from 'drizzle-orm'
+import { and, eq, inArray, or, sql } from 'drizzle-orm'
 import { db } from '../db'
 import { chapterMemories, characters, knowledgeChunks, storyBibles } from '../db/schema'
 import { searchSimilarEmbeddings } from './embedding.service'
@@ -46,7 +46,7 @@ export class KnowledgeRetrievalService {
       return [
         sql`${knowledgeChunks.title} ILIKE ${pattern}`,
         sql`${knowledgeChunks.summary} ILIKE ${pattern}`,
-        sql`${knowledgeChunks.content} ILIKE ${pattern}`,
+        sql`${knowledgeChunks.techniques} ILIKE ${pattern}`,
       ]
     })
 
@@ -116,8 +116,18 @@ export class KnowledgeRetrievalService {
     const memoryIds = similar.filter(s => s.contentType === 'chapter_memory').map(s => s.chunkId).filter(Boolean) as string[]
 
     const [chunks, memories] = await Promise.all([
-      chunkIds.length > 0 ? db.select().from(knowledgeChunks).where(and(eq(knowledgeChunks.projectId, projectId), sql`${knowledgeChunks.id} IN ${chunkIds}`)) : [],
-      memoryIds.length > 0 ? db.select().from(chapterMemories).where(and(eq(chapterMemories.projectId, projectId), sql`${chapterMemories.id} IN ${memoryIds}`)) : [],
+      chunkIds.length > 0
+        ? db.select().from(knowledgeChunks).where(and(
+            eq(knowledgeChunks.projectId, projectId),
+            inArray(knowledgeChunks.id, chunkIds),
+          ))
+        : [],
+      memoryIds.length > 0
+        ? db.select().from(chapterMemories).where(and(
+            eq(chapterMemories.projectId, projectId),
+            inArray(chapterMemories.id, memoryIds),
+          ))
+        : [],
     ])
 
     const results: SearchResult[] = []
@@ -127,11 +137,11 @@ export class KnowledgeRetrievalService {
     for (const s of similar) {
       if (s.contentType === 'knowledge_summary' && s.chunkId) {
         const c = chunkMap.get(s.chunkId)
-        if (c) {
+        if (c && c.summary) {
           results.push({
             id: c.id,
             title: c.title,
-            summary: c.summary || c.content.substring(0, 200),
+            summary: c.summary,
             techniques: c.techniques,
             source: 'knowledge',
             matchedTerms: [],
@@ -143,7 +153,7 @@ export class KnowledgeRetrievalService {
       }
       else if (s.contentType === 'chapter_memory' && s.chunkId) {
         const m = memoryMap.get(s.chunkId)
-        if (m) {
+        if (m && m.summary) {
           results.push({
             id: m.id,
             title: `章节记忆: 第 ${m.chapterId} 卷/章`,
@@ -152,7 +162,7 @@ export class KnowledgeRetrievalService {
             source: 'memory',
             matchedTerms: [],
             vectorScore: s.similarity,
-            importance: 7, // 记忆默认重要性较高
+            importance: 7,
             createdAt: new Date(m.createdAt),
           })
         }

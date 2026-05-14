@@ -14,7 +14,7 @@ export function registerQualityRoutes(app: Hono) {
     const chapterId = c.req.param('chapterId')
 
     const result = await qualityService.runChapterQualityCheck(projectId, chapterId)
-    if (typeof result === 'object' && 'error' in result && result.error)
+    if (result && 'error' in result && typeof result.error === 'string')
       return c.json(fail(result.error), 400)
     return c.json(success(result))
   })
@@ -23,7 +23,7 @@ export function registerQualityRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
     const report = await qualityService.getReport(projectId, id)
-    if (typeof report === 'object' && 'error' in report && report.error)
+    if (report && 'error' in report && typeof report.error === 'string')
       return c.json(fail(report.error), 404)
     return c.json(success(report))
   })

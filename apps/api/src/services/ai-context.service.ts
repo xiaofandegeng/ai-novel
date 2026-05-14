@@ -221,8 +221,6 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     ? await retrieveKnowledgeForAI({
         projectId,
         terms: searchTerms,
-        characterNames: allCharacters.map(c => c.name),
-        conflictTitles: conflictSummaries.map(c => c.title),
         factTripleSubjects,
         limit: 5,
       })
