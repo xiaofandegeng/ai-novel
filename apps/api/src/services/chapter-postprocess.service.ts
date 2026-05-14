@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, characters, conflicts, foreshadowingItems, novelProjects, storyBibles } from '../db/schema'
 import { callAIJSON } from './ai.service'
+import { getOrCreateEmbedding } from './embedding.service'
 import { createSuggestion } from './postprocess-suggestion.service'
 
 export async function getChapterMemory(projectId: string, chapterId: string): Promise<ChapterMemory | null> {
@@ -490,6 +491,16 @@ ${truncatedContent}
         },
       })
       .returning()
+
+    // Trigger embedding for chapter memory RAG
+    if (memory && memory.summary) {
+      await getOrCreateEmbedding({
+        projectId,
+        text: memory.summary,
+        contentType: 'chapter_memory',
+        chunkId: memory.id, // Using memory ID as a virtual chunk ID for retrieval mapping
+      }).catch(err => console.error('Failed to embed chapter memory:', err))
+    }
 
     await db.update(chapterPostprocessRuns).set({
       status: 'completed',

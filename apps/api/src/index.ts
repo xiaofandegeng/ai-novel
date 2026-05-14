@@ -19,7 +19,6 @@ import { registerConflictTimelineRoutes } from './routes/conflict-timeline'
 import { registerConflictRoutes } from './routes/conflicts'
 import { registerContinuityRoutes } from './routes/continuity'
 import { registerDataPortabilityRoutes } from './routes/data-portability'
-
 import { registerForeshadowingRoutes } from './routes/foreshadowing'
 import { registerForeshadowingAnalysisRoutes } from './routes/foreshadowing-analysis'
 import { registerHealthRoutes } from './routes/health'
@@ -31,6 +30,7 @@ import { registerPostprocessSuggestionRoutes } from './routes/postprocess-sugges
 import { registerProjectRoutes } from './routes/projects'
 import { registerQualityRoutes } from './routes/quality'
 import { registerRelationshipRoutes } from './routes/relationships'
+import { registerRetrievalRoutes } from './routes/retrieval'
 import { registerSceneRoutes } from './routes/scenes'
 import { registerSettingsRoutes } from './routes/settings'
 import { registerStoryBibleRoutes } from './routes/story-bibles'
@@ -85,6 +85,7 @@ registerConflictTimelineRoutes(app)
 registerForeshadowingAnalysisRoutes(app)
 registerWritingGoalRoutes(app)
 registerAICandidateRoutes(app)
+registerRetrievalRoutes(app)
 
 app.notFound((c) => {
   return c.json({ error: 'Not Found' }, 404)

@@ -28,3 +28,7 @@ export function fetchNotes(projectId: string) {
 export function createNote(projectId: string, data: CreateKnowledgeNoteInput) {
   return apiPost<KnowledgeNote>(`/api/projects/${projectId}/knowledge/notes`, data)
 }
+
+export function testRetrieval(projectId: string, query: string, limit = 5) {
+  return apiPost<{ results: any[] }>(`/api/projects/${projectId}/retrieval/test`, { query, limit })
+}

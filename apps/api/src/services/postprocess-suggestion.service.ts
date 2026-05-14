@@ -3,6 +3,7 @@ import { db } from '../db'
 import { chapterElements, chapterPostprocessSuggestions, characterArcEvents, characterRelationships, characters, conflicts, conflictTimelineEvents, foreshadowingItems, storyFactTriples } from '../db/schema'
 import { generateId, now } from '../utils'
 import { normalizeCharacterPair } from './character-utils.service'
+import { getOrCreateEmbedding } from './embedding.service'
 
 export interface ApplyResult {
   applied: number
@@ -176,7 +177,7 @@ async function applyOneSuggestion(
     case 'fact_triple': {
       if (!payload.subjectName || !payload.predicate || !payload.objectName)
         throw new Error('事实三元组缺少必要字段')
-      await db.insert(storyFactTriples).values({
+      const [insertedFact] = await db.insert(storyFactTriples).values({
         id: generateId(),
         projectId,
         subjectType: payload.subjectType || 'unknown',
@@ -199,7 +200,17 @@ async function applyOneSuggestion(
               reason: payload.reason,
             })
           : undefined,
-      }).onConflictDoNothing()
+      }).onConflictDoNothing().returning()
+
+      if (insertedFact) {
+        await getOrCreateEmbedding({
+          projectId,
+          text: `${insertedFact.subjectName} ${insertedFact.predicate} ${insertedFact.objectName}`,
+          contentType: 'fact_summary',
+          sourceId: insertedFact.id,
+        }).catch(err => console.error('Failed to embed fact triple:', err))
+      }
+
       return 'applied'
     }
 
@@ -274,7 +285,7 @@ async function applyOneSuggestion(
 
         // Also create a character arc event for structured tracking
         const timestamp = now()
-        await db.insert(characterArcEvents).values({
+        const [insertedArc] = await db.insert(characterArcEvents).values({
           id: generateId(),
           projectId,
           characterId: char.id,
@@ -286,7 +297,16 @@ async function applyOneSuggestion(
           sourceType: 'ai_extracted',
           createdAt: timestamp,
           updatedAt: timestamp,
-        }).onConflictDoNothing()
+        }).onConflictDoNothing().returning()
+
+        if (insertedArc) {
+          await getOrCreateEmbedding({
+            projectId,
+            text: `${char.name}的变化：${payload.change}`,
+            contentType: 'persona_memory',
+            sourceId: insertedArc.id,
+          }).catch(err => console.error('Failed to embed character state change:', err))
+        }
 
         return 'applied'
       }
@@ -340,6 +360,13 @@ async function applyOneSuggestion(
             evidence: null,
             sourceType: 'ai_extracted',
           })
+
+          await getOrCreateEmbedding({
+            projectId,
+            text: `矛盾进展 [${updated.title}]：${payload.reason || '状态更新'}`,
+            contentType: 'chapter_memory',
+            sourceId: conflictId,
+          }).catch(err => console.error('Failed to embed conflict update:', err))
         }
       }
 
@@ -349,7 +376,7 @@ async function applyOneSuggestion(
     case 'conflict_add': {
       if (!payload.title)
         throw new Error('冲突标题为空')
-      await db.insert(conflicts).values({
+      const [insertedConflict] = await db.insert(conflicts).values({
         id: generateId(),
         projectId,
         title: payload.title,
@@ -358,7 +385,17 @@ async function applyOneSuggestion(
         status: payload.status || 'latent',
         participants: payload.participants,
         description: payload.description,
-      })
+      }).returning()
+
+      if (insertedConflict && insertedConflict.description) {
+        await getOrCreateEmbedding({
+          projectId,
+          text: `新矛盾 [${insertedConflict.title}]：${insertedConflict.description}`,
+          contentType: 'chapter_memory',
+          sourceId: insertedConflict.id,
+        }).catch(err => console.error('Failed to embed new conflict:', err))
+      }
+
       return 'applied'
     }
 

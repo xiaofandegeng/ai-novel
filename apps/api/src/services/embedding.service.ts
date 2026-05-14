@@ -11,6 +11,7 @@ export type EmbeddingContentType
     | 'chapter_memory'
     | 'fact_summary'
     | 'persona_memory'
+    | 'style_fingerprint'
 
 export interface EmbeddingInput {
   projectId: string

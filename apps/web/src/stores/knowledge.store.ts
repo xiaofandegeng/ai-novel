@@ -22,5 +22,10 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     return currentSource.value
   }
 
-  return { sources, currentSource, fetchSources, createSource, fetchSourceDetail }
+  async function testRetrieval(projectId: string, query: string, limit = 5) {
+    const { results } = await knowledgeApi.testRetrieval(projectId, query, limit)
+    return results
+  }
+
+  return { sources, currentSource, fetchSources, createSource, fetchSourceDetail, testRetrieval }
 })

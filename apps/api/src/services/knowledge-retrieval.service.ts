@@ -1,7 +1,7 @@
 import type { KnowledgeContextSnippet } from '@ai-novel/shared'
 import { and, eq, or, sql } from 'drizzle-orm'
 import { db } from '../db'
-import { knowledgeChunks, storyFactTriples } from '../db/schema'
+import { chapterMemories, knowledgeChunks, storyFactTriples } from '../db/schema'
 import { searchSimilarEmbeddings } from './embedding.service'
 
 interface RetrievedKnowledge extends KnowledgeContextSnippet {
@@ -120,34 +120,58 @@ async function embeddingIndexSearch(
   const similiarRows = await searchSimilarEmbeddings({
     projectId,
     query,
-    limit: 15,
+    limit: 20,
   })
 
-  const chunkIds = similiarRows.map(r => r.chunkId).filter(Boolean) as string[]
-  if (chunkIds.length === 0)
+  if (similiarRows.length === 0)
     return []
 
-  const chunks = await db
-    .select()
-    .from(knowledgeChunks)
-    .where(and(
-      eq(knowledgeChunks.projectId, projectId),
-      sql`${knowledgeChunks.id} IN ${chunkIds}`,
-    ))
+  // Collect IDs by content type for batch fetching
+  const chunkIds = similiarRows.filter(r => r.contentType === 'knowledge_summary' || r.contentType === 'technique').map(r => r.chunkId).filter(Boolean) as string[]
+  const memoryIds = similiarRows.filter(r => r.contentType === 'chapter_memory').map(r => r.chunkId).filter(Boolean) as string[]
 
+  const [chunks, memories] = await Promise.all([
+    chunkIds.length > 0 ? db.select().from(knowledgeChunks).where(and(eq(knowledgeChunks.projectId, projectId), sql`${knowledgeChunks.id} IN ${chunkIds}`)) : [],
+    memoryIds.length > 0 ? db.select().from(chapterMemories).where(and(eq(chapterMemories.projectId, projectId), sql`${chapterMemories.id} IN ${memoryIds}`)) : [],
+  ])
+
+  // Simple map for mapping back
   const chunkMap = new Map(chunks.map(c => [c.id, c]))
+  const memoryMap = new Map(memories.map(m => [m.id, m]))
 
-  return similiarRows.map((r) => {
-    const chunk = r.chunkId ? chunkMap.get(r.chunkId) : null
-    return {
-      id: r.id,
-      title: chunk?.title || null,
-      summary: chunk?.summary || null,
-      techniques: chunk?.techniques || null,
-      matchedTerms: [],
-      vectorScore: r.similarity,
+  const results: SearchResult[] = []
+
+  for (const r of similiarRows) {
+    if (r.contentType === 'knowledge_summary' || r.contentType === 'technique') {
+      const chunk = r.chunkId ? chunkMap.get(r.chunkId) : null
+      if (chunk) {
+        results.push({
+          id: r.id,
+          title: chunk.title || '知识片段',
+          summary: chunk.summary || chunk.content.substring(0, 200),
+          techniques: chunk.techniques || null,
+          matchedTerms: [],
+          vectorScore: r.similarity,
+        })
+      }
     }
-  }).filter(r => r.summary !== null)
+    else if (r.contentType === 'chapter_memory') {
+      const memory = r.chunkId ? memoryMap.get(r.chunkId) : null
+      if (memory) {
+        results.push({
+          id: r.id,
+          title: `章节记忆: ${memory.chapterId}`,
+          summary: memory.summary || '无摘要',
+          techniques: memory.styleNotes || null,
+          matchedTerms: [],
+          vectorScore: r.similarity,
+        })
+      }
+    }
+    // Add persona/fact mapping if needed, or just use the embedding record if it stores enough info
+  }
+
+  return results
 }
 
 function fuseResults(
@@ -194,7 +218,7 @@ function fuseResults(
       title: result.title || '知识片段',
       summary: result.summary!,
       techniques: result.techniques || undefined,
-      score: (keywordScore * 0.3) + (vectorScore * 0.5) + (graphScore * 0.2),
+      score: (keywordScore * 0.25) + (vectorScore * 0.45) + (graphScore * 0.20) + 0.10, // 0.10 as default project relevance
       reasons: [...reasons],
     }))
     .sort((a, b) => b.score - a.score)

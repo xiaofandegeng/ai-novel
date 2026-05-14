@@ -44,7 +44,7 @@ export const knowledgeEmbeddings = pgTable('knowledge_embeddings', {
   chunkId: text('chunk_id'),
   embeddingModel: text('embedding_model').notNull(),
   embeddingVector: vector('embedding_vector', { dimensions: 1536 }),
-  contentType: text('content_type').$type<'knowledge_summary' | 'technique' | 'chapter_memory' | 'fact_summary' | 'persona_memory'>().notNull(),
+  contentType: text('content_type').$type<'knowledge_summary' | 'technique' | 'chapter_memory' | 'fact_summary' | 'persona_memory' | 'style_fingerprint'>().notNull(),
   contentHash: text('content_hash').notNull(),
   ...timestamps,
 })

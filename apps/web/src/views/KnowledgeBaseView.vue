@@ -21,6 +21,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ProjectBreadcrumb from '@/components/ProjectBreadcrumb.vue'
 import AppSidebar from '../components/AppSidebar.vue'
+import KnowledgeRetrievalTest from '../features/knowledge/components/KnowledgeRetrievalTest.vue'
 import KnowledgeSearchResults from '../features/knowledge/components/KnowledgeSearchResults.vue'
 import KnowledgeSourceDrawer from '../features/knowledge/components/KnowledgeSourceDrawer.vue'
 import KnowledgeSourceList from '../features/knowledge/components/KnowledgeSourceList.vue'
@@ -49,7 +50,7 @@ const knowledgeStore = useKnowledgeStore()
 const { uploading, uploadFile, validateFile } = useKnowledgeUpload(projectId)
 
 const loading = ref(true)
-const activeTab = ref<'nodes' | 'library'>('nodes')
+const activeTab = ref<'nodes' | 'library' | 'test'>('nodes')
 const selectedSource = ref<KnowledgeSourceDetail | null>(null)
 const searchQuery = ref('')
 const selectedType = ref<'all' | 'character' | 'setting' | 'conflict'>('all')
@@ -201,11 +202,11 @@ function navigateTo(entry: KnowledgeEntry) {
             </h1>
             <div class="flex rounded-xl bg-bg-page p-1">
               <button
-                v-for="t in [{ id: 'nodes', label: '创作节点' }, { id: 'library', label: '参考书库' }]"
+                v-for="t in [{ id: 'nodes', label: '创作节点' }, { id: 'library', label: '参考书库' }, { id: 'test', label: 'RAG 测试' }]"
                 :key="t.id"
                 class="rounded-lg px-4 py-2 text-xs font-bold tracking-wider uppercase transition-all"
                 :class="activeTab === t.id ? 'bg-bg-surface text-primary shadow-sm' : 'text-text-muted hover:text-text-secondary'"
-                @click="activeTab = t.id as 'nodes' | 'library'"
+                @click="activeTab = t.id as 'nodes' | 'library' | 'test'"
               >
                 {{ t.label }}
               </button>
@@ -256,6 +257,10 @@ function navigateTo(entry: KnowledgeEntry) {
               :uploading="uploading"
               @select="viewSource"
             />
+          </template>
+
+          <template v-if="activeTab === 'test'">
+            <KnowledgeRetrievalTest :project-id="projectId" />
           </template>
         </div>
       </main>
