@@ -77,9 +77,16 @@ export async function getOrCreateEmbedding(input: EmbeddingInput): Promise<numbe
     createdAt: timestamp,
     updatedAt: timestamp,
   }).onConflictDoUpdate({
-    target: knowledgeEmbeddings.id,
+    target: [
+      knowledgeEmbeddings.projectId,
+      knowledgeEmbeddings.embeddingModel,
+      knowledgeEmbeddings.contentType,
+      knowledgeEmbeddings.contentHash,
+    ],
     set: {
       embeddingVector: vector,
+      sourceId: input.sourceId,
+      chunkId: input.chunkId,
       updatedAt: timestamp,
     },
   })
@@ -119,6 +126,7 @@ export async function searchSimilarEmbeddings(params: {
     .where(
       and(
         eq(knowledgeEmbeddings.projectId, projectId),
+        eq(knowledgeEmbeddings.embeddingModel, model),
         contentType ? eq(knowledgeEmbeddings.contentType, contentType) : undefined,
       ),
     )

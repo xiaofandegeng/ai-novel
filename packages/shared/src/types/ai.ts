@@ -24,6 +24,7 @@ export interface AIProviderPreset {
   description: string
   baseUrl: string
   defaultModel: string
+  defaultEmbeddingModel?: string
   apiKeyHint: string
   models: AIProviderModelPreset[]
   requiresCustomModel?: boolean
@@ -36,6 +37,7 @@ export const AI_PROVIDER_PRESETS: AIProviderPreset[] = [
     description: 'OpenAI 官方接口，适合通用创作、润色和结构分析。',
     baseUrl: 'https://api.openai.com/v1',
     defaultModel: 'gpt-4o-mini',
+    defaultEmbeddingModel: 'text-embedding-3-small',
     apiKeyHint: '使用 OpenAI API Key。',
     models: [
       { label: 'GPT-4o Mini', value: 'gpt-4o-mini' },
@@ -64,6 +66,7 @@ export const AI_PROVIDER_PRESETS: AIProviderPreset[] = [
     description: '智谱 OpenAI 兼容接口，可用于 GLM 系列模型。',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     defaultModel: 'glm-5.1',
+    defaultEmbeddingModel: 'embedding-3',
     apiKeyHint: '使用智谱 API Key。模型名可按控制台实际开通情况调整。',
     models: [
       { label: 'GLM 5.1', value: 'glm-5.1' },
@@ -78,6 +81,7 @@ export const AI_PROVIDER_PRESETS: AIProviderPreset[] = [
     description: 'Gemini OpenAI 兼容接口，适合创意发散、总结和多轮分析。',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     defaultModel: 'gemini-2.5-flash',
+    defaultEmbeddingModel: 'text-embedding-004',
     apiKeyHint: '使用 Google AI Studio / Gemini API Key。',
     models: [
       { label: 'Gemini 2.5 Flash', value: 'gemini-2.5-flash' },
@@ -92,6 +96,7 @@ export const AI_PROVIDER_PRESETS: AIProviderPreset[] = [
     description: '火山方舟 OpenAI 兼容接口，模型名通常是方舟控制台里的 endpoint id。',
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     defaultModel: '请填写方舟 endpoint id',
+    defaultEmbeddingModel: 'doubao-embedding-text-240715',
     apiKeyHint: '使用火山引擎方舟 API Key。模型名请填写控制台 endpoint id。',
     models: [
       { label: '自定义 Endpoint ID', value: '请填写方舟 endpoint id' },
@@ -137,6 +142,13 @@ export interface AIProviderSettings {
   model: string
   temperature: number
   hasApiKey: boolean
+
+  embeddingProvider?: string
+  embeddingBaseUrl?: string
+  embeddingModel?: string
+  hasEmbeddingApiKey?: boolean
+  embeddingEnabled?: boolean
+
   updatedAt?: string
 }
 
@@ -147,6 +159,13 @@ export interface UpdateAIProviderSettingsInput {
   temperature?: number
   apiKey?: string
   clearApiKey?: boolean
+
+  embeddingProvider?: string
+  embeddingBaseUrl?: string
+  embeddingModel?: string
+  embeddingApiKey?: string
+  embeddingEnabled?: boolean
+  clearEmbeddingApiKey?: boolean
 }
 
 export interface AIProviderTestResult {
@@ -154,6 +173,13 @@ export interface AIProviderTestResult {
   message: string
   model?: string
   latencyMs?: number
+}
+
+export interface AIEmbeddingTestResult {
+  ok: boolean
+  message: string
+  model?: string
+  dimensions?: number
 }
 
 export interface ChatStreamOptions {

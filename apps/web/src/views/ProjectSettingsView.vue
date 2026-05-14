@@ -29,14 +29,16 @@ import {
 
 import { deleteProject, fetchProject, updateProject } from '../api/projects'
 import AIPromptSettings from '../features/settings/components/AIPromptSettings.vue'
+import ProjectAIProviderSettings from '../features/settings/components/ProjectAIProviderSettings.vue'
 import ProjectExportPanel from '../features/settings/components/ProjectExportPanel.vue'
+import { useAIProviderSettings } from '../features/settings/composables/useAIProviderSettings'
 
 const route = useRoute()
 const router = useRouter()
 const projectId = route.params.id as string
 const toast = useToast()
 
-const activeTab = ref<'general' | 'ai'>('general')
+const activeTab = ref<'general' | 'ai' | 'ai-provider'>('general')
 const loading = ref(true)
 const saving = ref(false)
 const showDeleteConfirm = ref(false)
@@ -60,6 +62,27 @@ const personaForm = reactive({
   enabledForPolish: true,
   enabledForQualityReview: true,
 })
+
+const {
+  aiForm,
+  saving: aiSaving,
+  testing: aiTesting,
+  embeddingTesting,
+  aiTestMessage,
+  embeddingTestMessage,
+  aiProviderOptions,
+  currentAIProviderPreset,
+  currentEmbeddingProviderPreset,
+  aiModelOptions,
+  embeddingModelOptions,
+  aiProviderModel,
+  embeddingProviderModel,
+  aiModelSelectModel,
+  embeddingModelSelectModel,
+  handleSaveAI,
+  handleTestAI,
+  handleTestEmbedding,
+} = useAIProviderSettings(projectId)
 
 async function loadData() {
   loading.value = true
@@ -214,6 +237,13 @@ onMounted(() => {
         @click="activeTab = 'ai'"
       >
         AI 提示词与结构
+      </button>
+      <button
+        class="rounded-lg px-6 py-2 text-sm font-medium transition-all"
+        :class="activeTab === 'ai-provider' ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:bg-bg-page'"
+        @click="activeTab = 'ai-provider'"
+      >
+        AI 模型服务
       </button>
     </div>
 
@@ -443,6 +473,29 @@ onMounted(() => {
 
       <div v-else-if="activeTab === 'ai'" class="animate-in fade-in slide-in-from-bottom-4 mx-auto max-w-4xl w-full duration-500">
         <AIPromptSettings :project-id="projectId" />
+      </div>
+
+      <div v-else-if="activeTab === 'ai-provider'" class="animate-in fade-in slide-in-from-bottom-4 mx-auto max-w-4xl w-full duration-500">
+        <ProjectAIProviderSettings
+          v-model="aiForm"
+          v-model:ai-provider-model="aiProviderModel"
+          v-model:embedding-provider-model="embeddingProviderModel"
+          v-model:ai-model-select-model="aiModelSelectModel"
+          v-model:embedding-model-select-model="embeddingModelSelectModel"
+          :saving="aiSaving"
+          :testing="aiTesting"
+          :embedding-testing="embeddingTesting"
+          :ai-test-message="aiTestMessage"
+          :embedding-test-message="embeddingTestMessage"
+          :ai-provider-options="aiProviderOptions"
+          :current-a-i-provider-preset="currentAIProviderPreset"
+          :current-embedding-provider-preset="currentEmbeddingProviderPreset"
+          :ai-model-options="aiModelOptions"
+          :embedding-model-options="embeddingModelOptions"
+          @save="handleSaveAI"
+          @test="handleTestAI"
+          @test-embedding="handleTestEmbedding"
+        />
       </div>
     </div>
 

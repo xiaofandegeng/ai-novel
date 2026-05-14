@@ -1,4 +1,4 @@
-import { integer, pgTable, text, vector } from 'drizzle-orm/pg-core'
+import { integer, pgTable, text, uniqueIndex, vector } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
 import { novelProjects } from './project'
 
@@ -49,4 +49,7 @@ export const knowledgeEmbeddings = pgTable('knowledge_embeddings', {
   contentType: text('content_type').$type<'knowledge_summary' | 'technique' | 'chapter_memory' | 'fact_summary' | 'persona_memory' | 'style_fingerprint'>().notNull(),
   contentHash: text('content_hash').notNull(),
   ...timestamps,
-})
+}, table => ({
+  contentUnique: uniqueIndex('knowledge_embeddings_content_unique')
+    .on(table.projectId, table.embeddingModel, table.contentType, table.contentHash),
+}))

@@ -1,4 +1,4 @@
-import { integer, pgTable, text } from 'drizzle-orm/pg-core'
+import { boolean, integer, pgTable, text } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
 
 export const novelProjects = pgTable('novel_projects', {
@@ -32,6 +32,13 @@ export const aiSettings = pgTable('ai_settings', {
   model: text('model').notNull().default('gpt-4o-mini'),
   apiKey: text('api_key'),
   temperature: integer('temperature').notNull().default(70),
+
+  embeddingProvider: text('embedding_provider'),
+  embeddingBaseUrl: text('embedding_base_url'),
+  embeddingModel: text('embedding_model'),
+  embeddingApiKey: text('embedding_api_key'),
+  embeddingEnabled: boolean('embedding_enabled').default(true),
+
   createdAt: timestamps.createdAt,
   updatedAt: timestamps.updatedAt,
 })

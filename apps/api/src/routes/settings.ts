@@ -33,4 +33,20 @@ export function registerSettingsRoutes(app: Hono) {
       }))
     }
   })
+
+  app.post('/api/settings/ai/test-embedding', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+
+    try {
+      const result = await aiService.testEmbeddingConnection(body)
+      return c.json(success(result))
+    }
+    catch (error) {
+      const message = error instanceof Error ? error.message : 'Embedding 服务连接失败'
+      return c.json(success({
+        ok: false,
+        message,
+      }))
+    }
+  })
 }

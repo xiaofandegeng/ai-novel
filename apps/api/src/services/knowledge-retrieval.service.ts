@@ -1,7 +1,7 @@
 import type { KnowledgeContextSnippet } from '@ai-novel/shared'
 import { and, eq, inArray, or, sql } from 'drizzle-orm'
 import { db } from '../db'
-import { chapterMemories, characters, knowledgeChunks, storyBibles } from '../db/schema'
+import { chapterMemories, characters, knowledgeChunks, storyBibles, storyFactTriples } from '../db/schema'
 import { searchSimilarEmbeddings } from './embedding.service'
 
 export interface RetrievedKnowledge extends KnowledgeContextSnippet {
@@ -112,10 +112,22 @@ export class KnowledgeRetrievalService {
     if (similar.length === 0)
       return []
 
-    const chunkIds = similar.filter(s => s.contentType === 'knowledge_summary').map(s => s.chunkId).filter(Boolean) as string[]
-    const memoryIds = similar.filter(s => s.contentType === 'chapter_memory').map(s => s.chunkId).filter(Boolean) as string[]
+    const chunkIds = similar
+      .filter(s => ['knowledge_summary', 'technique'].includes(s.contentType))
+      .map(s => s.chunkId)
+      .filter(Boolean) as string[]
 
-    const [chunks, memories] = await Promise.all([
+    const memoryIds = similar
+      .filter(s => s.contentType === 'chapter_memory')
+      .map(s => s.chunkId)
+      .filter(Boolean) as string[]
+
+    const factIds = similar
+      .filter(s => s.contentType === 'fact_summary')
+      .map(s => s.sourceId)
+      .filter(Boolean) as string[]
+
+    const [chunks, memories, facts] = await Promise.all([
       chunkIds.length > 0
         ? db.select().from(knowledgeChunks).where(and(
             eq(knowledgeChunks.projectId, projectId),
@@ -128,11 +140,18 @@ export class KnowledgeRetrievalService {
             inArray(chapterMemories.id, memoryIds),
           ))
         : [],
+      factIds.length > 0
+        ? db.select().from(storyFactTriples).where(and(
+            eq(storyFactTriples.projectId, projectId),
+            inArray(storyFactTriples.id, factIds),
+          ))
+        : [],
     ])
 
     const results: SearchResult[] = []
     const chunkMap = new Map(chunks.map(c => [c.id, c]))
     const memoryMap = new Map(memories.map(m => [m.id, m]))
+    const factMap = new Map(facts.map(f => [f.id, f]))
 
     for (const s of similar) {
       if (s.contentType === 'knowledge_summary' && s.chunkId) {
@@ -147,6 +166,22 @@ export class KnowledgeRetrievalService {
             matchedTerms: [],
             vectorScore: s.similarity,
             importance: c.importance || 5,
+            createdAt: new Date(c.createdAt),
+          })
+        }
+      }
+      else if (s.contentType === 'technique' && s.chunkId) {
+        const c = chunkMap.get(s.chunkId)
+        if (c && (c.techniques || c.summary)) {
+          results.push({
+            id: `${c.id}:technique`,
+            title: c.title ? `技巧：${c.title}` : '参考技巧',
+            summary: c.techniques || c.summary,
+            techniques: c.techniques,
+            source: 'knowledge',
+            matchedTerms: [],
+            vectorScore: s.similarity,
+            importance: Math.max(c.importance || 5, 8),
             createdAt: new Date(c.createdAt),
           })
         }
@@ -167,9 +202,72 @@ export class KnowledgeRetrievalService {
           })
         }
       }
+      else if (s.contentType === 'fact_summary' && s.sourceId) {
+        const f = factMap.get(s.sourceId)
+        if (f) {
+          results.push({
+            id: f.id,
+            title: `事实：${f.subjectName} ${f.predicate} ${f.objectName}`,
+            summary: `${f.subjectName} ${f.predicate} ${f.objectName}${f.notes ? `\n备注：${f.notes}` : ''}`,
+            techniques: null,
+            source: 'fact',
+            matchedTerms: [],
+            vectorScore: s.similarity,
+            importance: 9,
+            createdAt: new Date(f.createdAt),
+          })
+        }
+      }
     }
 
     return results
+  }
+
+  /**
+   * 搜索事实图谱
+   */
+  private static async searchFactTriples(
+    projectId: string,
+    subjects: string[],
+    terms: string[],
+  ): Promise<SearchResult[]> {
+    const names = [...new Set([...subjects, ...terms].filter(Boolean))]
+    if (names.length === 0)
+      return []
+
+    const rows = await db
+      .select()
+      .from(storyFactTriples)
+      .where(and(
+        eq(storyFactTriples.projectId, projectId),
+        eq(storyFactTriples.status, 'confirmed'),
+        or(
+          inArray(storyFactTriples.subjectName, names),
+          inArray(storyFactTriples.objectName, names),
+          ...terms.map(t => sql`${storyFactTriples.predicate} ILIKE ${`%${t}%`}`),
+        ),
+      ))
+      .limit(20)
+
+    return rows.map(row => ({
+      id: row.id,
+      title: `事实：${row.subjectName} ${row.predicate} ${row.objectName}`,
+      summary: [
+        `${row.subjectName} ${row.predicate} ${row.objectName}`,
+        row.notes ? `备注：${row.notes}` : '',
+        row.relatedChapters ? `相关章节：${row.relatedChapters}` : '',
+      ].filter(Boolean).join('\n'),
+      techniques: null,
+      source: 'fact',
+      matchedTerms: names.filter(name =>
+        row.subjectName.includes(name)
+        || row.objectName.includes(name)
+        || row.predicate.includes(name),
+      ),
+      vectorScore: 0,
+      importance: 9,
+      createdAt: new Date(row.createdAt),
+    }))
   }
 
   /**
@@ -229,6 +327,7 @@ export class KnowledgeRetrievalService {
     vectorResults: SearchResult[],
     characterResults: SearchResult[],
     bibleResults: SearchResult[],
+    factResults: SearchResult[],
     limit: number,
   ): RetrievedKnowledge[] {
     const map = new Map<string, { res: SearchResult, kScore: number, vScore: number, rScore: number, iScore: number, reasons: Set<string> }>()
@@ -277,6 +376,12 @@ export class KnowledgeRetrievalService {
       e.reasons.add(`世界观匹配`)
     })
 
+    factResults.forEach((r) => {
+      const e = ensure(r)
+      e.kScore = 1.0
+      e.reasons.add(`事实图谱匹配`)
+    })
+
     return [...map.values()].map(({ res, kScore, vScore, rScore, iScore, reasons }) => {
       // 权重: Keyword(45%) + Vector(25%) + Recency(20%) + Importance(10%)
       const finalScore = (kScore * 0.45) + (vScore * 0.25) + (rScore * 0.20) + (iScore * 0.10)
@@ -303,18 +408,19 @@ export class KnowledgeRetrievalService {
    * AI 上下文检索入口
    */
   public static async retrieve(input: RetrievalInput): Promise<RetrievedKnowledge[]> {
-    const { projectId, terms, limit = 10 } = input
-    if (terms.length === 0)
+    const { projectId, terms, factTripleSubjects, limit = 10 } = input
+    if (terms.length === 0 && factTripleSubjects.length === 0)
       return []
 
-    const [keyword, vector, characters, bible] = await Promise.all([
+    const [keyword, vector, characters, bible, facts] = await Promise.all([
       this.keywordSearch(projectId, terms),
       this.vectorSearch(projectId, terms.join(' ')),
       this.searchCharacters(projectId, terms),
       this.searchStoryBible(projectId, terms),
+      this.searchFactTriples(projectId, factTripleSubjects, terms),
     ])
 
-    return this.fuse(keyword, vector, characters, bible, limit)
+    return this.fuse(keyword, vector, characters, bible, facts, limit)
   }
 }
 

@@ -49,6 +49,13 @@ interface EffectiveAISettings {
   model: string
   apiKey?: string | null
   temperature: number
+
+  embeddingProvider?: string
+  embeddingBaseUrl?: string
+  embeddingModel?: string
+  embeddingApiKey?: string | null
+  embeddingEnabled?: boolean
+
   updatedAt?: string
 }
 
@@ -60,6 +67,12 @@ function defaultAISettings(): EffectiveAISettings {
     model: process.env.AI_MODEL || fallbackPreset.defaultModel,
     apiKey: process.env.AI_API_KEY,
     temperature: Number(process.env.AI_TEMPERATURE || 70),
+
+    embeddingProvider: process.env.AI_EMBEDDING_PROVIDER || fallbackPreset.id,
+    embeddingBaseUrl: process.env.AI_EMBEDDING_BASE_URL || fallbackPreset.baseUrl,
+    embeddingModel: process.env.AI_EMBEDDING_MODEL || fallbackPreset.defaultEmbeddingModel || 'text-embedding-3-small',
+    embeddingApiKey: process.env.AI_EMBEDDING_API_KEY || process.env.AI_API_KEY,
+    embeddingEnabled: true,
   }
 }
 
@@ -70,7 +83,14 @@ export function sanitizeAISettings(settings: EffectiveAISettings) {
     model: settings.model,
     temperature: settings.temperature,
     hasApiKey: Boolean(settings.apiKey),
-    updatedAt: settings.updatedAt,
+
+    embeddingProvider: settings.embeddingProvider ?? undefined,
+    embeddingBaseUrl: settings.embeddingBaseUrl ?? undefined,
+    embeddingModel: settings.embeddingModel ?? undefined,
+    hasEmbeddingApiKey: Boolean(settings.embeddingApiKey),
+    embeddingEnabled: settings.embeddingEnabled ?? true,
+
+    updatedAt: settings.updatedAt ?? undefined,
   }
 }
 
@@ -87,7 +107,14 @@ export async function getEffectiveAISettings(): Promise<EffectiveAISettings> {
     model: saved.model || fallback.model,
     apiKey: saved.apiKey || fallback.apiKey,
     temperature: saved.temperature ?? fallback.temperature,
-    updatedAt: saved.updatedAt,
+
+    embeddingProvider: saved.embeddingProvider || fallback.embeddingProvider,
+    embeddingBaseUrl: saved.embeddingBaseUrl || fallback.embeddingBaseUrl,
+    embeddingModel: saved.embeddingModel || fallback.embeddingModel,
+    embeddingApiKey: saved.embeddingApiKey || saved.apiKey || fallback.embeddingApiKey,
+    embeddingEnabled: saved.embeddingEnabled ?? fallback.embeddingEnabled,
+
+    updatedAt: saved.updatedAt ?? undefined,
   }
 }
 
@@ -105,7 +132,12 @@ function normalizeAISettingsInput(input: UpdateAIProviderSettingsInput, current:
   const baseUrl = input.baseUrl?.trim() || preset?.baseUrl || current.baseUrl
   const model = input.model?.trim() || preset?.defaultModel || current.model
 
-  return { provider, baseUrl, model }
+  const embeddingProvider = input.embeddingProvider?.trim() || current.embeddingProvider || provider
+  const embeddingPreset = AI_PROVIDER_PRESETS.find(p => p.id === embeddingProvider)
+  const embeddingBaseUrl = input.embeddingBaseUrl?.trim() || embeddingPreset?.baseUrl || baseUrl
+  const embeddingModel = input.embeddingModel?.trim() || embeddingPreset?.defaultEmbeddingModel || current.embeddingModel || 'text-embedding-3-small'
+
+  return { provider, baseUrl, model, embeddingProvider, embeddingBaseUrl, embeddingModel }
 }
 
 export async function updateAISettings(input: UpdateAIProviderSettingsInput) {
@@ -121,6 +153,13 @@ export async function updateAISettings(input: UpdateAIProviderSettingsInput) {
     temperature: typeof input.temperature === 'number'
       ? Math.min(100, Math.max(0, Math.round(input.temperature)))
       : current.temperature,
+
+    embeddingProvider: normalized.embeddingProvider,
+    embeddingBaseUrl: normalized.embeddingBaseUrl,
+    embeddingModel: normalized.embeddingModel,
+    embeddingApiKey: input.clearEmbeddingApiKey ? null : input.embeddingApiKey?.trim() || current.embeddingApiKey || null,
+    embeddingEnabled: typeof input.embeddingEnabled === 'boolean' ? input.embeddingEnabled : current.embeddingEnabled,
+
     createdAt: timestamp,
     updatedAt: timestamp,
   }
@@ -136,15 +175,20 @@ export async function updateAISettings(input: UpdateAIProviderSettingsInput) {
         model: next.model,
         apiKey: next.apiKey,
         temperature: next.temperature,
+        embeddingProvider: next.embeddingProvider,
+        embeddingBaseUrl: next.embeddingBaseUrl,
+        embeddingModel: next.embeddingModel,
+        embeddingApiKey: next.embeddingApiKey,
+        embeddingEnabled: next.embeddingEnabled,
         updatedAt: timestamp,
       },
     })
     .returning()
 
-  return sanitizeAISettings(row)
+  return sanitizeAISettings(row as unknown as EffectiveAISettings)
 }
 
-export function createOpenAIClient(settings: EffectiveAISettings) {
+export function createOpenAIClient(settings: { apiKey?: string | null, baseUrl: string }) {
   return new OpenAI({
     apiKey: settings.apiKey || 'missing-key',
     baseURL: settings.baseUrl,
@@ -154,8 +198,7 @@ export function createOpenAIClient(settings: EffectiveAISettings) {
 export async function testAIConnection(input?: UpdateAIProviderSettingsInput) {
   const saved = await getEffectiveAISettings()
   const normalized = input ? normalizeAISettingsInput(input, saved) : saved
-  const settings: EffectiveAISettings = {
-    ...saved,
+  const settings = {
     provider: normalized.provider,
     baseUrl: normalized.baseUrl,
     model: normalized.model,
@@ -184,6 +227,40 @@ export async function testAIConnection(input?: UpdateAIProviderSettingsInput) {
     ok: true,
     message: 'AI 服务连接正常',
     model: settings.model,
+    latencyMs: Date.now() - startedAt,
+  }
+}
+
+export async function testEmbeddingConnection(input?: UpdateAIProviderSettingsInput) {
+  const saved = await getEffectiveAISettings()
+  const normalized = input ? normalizeAISettingsInput(input, saved) : saved
+  const settings = {
+    provider: normalized.embeddingProvider,
+    baseUrl: normalized.embeddingBaseUrl || normalized.baseUrl,
+    model: normalized.embeddingModel,
+    apiKey: input?.embeddingApiKey?.trim() || input?.apiKey?.trim() || saved.embeddingApiKey || saved.apiKey,
+  }
+
+  if (!settings.apiKey) {
+    return {
+      ok: false,
+      message: 'Embedding API Key 未配置',
+      model: settings.model,
+    }
+  }
+
+  const startedAt = Date.now()
+  const client = createOpenAIClient(settings)
+  const response = await client.embeddings.create({
+    model: settings.model || 'text-embedding-3-small',
+    input: 'test',
+  })
+
+  return {
+    ok: true,
+    message: 'Embedding 服务连接正常',
+    model: settings.model || 'text-embedding-3-small',
+    dimensions: response.data[0].embedding.length,
     latencyMs: Date.now() - startedAt,
   }
 }
@@ -329,11 +406,16 @@ export async function* streamChat(
   }
 }
 export async function callAIEmbedding(text: string, options?: { model?: string }): Promise<number[]> {
-  const settings = await assertAIConfigured()
-  const client = createOpenAIClient(settings)
+  const settings = await getEffectiveAISettings()
+  if (settings.embeddingEnabled === false) {
+    throw new Error('当前项目已禁用向量化（Embedding）功能，请在设置中开启。')
+  }
 
-  // 默认使用主流的 embedding 模型名，部分兼容源可能需要用户在设置中自定义
-  const model = options?.model || 'text-embedding-3-small'
+  const model = options?.model || settings.embeddingModel || 'text-embedding-3-small'
+  const client = createOpenAIClient({
+    apiKey: settings.embeddingApiKey || settings.apiKey,
+    baseUrl: settings.embeddingBaseUrl || settings.baseUrl,
+  })
 
   try {
     const response = await client.embeddings.create({
@@ -343,9 +425,8 @@ export async function callAIEmbedding(text: string, options?: { model?: string }
     return response.data[0].embedding
   }
   catch (err: any) {
-    // 某些提供商可能不支持 embeddings 接口，或者模型名不同
     if (err?.status === 404 || err?.message?.includes('model_not_found')) {
-      throw new Error(`当前 AI 提供商或模型 (${model}) 不支持向量嵌入接口`)
+      throw new Error(`当前 AI 提供商或模型 (${model}) 不支持向量嵌入接口，请在设置中检查配置。`)
     }
     throw err
   }

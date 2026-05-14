@@ -1,4 +1,5 @@
 import type {
+  AIEmbeddingTestResult,
   AIProviderPreset,
   AIProviderSettings,
   AIProviderTestResult,
@@ -20,4 +21,8 @@ export function updateAISettings(data: UpdateAIProviderSettingsInput) {
 
 export function testAISettings(data: UpdateAIProviderSettingsInput) {
   return apiPost<AIProviderTestResult>('/api/settings/ai/test', data)
+}
+
+export function testEmbeddingSettings(data: UpdateAIProviderSettingsInput) {
+  return apiPost<AIEmbeddingTestResult>('/api/settings/ai/test-embedding', data)
 }
