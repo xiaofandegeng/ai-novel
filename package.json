@@ -17,6 +17,7 @@
     "db:migrate": "pnpm --filter @ai-novel/api db:migrate",
     "db:migrate:sqlite": "pnpm --filter @ai-novel/api db:migrate:sqlite",
     "db:studio": "pnpm --filter @ai-novel/api db:studio",
+    "smoke:writing-loop": "pnpm --filter @ai-novel/api smoke:writing-loop",
     "typecheck": "pnpm run -r typecheck"
   },
   "devDependencies": {
