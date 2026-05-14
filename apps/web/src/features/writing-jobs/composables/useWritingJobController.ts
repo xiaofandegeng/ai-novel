@@ -49,6 +49,7 @@ export const STEP_LABEL: Record<WritingJobStepType, string> = {
   save_version: '保存快照',
   postprocess: '章后管线',
   confirm_suggestions: '审查建议',
+  apply_suggestions: '应用建议',
   update_health: '更新健康指标',
 }
 

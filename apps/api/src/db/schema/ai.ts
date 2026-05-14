@@ -17,7 +17,7 @@ export const writingJobs = pgTable('writing_jobs', {
 export const writingJobSteps = pgTable('writing_job_steps', {
   id: text('id').primaryKey(),
   jobId: text('job_id').notNull().references(() => writingJobs.id, { onDelete: 'cascade' }),
-  stepType: text('step_type').$type<'prepare_context' | 'generate_plan' | 'confirm_plan' | 'generate_draft' | 'consistency_check' | 'confirm_apply' | 'apply_draft' | 'save_version' | 'postprocess' | 'confirm_suggestions' | 'update_health'>().notNull(),
+  stepType: text('step_type').$type<'prepare_context' | 'generate_plan' | 'confirm_plan' | 'generate_draft' | 'consistency_check' | 'confirm_apply' | 'apply_draft' | 'save_version' | 'postprocess' | 'confirm_suggestions' | 'apply_suggestions' | 'update_health'>().notNull(),
   status: text('status').$type<'pending' | 'running' | 'completed' | 'failed' | 'skipped'>().notNull().default('pending'),
   input: text('input'),
   output: text('output'),

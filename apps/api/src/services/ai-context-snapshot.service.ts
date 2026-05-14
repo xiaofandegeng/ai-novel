@@ -1,35 +1,48 @@
+import { desc, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { aiContextSnapshots } from '../db/schema'
+import { generateId, now } from '../utils'
 
-export async function createAIContextSnapshot(input: {
+export interface CreateSnapshotInput {
   projectId: string
-  chapterId?: string | null
-  scene: string
+  chapterId?: string
+  scene?: string
   requestId: string
-  modelProvider?: string | null
-  modelName?: string | null
-  contextPayload: unknown
+  modelProvider?: string
+  modelName?: string
+  contextPayload: any
   renderedPromptPreview: string
-  tokenEstimate?: number | null
-}) {
-  const preview = input.renderedPromptPreview.length > 8000
-    ? `${input.renderedPromptPreview.substring(0, 8000)}...(已截断)`
-    : input.renderedPromptPreview
+  tokenEstimate?: number
+}
 
-  await db.insert(aiContextSnapshots).values({
-    id: crypto.randomUUID(),
+export async function createAIContextSnapshot(input: CreateSnapshotInput) {
+  const [row] = await db.insert(aiContextSnapshots).values({
+    id: generateId(),
     projectId: input.projectId,
-    chapterId: input.chapterId || null,
+    chapterId: input.chapterId,
     scene: input.scene,
     requestId: input.requestId,
-    modelProvider: input.modelProvider || null,
-    modelName: input.modelName || null,
+    modelProvider: input.modelProvider,
+    modelName: input.modelName,
     contextPayload: JSON.stringify(input.contextPayload),
-    renderedPromptPreview: preview,
-    tokenEstimate: input.tokenEstimate || null,
-  })
+    renderedPromptPreview: input.renderedPromptPreview,
+    tokenEstimate: input.tokenEstimate,
+    createdAt: now(),
+  }).returning()
+  return row
+}
+
+export async function getSnapshotsByProject(projectId: string, limit = 50) {
+  return db.select().from(aiContextSnapshots).where(eq(aiContextSnapshots.projectId, projectId)).orderBy(desc(aiContextSnapshots.createdAt)).limit(limit)
+}
+
+export async function getSnapshotById(id: string) {
+  const [row] = await db.select().from(aiContextSnapshots).where(eq(aiContextSnapshots.id, id))
+  return row || null
 }
 
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 3)
+  // Rough estimate: 1 token per 2 characters for Chinese, 1 per 4 for English
+  // Average around 1 token per 3 characters for mixed
+  return Math.ceil((text || '').length / 2.5)
 }

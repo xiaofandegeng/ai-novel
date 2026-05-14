@@ -4,11 +4,14 @@ import { db } from '../db'
 import { chapters, chapterScenes, writingJobs, writingJobSteps } from '../db/schema'
 import { generateId, now } from '../utils'
 import { renderAIContext } from './ai-context-renderer'
+import { createAIContextSnapshot } from './ai-context-snapshot.service'
 import { buildProjectAIContext } from './ai-context.service'
-import { callAIJSON } from './ai.service'
+import { callAIJSON, getEffectiveAISettings } from './ai.service'
 import { runChapterPostprocess } from './chapter-postprocess.service'
 import { runConsistencyGuard } from './consistency-guard.service'
 import { getProjectHealthMetrics } from './health-metrics.service'
+import { applyAcceptedSuggestions } from './postprocess-suggestion.service'
+import { runGraphInference } from './story-graph-inference.service'
 import { createSnapshot } from './version.service'
 
 type JobMode = 'outline_only' | 'draft_only' | 'outline_then_draft' | 'scene_draft'
@@ -29,6 +32,7 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'save_version',
     'postprocess',
     'confirm_suggestions',
+    'apply_suggestions',
     'update_health',
   ],
   outline_then_draft: [
@@ -42,6 +46,7 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'save_version',
     'postprocess',
     'confirm_suggestions',
+    'apply_suggestions',
     'update_health',
   ],
   scene_draft: [
@@ -55,6 +60,7 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'save_version',
     'postprocess',
     'confirm_suggestions',
+    'apply_suggestions',
     'update_health',
   ],
 }
@@ -76,6 +82,7 @@ const STEP_LABELS: Record<WritingJobStepType, string> = {
   save_version: '保存快照',
   postprocess: '章后管线',
   confirm_suggestions: '审查建议',
+  apply_suggestions: '应用建议',
   update_health: '更新健康指标',
 }
 
@@ -168,6 +175,20 @@ async function executePrepareContext(
     userInstruction: '为下一章生成写作计划和正文',
   })
   const rendered = renderAIContext(context)
+
+  // Record snapshot
+  const settings = await getEffectiveAISettings()
+  await createAIContextSnapshot({
+    projectId,
+    chapterId: chapterId || undefined,
+    scene: 'outline',
+    requestId: stepId, // Use stepId as requestId for mapping
+    modelProvider: typeof settings.provider === 'string' ? settings.provider : (settings.provider as any).id,
+    modelName: settings.model,
+    contextPayload: context,
+    renderedPromptPreview: rendered,
+  }).catch(err => console.error('Failed to create AI context snapshot:', err))
+
   const output = JSON.stringify({ context, rendered })
   await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
   return output
@@ -420,6 +441,25 @@ async function executePostprocess(
     trigger: 'auto_drive',
   })
 
+  // Also trigger graph inference after postprocess to identify more candidates
+  const inferenceCount = await runGraphInference(projectId).catch(() => 0)
+
+  const output = JSON.stringify({ ...result, inferenceCount })
+  await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
+  return output
+}
+
+async function executeApplySuggestions(
+  projectId: string,
+  chapterId: string | null,
+  stepId: string,
+): Promise<string> {
+  if (!chapterId) {
+    await updateStep(stepId, { output: JSON.stringify({ skipped: true, reason: 'no_chapter' }), status: 'completed', finishedAt: now() })
+    return JSON.stringify({ skipped: true })
+  }
+
+  const result = await applyAcceptedSuggestions(projectId, chapterId)
   const output = JSON.stringify(result)
   await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
   return output
@@ -529,6 +569,10 @@ async function executeStep(
         // Pause point
         await updateStep(step.id, { status: 'completed', finishedAt: now() })
         return false
+
+      case 'apply_suggestions':
+        await executeApplySuggestions(projectId, chapterId, step.id)
+        break
 
       case 'update_health':
         await executeUpdateHealth(projectId, step.id)

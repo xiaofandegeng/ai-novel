@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { chapterElements, chapterPostprocessSuggestions, characterRelationships, storyFactTriples } from '../db/schema'
+import { chapterElements, chapterPostprocessSuggestions, characterRelationships, conflicts, foreshadowingItems, storyFactTriples } from '../db/schema'
 import { createSuggestion } from './postprocess-suggestion.service'
 
 export async function runGraphInference(projectId: string) {
@@ -15,8 +15,14 @@ export async function runGraphInference(projectId: string) {
   const relationships = await db.select().from(characterRelationships).where(
     eq(characterRelationships.projectId, projectId),
   )
+  const projectConflicts = await db.select().from(conflicts).where(
+    eq(conflicts.projectId, projectId),
+  )
+  const openForeshadowing = await db.select().from(foreshadowingItems).where(
+    and(eq(foreshadowingItems.projectId, projectId), eq(foreshadowingItems.status, 'open')),
+  )
   const existingSuggestions = await db.select().from(chapterPostprocessSuggestions).where(
-    and(eq(chapterPostprocessSuggestions.projectId, projectId), eq(chapterPostprocessSuggestions.suggestionType, 'fact_triple')),
+    and(eq(chapterPostprocessSuggestions.projectId, projectId)),
   )
 
   const existingInferenceKeys = new Set<string>()
@@ -160,6 +166,62 @@ export async function runGraphInference(projectId: string) {
           reason: `传递推理：${subject} ${t1.predicate} ${t1.objectName}，${t1.objectName} ${t2.predicate} ${t2.objectName}`,
         }, 40, `传递推理：${subject} ${t1.predicate} ${t1.objectName}，${t1.objectName} ${t2.predicate} ${t2.objectName}`)
         existingTripleKeys.add(tripleKey)
+        markCreated(inferenceKey)
+      }
+    }
+  }
+
+  // Rule 3: Conflict Escalation — aggressive facts matching existing conflicts
+  const aggressivePredicates = new Set(['攻击', '威胁', '欺骗', '背叛', '冲突', '争吵', '打斗', '阻挠'])
+  for (const t of triples) {
+    if (!aggressivePredicates.has(t.predicate))
+      continue
+
+    // Find conflict involving these characters
+    const matchedConflict = projectConflicts.find(c =>
+      (c.participants?.includes(t.subjectName) && c.participants?.includes(t.objectName))
+      || (c.title.includes(t.subjectName) && c.title.includes(t.objectName)),
+    )
+
+    if (matchedConflict && matchedConflict.status !== 'resolved') {
+      const inferenceKey = `conflict_escalation:${t.id}:${matchedConflict.id}`
+      if (existingInferenceKeys.has(inferenceKey))
+        continue
+
+      await createSuggestion(projectId, t.sourceChapterId || 'unknown', null, 'conflict_update', {
+        conflictId: matchedConflict.id,
+        title: matchedConflict.title,
+        newIntensity: Math.min(10, matchedConflict.intensity + 1),
+        reason: `系统检测到冲突升级事实：${t.subjectName} ${t.predicate} ${t.objectName}`,
+        inferenceKey,
+        inferenceRule: 'conflict_escalation',
+        sourceTripleIds: [t.id],
+      }, 60, `冲突升级推理：基于事实“${t.subjectName}${t.predicate}${t.objectName}”`)
+
+      markCreated(inferenceKey)
+    }
+  }
+
+  // Rule 4: Foreshadowing Payoff — facts matching open foreshadowing
+  for (const t of triples) {
+    for (const fs of openForeshadowing) {
+      const isMatch = fs.title.includes(t.subjectName) || fs.title.includes(t.objectName)
+        || fs.description?.includes(t.subjectName) || fs.description?.includes(t.objectName)
+
+      if (isMatch) {
+        const inferenceKey = `foreshadowing_payoff:${t.id}:${fs.id}`
+        if (existingInferenceKeys.has(inferenceKey))
+          continue
+
+        await createSuggestion(projectId, t.sourceChapterId || 'unknown', null, 'foreshadowing_payoff', {
+          foreshadowingId: fs.id,
+          title: fs.title,
+          sourceText: `事实触发：${t.subjectName} ${t.predicate} ${t.objectName}`,
+          inferenceKey,
+          inferenceRule: 'foreshadowing_payoff',
+          sourceTripleIds: [t.id],
+        }, 40, `伏笔回收推理：事实“${t.subjectName}${t.predicate}${t.objectName}”疑似对应伏笔“${fs.title}”`)
+
         markCreated(inferenceKey)
       }
     }
