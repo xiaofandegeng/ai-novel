@@ -89,6 +89,11 @@ const router = createRouter({
       component: () => import('@/views/ProjectSettingsView.vue'),
     },
     {
+      path: '/project/:id/weekly-report',
+      name: 'weekly-report',
+      component: () => import('@/views/AuthoringWeeklyReportView.vue'),
+    },
+    {
       path: '/persona',
       name: 'persona-library',
       component: () => import('@/views/PersonaLibraryView.vue'),

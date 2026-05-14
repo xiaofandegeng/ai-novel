@@ -6,6 +6,10 @@ import { logger } from 'hono/logger'
 import { registerActRoutes } from './routes/acts'
 import { registerAiRoutes } from './routes/ai'
 import { registerAIContextSnapshotRoutes } from './routes/ai-context-snapshots'
+import { registerAIQualityFeedbackRoutes } from './routes/ai-quality-feedback'
+import { registerAIUsageRoutes } from './routes/ai-usage'
+import { registerAuthoringEventRoutes } from './routes/authoring-events'
+import { registerAuthoringReportRoutes } from './routes/authoring-reports'
 import { registerChapterElementRoutes } from './routes/chapter-elements'
 import { registerChapterRoutes } from './routes/chapters'
 import { registerCharacterRoutes } from './routes/characters'
@@ -67,6 +71,10 @@ registerStoryStructureRoutes(app)
 registerContinuityRoutes(app)
 registerPersonaMemoryRoutes(app)
 registerDataPortabilityRoutes(app)
+registerAuthoringEventRoutes(app)
+registerAIQualityFeedbackRoutes(app)
+registerAIUsageRoutes(app)
+registerAuthoringReportRoutes(app)
 
 app.notFound((c) => {
   return c.json({ error: 'Not Found' }, 404)

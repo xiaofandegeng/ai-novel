@@ -29,11 +29,11 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'apply', content: string): void
-  (e: 'insert', content: string): void
+  (e: 'apply', content: string, metadata?: { provider?: string, model?: string, requestId?: string }): void
+  (e: 'insert', content: string, metadata?: { provider?: string, model?: string, requestId?: string }): void
   (e: 'consistencyCheck', payload: { report?: ConsistencyGuardReport, loading: boolean }): void
   (e: 'runAi', type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'): void
-  (e: 'stream', content: string): void
+  (e: 'stream', content: string, metadata?: { provider?: string, model?: string, requestId?: string }): void
 }>()
 
 const router = useRouter()
@@ -72,9 +72,10 @@ function handleQuickAction(type: 'draft' | 'continue' | 'brainstorm') {
 
 watch(() => messages.value[messages.value.length - 1], (last) => {
   if (last && last.role === 'assistant') {
+    const metadata = { provider: last.provider, model: last.model, requestId: last.requestId }
     if (isStreaming.value) {
       scrollToBottom()
-      emit('stream', last.content)
+      emit('stream', last.content, metadata)
     }
 
     // Notify parent about consistency check status
@@ -263,7 +264,7 @@ defineExpose({
             size="sm"
             aria-label="应用 AI 回复到编辑器"
             :disabled="msg.consistencyReport?.overallStatus === 'blocked' || msg.consistencyCheckFailed"
-            @click="emit('insert', msg.content)"
+            @click="emit('insert', msg.content, { provider: msg.provider, model: msg.model, requestId: msg.requestId })"
           >
             {{
               msg.consistencyCheckFailed

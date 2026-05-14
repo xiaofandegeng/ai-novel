@@ -7,6 +7,14 @@ import OpenAI from 'openai'
 import { db } from '../db'
 import { aiSettings } from '../db/schema'
 import { now } from '../utils'
+import { AIUsageService } from './ai-usage.service'
+
+interface AIMetadata {
+  projectId?: string
+  chapterId?: string
+  contextSnapshotId?: string
+  taskType?: string
+}
 
 export class AIError extends Error {
   constructor(message: string, public code: string, public status?: number) {
@@ -195,21 +203,44 @@ export async function callAIJSON<T = Record<string, unknown>>(
     temperature?: number
     responseFormat?: { type: 'json_object' }
     maxRetries?: number
+    metadata?: AIMetadata
   },
 ): Promise<T> {
   const settings = await assertAIConfigured()
   const client = createOpenAIClient(settings)
   const maxRetries = options?.maxRetries ?? 2
+  const model = options?.model || settings.model
+  const taskType = options?.metadata?.taskType || 'unknown'
+  const startedAt = Date.now()
   let lastError: any
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await client.chat.completions.create({
-        model: options?.model || settings.model,
+        model,
         messages,
         temperature: (options?.temperature ?? settings.temperature) / 100,
         response_format: options?.responseFormat || { type: 'json_object' },
       })
+
+      const latencyMs = Date.now() - startedAt
+      const usage = response.usage
+
+      if (options?.metadata?.projectId) {
+        await AIUsageService.recordUsage({
+          projectId: options.metadata.projectId,
+          chapterId: options.metadata.chapterId,
+          contextSnapshotId: options.metadata.contextSnapshotId,
+          provider: settings.provider,
+          model,
+          taskType,
+          promptTokens: usage?.prompt_tokens || 0,
+          completionTokens: usage?.completion_tokens || 0,
+          totalTokens: usage?.total_tokens || 0,
+          latencyMs,
+          status: 'success',
+        })
+      }
 
       const content = response.choices[0]?.message?.content
       if (!content)
@@ -232,6 +263,22 @@ export async function callAIJSON<T = Record<string, unknown>>(
         const delay = 2 ** attempt * 1000
         console.warn(`AI call failed, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries}):`, err.message)
         await sleep(delay)
+      }
+      else if (options?.metadata?.projectId) {
+        await AIUsageService.recordUsage({
+          projectId: options.metadata.projectId,
+          chapterId: options.metadata.chapterId,
+          contextSnapshotId: options.metadata.contextSnapshotId,
+          provider: settings.provider,
+          model,
+          taskType,
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          latencyMs: Date.now() - startedAt,
+          status: 'error',
+          errorCode: err.code || err.name || 'UNKNOWN',
+        })
       }
     }
   }

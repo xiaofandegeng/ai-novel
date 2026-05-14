@@ -2,10 +2,12 @@
 import type { PendingAIResult } from '../composables/useAIResultConfirm'
 import { NButton } from '@ai-novel/ui'
 import { AlertTriangle, CheckCircle2, Loader2, Sparkles, XCircle } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import AIQualityFeedbackPanel from '../../../components/AIQualityFeedbackPanel.vue'
 
 const props = defineProps<{
   result: PendingAIResult | null
+  projectId: string
 }>()
 
 const emit = defineEmits<{
@@ -14,6 +16,15 @@ const emit = defineEmits<{
 
 const isBlocked = computed(() => props.result?.consistencyReport?.overallStatus === 'blocked')
 const isChecking = computed(() => props.result?.isCheckingConsistency)
+
+const showFeedback = ref(false)
+
+function handleAction(action: 'insert' | 'replace' | 'backup' | 'discard') {
+  emit('confirm', action)
+  if (action !== 'backup') {
+    showFeedback.value = true
+  }
+}
 </script>
 
 <template>
@@ -35,7 +46,7 @@ const isChecking = computed(() => props.result?.isCheckingConsistency)
             </p>
           </div>
         </div>
-        <NButton variant="ghost" size="sm" @click="emit('confirm', 'discard')">
+        <NButton variant="ghost" size="sm" @click="handleAction('discard')">
           放弃
         </NButton>
       </div>
@@ -81,7 +92,7 @@ const isChecking = computed(() => props.result?.isCheckingConsistency)
           variant="ai"
           :disabled="isBlocked || isChecking"
           :title="isBlocked ? '一致性检查未通过，禁止直接应用' : ''"
-          @click="emit('confirm', 'replace')"
+          @click="handleAction('replace')"
         >
           替换选中项
         </NButton>
@@ -90,14 +101,32 @@ const isChecking = computed(() => props.result?.isCheckingConsistency)
           variant="ai"
           :disabled="isBlocked || isChecking"
           :title="isBlocked ? '一致性检查未通过，禁止直接应用' : ''"
-          @click="emit('confirm', 'insert')"
+          @click="handleAction('insert')"
         >
           {{ result.originalText ? '在选中处插入' : '在光标处插入' }}
         </NButton>
-        <NButton class="flex-1" variant="secondary" @click="emit('confirm', 'backup')">
+        <NButton class="flex-1" variant="secondary" @click="handleAction('backup')">
           存为备份版本
         </NButton>
       </div>
+
+      <!-- Quality Feedback -->
+      <Transition
+        enter-active-class="transition duration-500 ease-out"
+        enter-from-class="opacity-0 max-h-0"
+        enter-to-class="opacity-100 max-h-[400px]"
+      >
+        <div v-if="showFeedback && result" class="mt-4">
+          <AIQualityFeedbackPanel
+            :project-id="projectId"
+            :context-snapshot-id="result.contextSnapshotId"
+            :model-provider="result.modelProvider || 'unknown'"
+            :model-name="result.modelName || 'unknown'"
+            :task-type="result.source"
+            @submitted="showFeedback = false"
+          />
+        </div>
+      </Transition>
     </div>
   </Transition>
 </template>

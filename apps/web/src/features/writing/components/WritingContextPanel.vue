@@ -20,11 +20,11 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'applyAI', content: string): void
-  (e: 'insertAi', content: string): void
+  (e: 'applyAI', content: string, metadata?: { provider?: string, model?: string, requestId?: string }): void
+  (e: 'insertAi', content: string, metadata?: { provider?: string, model?: string, requestId?: string }): void
   (e: 'consistencyCheck', payload: { report?: any, loading: boolean }): void
   (e: 'runAi', type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'): void
-  (e: 'streamAI', content: string): void
+  (e: 'streamAI', content: string, metadata?: { provider?: string, model?: string, requestId?: string }): void
 }>()
 
 const activeContextTab = ref('outline')
@@ -319,11 +319,11 @@ defineExpose({
           :scene-id="sceneId"
           :context="aiContext"
           :scene="pendingScene"
-          @apply="emit('applyAI', $event)"
-          @insert="emit('insertAi', $event)"
+          @apply="(content, metadata) => emit('applyAI', content, metadata)"
+          @insert="(content, metadata) => emit('insertAi', content, metadata)"
           @consistency-check="emit('consistencyCheck', $event)"
           @run-ai="emit('runAi', $event)"
-          @stream="emit('streamAI', $event)"
+          @stream="(content, metadata) => emit('streamAI', content, metadata)"
         />
       </div>
     </div>

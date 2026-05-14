@@ -11,6 +11,9 @@ export interface PendingAIResult {
   originalText: string
   consistencyReport?: ConsistencyGuardReport
   isCheckingConsistency?: boolean
+  modelProvider?: string
+  modelName?: string
+  contextSnapshotId?: string
 }
 
 export interface AIActionType {
@@ -27,7 +30,7 @@ export function useAIResultConfirm(
 ) {
   const pendingAIResult = ref<PendingAIResult | null>(null)
 
-  function applyAIResult(text: string) {
+  function applyAIResult(text: string, metadata?: { provider?: string, model?: string, snapshotId?: string }) {
     if (!pendingAIResult.value || pendingAIResult.value.source === 'chat') {
       pendingAIResult.value = {
         content: text,
@@ -35,10 +38,18 @@ export function useAIResultConfirm(
         selectionStart: selectionStart.value,
         selectionEnd: selectionEnd.value,
         originalText: selectedText.value,
+        modelProvider: metadata?.provider,
+        modelName: metadata?.model,
+        contextSnapshotId: metadata?.snapshotId,
       }
     }
     else {
       pendingAIResult.value.content = text
+      if (metadata) {
+        pendingAIResult.value.modelProvider = metadata.provider
+        pendingAIResult.value.modelName = metadata.model
+        pendingAIResult.value.contextSnapshotId = metadata.snapshotId
+      }
     }
   }
 
@@ -149,13 +160,16 @@ export function useAIResultConfirm(
     return `请${actionMap[type]}，确保符合作品整体风格：\n\n"${selectedText.value}"`
   }
 
-  function initPendingResult(type: AIActionType['type']) {
+  function initPendingResult(type: AIActionType['type'], metadata?: { provider?: string, model?: string, snapshotId?: string }) {
     pendingAIResult.value = {
       content: '',
       source: type,
       selectionStart: selectionStart.value,
       selectionEnd: selectionEnd.value,
       originalText: selectedText.value,
+      modelProvider: metadata?.provider,
+      modelName: metadata?.model,
+      contextSnapshotId: metadata?.snapshotId,
     }
   }
 

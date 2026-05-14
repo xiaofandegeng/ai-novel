@@ -323,7 +323,7 @@ async function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discar
   }
 }
 
-async function handleInsertAI(content: string) {
+async function handleInsertAI(content: string, metadata?: { provider?: string, model?: string, requestId?: string }) {
   const start = selectionStart.value
   const end = selectionEnd.value
   if (start !== end) {
@@ -332,6 +332,14 @@ async function handleInsertAI(content: string) {
   else {
     activeContent.value = activeContent.value.substring(0, start) + content + activeContent.value.substring(start)
   }
+
+  // Update pending result metadata if it matches
+  if (pendingAIResult.value && pendingAIResult.value.content === content) {
+    pendingAIResult.value.modelProvider = metadata?.provider
+    pendingAIResult.value.modelName = metadata?.model
+    pendingAIResult.value.contextSnapshotId = metadata?.requestId
+  }
+
   toast.add('已应用到编辑器', 'success')
   if (sceneMode.value) {
     await handleSceneSave()
@@ -366,6 +374,14 @@ async function handleUpdateMemory() {
   finally {
     updatingMemory.value = false
   }
+}
+
+function handleApplyAIResult(content: string, metadata?: any) {
+  applyAIResult(content, { provider: metadata?.provider, model: metadata?.model, snapshotId: metadata?.requestId })
+}
+
+function handleStreamAIResult(content: string, metadata?: any) {
+  applyAIResult(content, { provider: metadata?.provider, model: metadata?.model, snapshotId: metadata?.requestId })
 }
 </script>
 
@@ -444,6 +460,7 @@ async function handleUpdateMemory() {
         <template #ai-pending-result>
           <AIPendingResultPanel
             :result="pendingAIResult"
+            :project-id="projectId"
             @confirm="handleConfirmAI"
           />
         </template>
@@ -460,11 +477,11 @@ async function handleUpdateMemory() {
         :scene-id="sceneMode ? currentSceneId : null"
         :project-summary="projectSummary"
         :story-path="storyPath"
-        @apply-a-i="applyAIResult"
+        @apply-a-i="handleApplyAIResult"
         @insert-a-i="handleInsertAI"
         @consistency-check="updateConsistency($event.report, $event.loading)"
         @run-ai="handleRunAI"
-        @stream-a-i="applyAIResult"
+        @stream-a-i="handleStreamAIResult"
       />
     </div>
   </NAppLayout>

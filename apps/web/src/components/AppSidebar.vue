@@ -5,6 +5,7 @@ import {
   BookOpen,
   Bot,
   Bug,
+  Calendar,
   ClipboardList,
   History,
   LayoutDashboard,
@@ -97,6 +98,12 @@ const menuItems = [
     path: `/project/${props.projectId}/health`,
     icon: Activity,
     activeMatch: /health/,
+  },
+  {
+    name: '创作周报',
+    path: `/project/${props.projectId}/weekly-report`,
+    icon: Calendar,
+    activeMatch: /weekly-report/,
   },
   {
     name: '自动写作',

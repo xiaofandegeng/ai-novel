@@ -16,10 +16,12 @@ export interface AIMessage {
   isCheckingConsistency?: boolean
   consistencyCheckFailed?: boolean
   consistencyCheckError?: string
+  provider?: string
+  requestId?: string
 }
 
 export function useAIAssistantSession() {
-  const { isStreaming, streamedContent, stream: streamAI } = useAIStream()
+  const { isStreaming, streamedContent, lastMetadata, stream: streamAI } = useAIStream()
 
   const messages = ref<AIMessage[]>([])
   const selectedModel = ref('')
@@ -73,6 +75,12 @@ export function useAIAssistantSession() {
           userInstruction: userMsg,
           model: selectedModel.value,
         })
+        const meta = lastMetadata.value
+        if (meta) {
+          messages.value[lastIndex].provider = meta.provider
+          messages.value[lastIndex].model = meta.model
+          messages.value[lastIndex].requestId = meta.requestId
+        }
       }
       else {
         isStreaming.value = true
@@ -80,6 +88,11 @@ export function useAIAssistantSession() {
           [{ role: 'user', content: userMsg }],
           { projectId: opts.projectId, context: opts.context, model: selectedModel.value, scene: opts.scene || 'chat' },
         )
+
+        messages.value[lastIndex].provider = response.headers.get('X-AI-Provider') || undefined
+        messages.value[lastIndex].model = response.headers.get('X-AI-Model') || selectedModel.value
+        messages.value[lastIndex].requestId = response.headers.get('X-AI-Request-Id') || undefined
+
         result = await readChatStream(response, (text) => {
           messages.value[lastIndex].content = text
         })

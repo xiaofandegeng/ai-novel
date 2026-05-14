@@ -6,7 +6,8 @@ import { aiContextSnapshots } from '../db/schema'
 import { renderAIContext } from '../services/ai-context-renderer'
 import { createAIContextSnapshot, estimateTokens } from '../services/ai-context-snapshot.service'
 import { buildProjectAIContext } from '../services/ai-context.service'
-import { assertAIConfigured, streamChat } from '../services/ai.service'
+import { assertAIConfigured, getEffectiveAISettings, streamChat } from '../services/ai.service'
+import { AuthoringEventService } from '../services/authoring-event.service'
 import { runConsistencyGuard } from '../services/consistency-guard.service'
 import { buildPersonaPromptForProject } from '../services/persona-prompt.service'
 import { fail, success } from '../utils'
@@ -31,6 +32,9 @@ export function registerAiRoutes(app: Hono) {
 
       const renderedPrompt = renderAIContext(context)
 
+      const settings = await getEffectiveAISettings()
+      const effectiveModel = model || settings.model
+
       // Write context snapshot (don't block the stream on failure)
       const requestId = crypto.randomUUID()
       createAIContextSnapshot({
@@ -41,9 +45,21 @@ export function registerAiRoutes(app: Hono) {
         contextPayload: context,
         renderedPromptPreview: renderedPrompt,
         tokenEstimate: estimateTokens(renderedPrompt),
+      })
+
+      // Log event
+      AuthoringEventService.logEvent({
+        projectId,
+        chapterId,
+        sceneId,
+        eventType: 'ai_generation_started',
+        source: 'ai',
+        payload: { scene, taskType: scene, model: effectiveModel, requestId },
       }).catch(() => {})
 
       c.header('X-AI-Request-Id', requestId)
+      c.header('X-AI-Model', effectiveModel)
+      c.header('X-AI-Provider', settings.provider)
 
       return streamText(c, async (stream) => {
         try {
