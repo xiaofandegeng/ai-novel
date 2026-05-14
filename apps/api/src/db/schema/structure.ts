@@ -1,5 +1,7 @@
-import { integer, pgTable, text } from 'drizzle-orm/pg-core'
+import { integer, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
+import { characters } from './character'
+
 import { novelProjects } from './project'
 
 export const volumes = pgTable('volumes', {
@@ -37,3 +39,15 @@ export const conflicts = pgTable('conflicts', {
   resolution: text('resolution'),
   ...timestamps,
 })
+
+export const conflictParticipants = pgTable('conflict_participants', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  conflictId: text('conflict_id').notNull().references(() => conflicts.id, { onDelete: 'cascade' }),
+  characterId: text('character_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
+  roleInConflict: text('role_in_conflict'),
+  ...timestamps,
+}, table => ({
+  conflictParticipantUnique: uniqueIndex('conflict_participants_unique')
+    .on(table.projectId, table.conflictId, table.characterId),
+}))

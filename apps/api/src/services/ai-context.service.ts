@@ -3,6 +3,7 @@ import type {
   BuiltAIContext,
   CharacterContextSummary,
   ConflictContextSummary,
+  ForeshadowingContextSummary,
   RelationshipContextSummary,
 } from '@ai-novel/shared'
 import { and, asc, desc, eq, lt, or, sql } from 'drizzle-orm'
@@ -14,7 +15,9 @@ import {
   chapterScenes,
   characterRelationships,
   characters,
+  conflictParticipants,
   conflicts,
+  foreshadowingCharacters,
   foreshadowingItems,
   novelProjects,
   projectPersonaConfigs,
@@ -112,18 +115,6 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
       .map(e => e.elementId as string),
   )
 
-  // 辅助函数：解析存储在 text 字段中的 JSON ID 数组
-  const parseIds = (idStr: string | null | undefined): string[] => {
-    if (!idStr)
-      return []
-    try {
-      return JSON.parse(idStr)
-    }
-    catch {
-      return []
-    }
-  }
-
   // 3.1 提取核心角色详情
   const characterSummaries: CharacterContextSummary[] = allCharacters.map((c) => {
     const isMajor = activeCharacterIds.has(c.id)
@@ -159,21 +150,29 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
 
   // 4. Fetch Conflicts
   const allConflicts = await db.select().from(conflicts).where(eq(conflicts.projectId, projectId))
+  const conflictParticipantsRows = await db
+    .select({
+      conflictId: conflictParticipants.conflictId,
+      characterName: characters.name,
+    })
+    .from(conflictParticipants)
+    .innerJoin(characters, eq(conflictParticipants.characterId, characters.id))
+    .where(eq(conflictParticipants.projectId, projectId))
+
   const conflictSummaries: ConflictContextSummary[] = allConflicts
     .filter(c => c.status !== 'resolved' && c.status !== 'abandoned')
     .map((c) => {
-      // 尝试通过 participantIds 匹配具体的角色名，增强上下文准确性
-      const pIds = parseIds(c.participantIds)
-      const resolvedParticipants = pIds.length > 0
-        ? allCharacters.filter(char => pIds.includes(char.id)).map(char => char.name).join('、')
-        : c.participants
+      const participants = conflictParticipantsRows
+        .filter(p => p.conflictId === c.id)
+        .map(p => p.characterName)
 
       return {
         title: c.title,
         type: c.type,
         intensity: c.intensity,
         status: c.status,
-        participants: resolvedParticipants || undefined,
+        participants: participants.length > 0 ? participants.join('、') : (c.participants || undefined),
+        participantNames: participants.length > 0 ? participants : undefined,
         description: c.description || undefined,
       }
     })
@@ -205,6 +204,7 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
   }
 
   // 6. Knowledge Snippets (Hybrid Retrieval)
+  // ... (lines 208-228 skipped in this replacement for brevity, I'll match them exactly) ...
   const searchTerms = buildKnowledgeSearchTerms({
     userInstruction,
     chapterTitle: currentChapterData?.title,
@@ -233,7 +233,7 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     : []
 
   // 7. Assemble Nearby Chapters
-  // 7. Assemble Nearby Chapters (Restricted to same volume if possible)
+  // ... (lines 235-324 skipped) ...
   let nearbyChapters: BuiltAIContext['nearbyChapters'] | undefined
   if (currentChapterData) {
     const volumeId = currentChapterData.volumeId
@@ -262,7 +262,6 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     }
   }
 
-  // 8. Fetch recent chapter memories for continuity
   const recentMemories: string[] = []
   if (currentChapterData) {
     const memoryRows = await db
@@ -309,7 +308,6 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     }
   }
 
-  // 9. Fetch chapter elements for current chapter
   let chapterElementSummaries: string[] = []
   if (currentChapterData) {
     const elements = await db.select().from(chapterElements).where(
@@ -323,7 +321,7 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
   }
 
   // 10. Fetch foreshadowing items for current chapter + all open items
-  let foreshadowingContext: string[] = []
+  let foreshadowingSummaries: ForeshadowingContextSummary[] = []
   if (currentChapterData) {
     const chapterItems = await db.select().from(foreshadowingItems).where(
       and(
@@ -338,12 +336,28 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
       and(eq(foreshadowingItems.projectId, projectId), eq(foreshadowingItems.status, 'open')),
     )
     const allItems = [...new Map([...chapterItems, ...openItems].map(i => [i.id, i])).values()]
-    foreshadowingContext = allItems.map((i) => {
-      const cIds = parseIds(i.characterIds)
-      const resolvedChars = cIds.length > 0
-        ? allCharacters.filter(char => cIds.includes(char.id)).map(char => char.name).join('、')
-        : i.relatedCharacters
-      return `- ${i.title} (${i.status}/${i.importance})${resolvedChars ? ` 相关角色:${resolvedChars}` : ''}${i.description ? `: ${i.description}` : ''}`
+
+    const foreshadowingCharactersRows = await db
+      .select({
+        foreshadowingId: foreshadowingCharacters.foreshadowingId,
+        characterName: characters.name,
+      })
+      .from(foreshadowingCharacters)
+      .innerJoin(characters, eq(foreshadowingCharacters.characterId, characters.id))
+      .where(eq(foreshadowingCharacters.projectId, projectId))
+
+    foreshadowingSummaries = allItems.map((i) => {
+      const charNames = foreshadowingCharactersRows
+        .filter(p => p.foreshadowingId === i.id)
+        .map(p => p.characterName)
+
+      return {
+        title: i.title,
+        description: i.description || undefined,
+        status: i.status,
+        importance: i.importance,
+        characterNames: charNames.length > 0 ? charNames : undefined,
+      }
     })
   }
 
@@ -477,7 +491,7 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     personaMemory,
     chapterMemories: recentMemories,
     chapterElements: chapterElementSummaries,
-    foreshadowingItems: foreshadowingContext,
+    foreshadowingItems: foreshadowingSummaries,
     factTriples: factTripleContext,
     constraints: [
       '保持已有设定一致性',

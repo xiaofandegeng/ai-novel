@@ -1,8 +1,9 @@
 import type { Hono } from 'hono'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { conflicts } from '../db/schema'
+import { conflictParticipants, conflicts } from '../db/schema'
 import { matchCharacterIdsFromText } from '../services/character-utils.service'
+import { assertCharactersBelongToProject, assertConflictBelongsToProject } from '../services/ownership.service'
 import { fail, generateId, success, updatedFields } from '../utils'
 
 export function registerConflictRoutes(app: Hono) {
@@ -71,5 +72,46 @@ export function registerConflictRoutes(app: Hono) {
     if (!row)
       return c.json(fail('Conflict not found'), 404)
     return c.json(success(row, 'Conflict deleted'))
+  })
+
+  // Conflict Participants
+  app.get('/api/projects/:projectId/conflicts/:id/participants', async (c) => {
+    const projectId = c.req.param('projectId')
+    const id = c.req.param('id')
+    await assertConflictBelongsToProject(projectId, id)
+
+    const rows = await db.select().from(conflictParticipants).where(
+      and(eq(conflictParticipants.projectId, projectId), eq(conflictParticipants.conflictId, id)),
+    )
+    return c.json(success(rows))
+  })
+
+  app.put('/api/projects/:projectId/conflicts/:id/participants', async (c) => {
+    const projectId = c.req.param('projectId')
+    const id = c.req.param('id')
+    const body = await c.req.json() as Array<{ characterId: string, roleInConflict?: string }>
+
+    await assertConflictBelongsToProject(projectId, id)
+    await assertCharactersBelongToProject(projectId, body.map(p => p.characterId))
+
+    await db.transaction(async (tx) => {
+      await tx.delete(conflictParticipants).where(
+        and(eq(conflictParticipants.projectId, projectId), eq(conflictParticipants.conflictId, id)),
+      )
+
+      if (body.length > 0) {
+        await tx.insert(conflictParticipants).values(
+          body.map(p => ({
+            id: generateId(),
+            projectId,
+            conflictId: id,
+            characterId: p.characterId,
+            roleInConflict: p.roleInConflict || null,
+          })),
+        )
+      }
+    })
+
+    return c.json(success(null, 'Participants updated'))
   })
 }

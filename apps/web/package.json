@@ -22,6 +22,7 @@
     "@unocss/preset-icons": "catalog:frontend",
     "@unocss/preset-wind": "catalog:frontend",
     "@vitejs/plugin-vue": "catalog:frontend",
+    "sass": "^1.99.0",
     "typescript": "catalog:dev",
     "unocss": "catalog:frontend",
     "vite": "catalog:frontend",

@@ -32,11 +32,13 @@ const {
   selectedItem,
   groupedItems,
   projectStore,
+  characterStore,
   selectItem,
   handleCreate,
   handleUpdate,
   handleDelete,
   resetForm,
+  toggleCharacter,
 } = useForeshadowingWorkspace(projectId)
 
 const statusLabel = FORESHADOWING_STATUS_LABEL
@@ -161,6 +163,23 @@ const statusVariant = FORESHADOWING_STATUS_VARIANT
                     次要
                   </option>
                 </select>
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <label class="mb-1 block text-xs text-text-muted">相关角色</label>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="char in characterStore.characters"
+                  :key="char.id"
+                  class="border rounded-full px-3 py-1 text-xs transition-all"
+                  :class="form.characterIds.includes(char.id)
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-bg-surface text-text-muted border-border-light hover:border-text-muted'"
+                  @click="toggleCharacter(char.id)"
+                >
+                  {{ char.name }}
+                </button>
               </div>
             </div>
 

@@ -1,9 +1,9 @@
 import type { Hono } from 'hono'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { foreshadowingItems } from '../db/schema'
+import { foreshadowingCharacters, foreshadowingItems } from '../db/schema'
 import { matchCharacterIdsFromText } from '../services/character-utils.service'
-import { assertOptionalChapterBelongsToProject } from '../services/ownership.service'
+import { assertCharactersBelongToProject, assertForeshadowingBelongsToProject, assertOptionalChapterBelongsToProject } from '../services/ownership.service'
 import { fail, generateId, success, updatedFields } from '../utils'
 
 export function registerForeshadowingRoutes(app: Hono) {
@@ -85,5 +85,46 @@ export function registerForeshadowingRoutes(app: Hono) {
     if (!row)
       return c.json(fail('Foreshadowing item not found'), 404)
     return c.json(success(row, 'Foreshadowing item deleted'))
+  })
+
+  // Foreshadowing Characters
+  app.get('/api/projects/:projectId/foreshadowing/:id/characters', async (c) => {
+    const projectId = c.req.param('projectId')
+    const id = c.req.param('id')
+    await assertForeshadowingBelongsToProject(projectId, id)
+
+    const rows = await db.select().from(foreshadowingCharacters).where(
+      and(eq(foreshadowingCharacters.projectId, projectId), eq(foreshadowingCharacters.foreshadowingId, id)),
+    )
+    return c.json(success(rows))
+  })
+
+  app.put('/api/projects/:projectId/foreshadowing/:id/characters', async (c) => {
+    const projectId = c.req.param('projectId')
+    const id = c.req.param('id')
+    const body = await c.req.json() as Array<{ characterId: string, relationType: any }>
+
+    await assertForeshadowingBelongsToProject(projectId, id)
+    await assertCharactersBelongToProject(projectId, body.map(p => p.characterId))
+
+    await db.transaction(async (tx) => {
+      await tx.delete(foreshadowingCharacters).where(
+        and(eq(foreshadowingCharacters.projectId, projectId), eq(foreshadowingCharacters.foreshadowingId, id)),
+      )
+
+      if (body.length > 0) {
+        await tx.insert(foreshadowingCharacters).values(
+          body.map(p => ({
+            id: generateId(),
+            projectId,
+            foreshadowingId: id,
+            characterId: p.characterId,
+            relationType: p.relationType || 'related',
+          })),
+        )
+      }
+    })
+
+    return c.json(success(null, 'Characters updated'))
   })
 }

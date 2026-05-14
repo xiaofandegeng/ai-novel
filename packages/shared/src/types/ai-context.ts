@@ -48,7 +48,16 @@ export interface ConflictContextSummary {
   intensity: number
   status: string
   participants?: string
+  participantNames?: string[]
   description?: string
+}
+
+export interface ForeshadowingContextSummary {
+  title: string
+  description?: string
+  status: string
+  importance: string
+  characterNames?: string[]
 }
 
 export interface KnowledgeContextSnippet {
@@ -131,7 +140,7 @@ export interface BuiltAIContext {
   personaMemory: string[]
   chapterMemories: string[]
   chapterElements: string[]
-  foreshadowingItems: string[]
+  foreshadowingItems: ForeshadowingContextSummary[]
   factTriples: string[]
   constraints: string[]
 }

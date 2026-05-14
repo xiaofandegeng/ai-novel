@@ -1,363 +1,285 @@
 <script setup lang="ts">
-import {
-  NAppLayout,
-  NLoadingState,
-  NTag,
-  useToast,
-} from '@ai-novel/ui'
+import type { HealthMetrics } from '@ai-novel/shared'
+import { NButton, NPanel, NTag } from '@ai-novel/ui'
+
 import {
   Activity,
   AlertTriangle,
-  BarChart3,
+  ArrowRight,
+  BookOpen,
   CheckCircle2,
-  Clapperboard,
-  FileText,
-  Flame,
+  Info,
   Lightbulb,
+  RefreshCw,
+  Target,
+  TrendingUp,
+  Users,
+  Zap,
 } from 'lucide-vue-next'
+
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import AppSidebar from '../components/AppSidebar.vue'
-import { useHealthStore } from '../stores/health.store'
-import { useProjectStore } from '../stores/project.store'
+
+import { fetchHealthMetrics } from '../api/health-metrics'
 
 const route = useRoute()
 const router = useRouter()
 const projectId = route.params.id as string
-const toast = useToast()
 
-const projectStore = useProjectStore()
-const healthStore = useHealthStore()
+const metrics = ref<HealthMetrics | null>(null)
+const loading = ref(false)
+const error = ref<string | null>(null)
 
-const loading = ref(true)
-
-const metrics = computed(() => healthStore.metrics)
-
-const completionPercent = computed(() => {
-  if (!metrics.value)
-    return 0
-  return metrics.value.totalChapters > 0
-    ? Math.round((metrics.value.completedChapters / metrics.value.totalChapters) * 100)
-    : 0
-})
-
-const riskVariant = {
-  high: 'error',
-  medium: 'warning',
-  low: 'info',
-} as const
-
-const riskTypeLabel = {
-  scene: '场景',
-  foreshadowing: '伏笔',
-  conflict: '冲突',
-  quality: '质量',
-  structure: '结构',
-  knowledge: '知识',
-} as const
-
-onMounted(async () => {
+async function loadMetrics() {
+  loading.value = true
+  error.value = null
   try {
-    await Promise.all([
-      projectStore.fetchProject(projectId),
-      healthStore.fetchMetrics(projectId),
-    ])
+    metrics.value = await fetchHealthMetrics(projectId)
   }
-  catch {
-    toast.add('加载健康数据失败', 'error')
+  catch (e: any) {
+    error.value = e.message
   }
   finally {
     loading.value = false
   }
+}
+
+const overallScore = computed(() => {
+  if (!metrics.value)
+    return 0
+  // Simple weighted score calculation
+  const chaptersWeight = (metrics.value.completedChapters / (metrics.value.totalChapters || 1)) * 30
+  const conflictsWeight = (metrics.value.activeConflicts > 0 ? 20 : 0)
+  const risksWeight = Math.max(0, 50 - (metrics.value.risks.length * 10))
+  return Math.round(chaptersWeight + conflictsWeight + risksWeight)
+})
+
+function getSeverityClass(severity: string) {
+  switch (severity) {
+    case 'high': return 'bg-red-500/10 text-red-500 border-red-500/20'
+    case 'medium': return 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+    case 'low': return 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+    default: return 'bg-gray-500/10 text-gray-500 border-gray-500/20'
+  }
+}
+
+onMounted(() => {
+  loadMetrics()
 })
 </script>
 
 <template>
-  <NAppLayout
-    :project-name="projectStore.currentProject?.title || '加载中...'"
-    :project-id="projectId"
-  >
-    <template #nav>
-      <AppSidebar :project-id="projectId" />
-    </template>
-
-    <div class="h-full overflow-y-auto p-6">
-      <div class="mb-6">
-        <h1 class="text-lg text-text-primary font-bold">
-          项目健康面板
+  <div class="h-full flex flex-col overflow-y-auto bg-bg-page p-8">
+    <header class="mb-8 flex items-center justify-between">
+      <div>
+        <h1 class="flex items-center gap-2 text-2xl text-text-primary font-bold">
+          <Activity class="text-primary" :size="24" />
+          项目创作健康评估
         </h1>
-        <p class="text-sm text-text-muted">
-          基于已有数据的综合分析
+        <p class="mt-1 text-sm text-text-muted">
+          深度分析长篇小说创作状态，识别连贯性、张力和节奏风险。
         </p>
+      </div>
+      <NButton :loading="loading" variant="primary" @click="loadMetrics">
+        <RefreshCw class="mr-2" :class="{ 'animate-spin': loading }" :size="16" />
+        刷新指标
+      </NButton>
+    </header>
+
+    <div v-if="error" class="mb-6 flex items-center gap-3 border border-red-200 rounded-lg bg-red-50 p-4 text-red-600">
+      <AlertTriangle :size="20" />
+      <span>{{ error }}</span>
+    </div>
+
+    <div v-if="metrics" class="space-y-8">
+      <!-- Top Row: Overview Cards -->
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-4 md:grid-cols-2">
+        <NPanel class="relative overflow-hidden border-primary/10 from-primary-soft/30 to-bg-surface bg-gradient-to-br">
+          <div class="absolute opacity-5 -bottom-4 -right-4">
+            <Activity :size="100" />
+          </div>
+          <div class="relative z-10">
+            <span class="text-xs text-primary font-bold tracking-widest uppercase">总体健康分</span>
+            <div class="mt-2 flex items-baseline gap-1">
+              <span class="text-4xl text-text-primary font-bold">{{ overallScore }}</span>
+              <span class="text-sm text-text-muted">/ 100</span>
+            </div>
+            <div class="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-bg-page">
+              <div class="h-full bg-primary" :style="{ width: `${overallScore}%` }" />
+            </div>
+          </div>
+        </NPanel>
+
+        <NPanel>
+          <span class="text-xs text-text-muted font-bold tracking-widest uppercase">连载进度</span>
+          <div class="mt-2 flex items-baseline gap-1">
+            <span class="text-3xl text-text-primary font-bold">{{ metrics.completedChapters }}</span>
+            <span class="text-sm text-text-muted">/ {{ metrics.totalChapters }} 章</span>
+          </div>
+          <div class="mt-3 flex items-center gap-1 text-[11px] text-text-muted">
+            <TrendingUp :size="12" />
+            累计字数：{{ (metrics.totalWords / 10000).toFixed(1) }} 万字
+          </div>
+        </NPanel>
+
+        <NPanel>
+          <span class="text-xs text-text-muted font-bold tracking-widest uppercase">活跃冲突强度</span>
+          <div class="mt-2 flex items-baseline gap-1">
+            <span class="text-3xl text-text-primary font-bold">{{ metrics.conflictIntensityAvg }}</span>
+            <span class="text-sm text-text-muted">/ 10</span>
+          </div>
+          <div class="mt-3 flex items-center gap-1 text-[11px] text-text-muted">
+            <Zap class="text-amber-500" :size="12" />
+            活跃冲突数：{{ metrics.activeConflicts }}
+          </div>
+        </NPanel>
+
+        <NPanel>
+          <span class="text-xs text-text-muted font-bold tracking-widest uppercase">待回收伏笔</span>
+          <div class="mt-2 flex items-baseline gap-1">
+            <span class="text-3xl text-text-primary font-bold">{{ metrics.openForeshadowingCount }}</span>
+            <span class="text-sm text-text-muted">个</span>
+          </div>
+          <div class="mt-3 flex items-center gap-1 text-[11px] text-text-muted">
+            <Lightbulb class="text-primary" :size="12" />
+            已确认事实：{{ metrics.confirmedTriples }}
+          </div>
+        </NPanel>
       </div>
 
-      <NLoadingState v-if="loading" />
-      <div v-else-if="!metrics" class="py-12 text-center text-text-muted">
-        <Activity :size="32" class="mx-auto mb-3 opacity-40" />
-        <p class="text-sm">
-          暂无健康数据
-        </p>
-      </div>
-      <div v-else class="space-y-6">
-        <!-- Actionable risks -->
-        <div v-if="metrics.risks.length > 0" class="border border-border-light rounded-lg bg-bg-surface p-4">
-          <h3 class="mb-3 flex items-center gap-2 text-sm text-text-primary font-bold">
-            <AlertTriangle :size="16" class="text-yellow-500" /> 需要关注的风险
-          </h3>
-          <div class="space-y-2">
-            <button
+      <!-- Main Section: Risks & Detailed Metrics -->
+      <div class="grid grid-cols-1 gap-8 lg:grid-cols-3">
+        <!-- Left: Risks & Warnings -->
+        <div class="lg:col-span-2 space-y-6">
+          <div class="flex items-center justify-between">
+            <h2 class="flex items-center gap-2 text-lg text-text-primary font-bold">
+              <AlertTriangle class="text-amber-500" :size="20" />
+              风险识别与改进建议
+            </h2>
+            <NTag variant="info">
+              {{ metrics.risks.length }} 个待处理
+            </NTag>
+          </div>
+
+          <div v-if="metrics.risks.length === 0" class="border border-green-100 rounded-xl bg-green-50 p-8 text-center">
+            <CheckCircle2 class="mx-auto mb-3 text-green-500" :size="48" />
+            <p class="text-green-700 font-bold">
+              暂无明显健康风险
+            </p>
+            <p class="mt-1 text-sm text-green-600">
+              项目逻辑连贯，指标处于理想状态。
+            </p>
+          </div>
+          <div v-else class="space-y-4">
+            <div
               v-for="risk in metrics.risks"
               :key="risk.id"
-              class="w-full border border-border-light rounded-md bg-bg-page px-3 py-3 text-left transition-colors hover:border-primary/30 hover:bg-primary-soft/20"
-              @click="risk.targetRoute && router.push(risk.targetRoute)"
+              class="flex items-start gap-4 border border-border-light rounded-xl bg-bg-surface p-5 transition-shadow hover:shadow-md"
             >
-              <div class="mb-1 flex items-center gap-2">
-                <NTag :variant="riskVariant[risk.severity]" size="sm">
-                  {{ risk.severity === 'high' ? '高风险' : risk.severity === 'medium' ? '中风险' : '低风险' }}
-                </NTag>
-                <NTag size="sm" variant="default">
-                  {{ riskTypeLabel[risk.type] }}
-                </NTag>
-                <span class="text-sm text-text-primary font-semibold">{{ risk.title }}</span>
+              <div :class="`p-2 rounded-lg border ${getSeverityClass(risk.severity)}`">
+                <AlertTriangle v-if="risk.severity === 'high'" :size="20" />
+                <Info v-else :size="20" />
               </div>
-              <p class="text-xs text-text-secondary leading-relaxed">
-                {{ risk.message }}
-              </p>
-              <p v-if="risk.targetRoute" class="mt-1 text-xs text-primary">
-                {{ risk.actionLabel }} →
-              </p>
-            </button>
-          </div>
-        </div>
-
-        <!-- Summary cards -->
-        <div class="grid grid-cols-4 gap-4">
-          <div class="border border-border-light rounded-lg bg-bg-surface p-4">
-            <div class="mb-2 flex items-center gap-2">
-              <BarChart3 :size="16" class="text-text-muted" />
-              <span class="text-xs text-text-muted">总字数</span>
-            </div>
-            <div class="text-xl text-text-primary font-bold">
-              {{ metrics.totalWords.toLocaleString() }}
-            </div>
-            <div class="text-xs text-text-muted">
-              均章 {{ metrics.averageChapterWords.toLocaleString() }} 字
-            </div>
-          </div>
-
-          <div class="border border-border-light rounded-lg bg-bg-surface p-4">
-            <div class="mb-2 flex items-center gap-2">
-              <CheckCircle2 :size="16" class="text-text-muted" />
-              <span class="text-xs text-text-muted">完成进度</span>
-            </div>
-            <div class="text-xl text-text-primary font-bold">
-              {{ completionPercent }}%
-            </div>
-            <div class="text-xs text-text-muted">
-              {{ metrics.completedChapters }} / {{ metrics.totalChapters }} 章
-            </div>
-          </div>
-
-          <div class="border border-border-light rounded-lg bg-bg-surface p-4">
-            <div class="mb-2 flex items-center gap-2">
-              <Flame :size="16" class="text-text-muted" />
-              <span class="text-xs text-text-muted">活跃冲突</span>
-            </div>
-            <div class="text-xl text-text-primary font-bold">
-              {{ metrics.activeConflicts }}
-            </div>
-            <div class="text-xs text-text-muted">
-              平均强度 {{ metrics.conflictIntensityAvg }}
-            </div>
-          </div>
-
-          <div class="border border-border-light rounded-lg bg-bg-surface p-4">
-            <div class="mb-2 flex items-center gap-2">
-              <Lightbulb :size="16" class="text-text-muted" />
-              <span class="text-xs text-text-muted">待回收伏笔</span>
-            </div>
-            <div class="text-xl text-text-primary font-bold">
-              {{ metrics.openForeshadowingCount }}
-            </div>
-            <div class="text-xs text-text-muted">
-              事实三元组: {{ metrics.confirmedTriples }} 确认 / {{ metrics.pendingTriples }} 待确认
-            </div>
-          </div>
-        </div>
-
-        <!-- Foreshadowing by status -->
-        <div class="border border-border-light rounded-lg bg-bg-surface p-4">
-          <h3 class="mb-3 text-sm text-text-primary font-bold">
-            伏笔状态分布
-          </h3>
-          <div class="flex gap-4">
-            <div v-for="(count, status) in metrics.foreshadowingByStatus" :key="status" class="flex items-center gap-2">
-              <NTag
-                :variant="status === 'open' ? 'info' : status === 'progressing' ? 'warning' : status === 'paid_off' ? 'success' : 'default'"
-                size="sm"
-              >
-                {{ status === 'open' ? '待回收' : status === 'progressing' ? '推进中' : status === 'paid_off' ? '已回收' : '已放弃' }}
-              </NTag>
-              <span class="text-sm text-text-secondary font-medium">{{ count }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Element frequency -->
-        <div v-if="metrics.elementFrequency.length > 0" class="border border-border-light rounded-lg bg-bg-surface p-4">
-          <h3 class="mb-3 text-sm text-text-primary font-bold">
-            元素出场频率 Top 10
-          </h3>
-          <div class="space-y-2">
-            <div
-              v-for="el in metrics.elementFrequency.slice(0, 10)"
-              :key="`${el.type}:${el.name}`"
-              class="flex items-center gap-3"
-            >
-              <span class="w-24 truncate text-xs text-text-muted">{{ el.name }}</span>
-              <div class="h-4 flex-1 overflow-hidden rounded-full bg-bg-page">
-                <div
-                  class="h-full rounded-full bg-primary"
-                  :style="{ width: `${Math.min(100, (el.count / (metrics.elementFrequency[0]?.count || 1)) * 100)}%` }"
-                />
+              <div class="flex-1">
+                <div class="flex items-center justify-between">
+                  <h3 class="text-text-primary font-bold">
+                    {{ risk.title }}
+                  </h3>
+                  <NTag :variant="risk.severity === 'high' ? 'error' : 'warning'" size="sm">
+                    {{ risk.severity === 'high' ? '高风险' : risk.severity === 'medium' ? '中风险' : '低风险' }}
+                  </NTag>
+                </div>
+                <p class="mt-2 text-sm text-text-muted leading-relaxed">
+                  {{ risk.message }}
+                </p>
+                <div class="mt-4 flex gap-3">
+                  <NButton
+                    v-if="risk.targetRoute"
+                    size="sm"
+                    variant="primary"
+                    @click="router.push(risk.targetRoute)"
+                  >
+                    {{ risk.actionLabel }}
+                    <ArrowRight class="ml-1" :size="14" />
+                  </NButton>
+                </div>
               </div>
-              <span class="w-8 text-right text-xs text-text-secondary">{{ el.count }}</span>
             </div>
           </div>
         </div>
 
-        <!-- Quality trend -->
-        <div v-if="metrics.qualityTrend.length > 0" class="border border-border-light rounded-lg bg-bg-surface p-4">
-          <h3 class="mb-3 text-sm text-text-primary font-bold">
-            质量评分趋势
-          </h3>
-          <div class="space-y-1">
-            <div
-              v-for="qt in metrics.qualityTrend"
-              :key="qt.chapter"
-              class="flex items-center gap-3"
-            >
-              <span class="w-16 text-xs text-text-muted">第{{ qt.chapter }}章</span>
-              <div class="h-4 flex-1 overflow-hidden rounded-full bg-bg-page">
-                <div
-                  class="h-full rounded-full"
-                  :class="qt.score >= 80 ? 'bg-green-400' : qt.score >= 60 ? 'bg-yellow-400' : 'bg-red-400'"
-                  :style="{ width: `${qt.score}%` }"
-                />
+        <!-- Right: Stats -->
+        <div class="space-y-8">
+          <section>
+            <h2 class="mb-4 flex items-center gap-2 text-lg text-text-primary font-bold">
+              <Target class="text-primary" :size="20" />
+              元素共场频率
+            </h2>
+            <div class="overflow-hidden border border-border-light rounded-xl bg-bg-surface shadow-sm">
+              <div v-if="metrics.elementFrequency.length === 0" class="p-8 text-center text-sm text-text-muted italic">
+                暂无共场数据
               </div>
-              <span class="w-8 text-right text-xs text-text-secondary">{{ qt.score }}</span>
+              <div v-else class="divide-y divide-border-light/50">
+                <div v-for="el in metrics.elementFrequency" :key="el.name" class="flex items-center justify-between p-3">
+                  <div class="flex items-center gap-2">
+                    <Users v-if="el.type === 'character'" class="text-primary" :size="14" />
+                    <BookOpen v-else class="text-text-muted" :size="14" />
+                    <span class="text-xs text-text-primary font-medium">{{ el.name }}</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <div class="h-1.5 w-20 overflow-hidden rounded-full bg-bg-page">
+                      <div class="h-full bg-primary/40" :style="{ width: `${Math.min(100, el.count * 10)}%` }" />
+                    </div>
+                    <span class="text-[10px] text-text-muted font-mono">{{ el.count }} 次</span>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </section>
 
-        <!-- Scene health metrics -->
-        <div class="border border-border-light rounded-lg bg-bg-surface p-4">
-          <h3 class="mb-3 flex items-center gap-2 text-sm text-text-primary font-bold">
-            <Clapperboard :size="16" class="text-primary" /> 场景健康
-          </h3>
-
-          <!-- Scene status distribution -->
-          <div v-if="Object.keys(metrics.sceneStatusDistribution).length > 0" class="mb-4">
-            <p class="mb-2 text-xs text-text-muted">
+          <section>
+            <h2 class="mb-4 text-lg text-text-primary font-bold">
               场景状态分布
-            </p>
-            <div class="flex gap-4">
-              <div v-for="(count, status) in metrics.sceneStatusDistribution" :key="status" class="flex items-center gap-2">
-                <NTag
-                  :variant="status === 'completed' ? 'success' : status === 'reviewed' ? 'warning' : status === 'drafting' ? 'info' : 'default'"
-                  size="sm"
-                >
-                  {{ status === 'planned' ? '已规划' : status === 'drafting' ? '写作中' : status === 'reviewed' ? '待审核' : '已完成' }}
-                </NTag>
-                <span class="text-sm text-text-secondary font-medium">{{ count }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Warning cards -->
-          <div class="grid grid-cols-3 mb-4 gap-3">
-            <div class="border border-border-light rounded-md bg-bg-page p-3">
-              <div class="flex items-center gap-2">
-                <AlertTriangle v-if="metrics.scenesWithoutContent > 0" :size="14" class="text-yellow-500" />
-                <FileText v-else :size="14" class="text-text-muted" />
-                <span class="text-xs text-text-muted">无正文场景</span>
-              </div>
-              <div class="mt-1 text-lg text-text-primary font-bold">
-                {{ metrics.scenesWithoutContent }}
-              </div>
-            </div>
-            <div class="border border-border-light rounded-md bg-bg-page p-3">
-              <div class="flex items-center gap-2">
-                <AlertTriangle v-if="metrics.scenesWithoutPurpose > 0" :size="14" class="text-yellow-500" />
-                <FileText v-else :size="14" class="text-text-muted" />
-                <span class="text-xs text-text-muted">无目的场景</span>
-              </div>
-              <div class="mt-1 text-lg text-text-primary font-bold">
-                {{ metrics.scenesWithoutPurpose }}
-              </div>
-            </div>
-            <div class="border border-border-light rounded-md bg-bg-page p-3">
-              <div class="flex items-center gap-2">
-                <AlertTriangle v-if="metrics.scenesWithoutConflict > 0" :size="14" class="text-yellow-500" />
-                <FileText v-else :size="14" class="text-text-muted" />
-                <span class="text-xs text-text-muted">无冲突场景</span>
-              </div>
-              <div class="mt-1 text-lg text-text-primary font-bold">
-                {{ metrics.scenesWithoutConflict }}
-              </div>
-            </div>
-          </div>
-
-          <!-- Chapters without scenes -->
-          <div v-if="metrics.chaptersWithoutScenes.length > 0" class="mb-4">
-            <p class="mb-2 text-xs text-text-muted">
-              缺少场景规划的章节
-            </p>
-            <div class="space-y-1">
+            </h2>
+            <div class="grid grid-cols-2 gap-3">
               <div
-                v-for="ch in metrics.chaptersWithoutScenes"
-                :key="ch.chapterId"
-                class="flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-xs transition-colors hover:bg-bg-page"
-                @click="router.push({ path: `/project/${projectId}/outline`, query: { chapter: ch.chapterId } })"
+                v-for="(count, status) in metrics.sceneStatusDistribution"
+                :key="status"
+                class="border border-border-light rounded-lg bg-bg-surface p-3 text-center"
               >
-                <span class="text-text-secondary">
-                  第{{ ch.chapterNumber }}章：{{ ch.title }}
-                </span>
-                <span class="text-primary">
-                  去规划 →
-                </span>
+                <div class="text-lg text-text-primary font-bold">
+                  {{ count }}
+                </div>
+                <div class="text-[10px] text-text-muted tracking-wider uppercase">
+                  {{ status }}
+                </div>
               </div>
             </div>
-          </div>
-
-          <!-- Scene word count deviation -->
-          <div v-if="metrics.sceneWordCountDeviation.length > 0">
-            <p class="mb-2 text-xs text-text-muted">
-              场景字数偏差（目标 vs 实际）
-            </p>
-            <div class="space-y-1">
-              <div
-                v-for="sd in metrics.sceneWordCountDeviation"
-                :key="sd.sceneId"
-                class="flex items-center gap-3 text-xs"
-              >
-                <span class="w-32 truncate text-text-muted">
-                  {{ sd.title || `场景 ${sd.sceneNumber}` }}
-                </span>
-                <span class="w-14 text-right text-text-secondary">{{ sd.actual }}</span>
-                <span class="text-text-muted">/</span>
-                <span class="w-14 text-text-secondary">{{ sd.target }}</span>
-                <span
-                  class="font-medium"
-                  :class="Math.abs(sd.deviation) > sd.target * 0.3 ? 'text-red-500' : Math.abs(sd.deviation) > sd.target * 0.1 ? 'text-yellow-500' : 'text-green-500'"
-                >
-                  {{ sd.deviation > 0 ? '+' : '' }}{{ sd.deviation }}
-                </span>
-              </div>
-            </div>
-          </div>
+          </section>
         </div>
       </div>
     </div>
-  </NAppLayout>
+
+    <div v-else-if="loading" class="flex flex-1 flex-col items-center justify-center">
+      <RefreshCw class="animate-spin text-primary/30" :size="48" />
+      <p class="mt-4 text-text-muted">
+        正在计算项目健康指标...
+      </p>
+    </div>
+  </div>
 </template>
+
+<style scoped lang="scss">
+.animate-spin {
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+</style>

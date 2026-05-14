@@ -1,6 +1,8 @@
 import { integer, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
 import { chapterPostprocessRuns, chapters } from './chapter'
+import { characters } from './character'
+
 import { novelProjects } from './project'
 
 export const chapterElements = pgTable('chapter_elements', {
@@ -69,3 +71,15 @@ export const foreshadowingItems = pgTable('foreshadowing_items', {
   notes: text('notes'),
   ...timestamps,
 })
+
+export const foreshadowingCharacters = pgTable('foreshadowing_characters', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  foreshadowingId: text('foreshadowing_id').notNull().references(() => foreshadowingItems.id, { onDelete: 'cascade' }),
+  characterId: text('character_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
+  relationType: text('relation_type').$type<'protagonist' | 'antagonist' | 'victim' | 'witness' | 'related'>().notNull().default('related'),
+  ...timestamps,
+}, table => ({
+  foreshadowingCharacterUnique: uniqueIndex('foreshadowing_characters_unique')
+    .on(table.projectId, table.foreshadowingId, table.characterId),
+}))

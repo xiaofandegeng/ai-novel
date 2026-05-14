@@ -9,6 +9,7 @@ import {
   TrendingUp,
 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
+import * as conflictsApi from '@/api/conflicts'
 import * as suggestionsApi from '@/api/postprocess-suggestions'
 import { useCharacterStore } from '@/stores/character.store'
 import { useConflictStore } from '@/stores/conflict.store'
@@ -124,6 +125,14 @@ export function useConflictWorkspace(projectId: string) {
         participants: JSON.stringify(conflictForm.value.participants),
       }
       await conflictStore.updateConflict(projectId, selectedConflictId.value, data)
+
+      // Sync with junction table
+      await conflictsApi.updateParticipants(
+        projectId,
+        selectedConflictId.value,
+        conflictForm.value.participants.map(characterId => ({ characterId })),
+      )
+
       toast.add(T.conflict_updated, 'success')
     }
     catch {

@@ -1,6 +1,8 @@
 import type { ForeshadowingImportance, ForeshadowingStatus } from '@ai-novel/shared'
 import { useToast } from '@ai-novel/ui'
 import { computed, onMounted, ref } from 'vue'
+import * as api from '@/api/foreshadowing'
+import { useCharacterStore } from '@/stores/character.store'
 import { useForeshadowingStore } from '@/stores/foreshadowing.store'
 import { useProjectStore } from '@/stores/project.store'
 import { getErrorMessage } from '@/utils/error-message'
@@ -23,6 +25,7 @@ export const FORESHADOWING_STATUS_VARIANT: Record<ForeshadowingStatus, 'info' | 
 export function useForeshadowingWorkspace(projectId: string) {
   const toast = useToast()
   const projectStore = useProjectStore()
+  const characterStore = useCharacterStore()
   const foreshadowingStore = useForeshadowingStore()
 
   const loading = ref(true)
@@ -37,6 +40,7 @@ export function useForeshadowingWorkspace(projectId: string) {
     status: 'open' as ForeshadowingStatus,
     importance: 'normal' as ForeshadowingImportance,
     relatedCharacters: '',
+    characterIds: [] as string[],
     relatedEvents: '',
     notes: '',
   })
@@ -62,6 +66,7 @@ export function useForeshadowingWorkspace(projectId: string) {
     try {
       await Promise.all([
         projectStore.fetchProject(projectId),
+        characterStore.fetchCharacters(projectId),
         foreshadowingStore.fetchItems(projectId),
       ])
     }
@@ -85,6 +90,7 @@ export function useForeshadowingWorkspace(projectId: string) {
         status: item.status,
         importance: item.importance,
         relatedCharacters: item.relatedCharacters || '',
+        characterIds: item.characterIds || [],
         relatedEvents: item.relatedEvents || '',
         notes: item.notes || '',
       }
@@ -99,9 +105,20 @@ export function useForeshadowingWorkspace(projectId: string) {
         status: form.value.status,
         importance: form.value.importance,
         relatedCharacters: form.value.relatedCharacters || undefined,
+        characterIds: form.value.characterIds,
         relatedEvents: form.value.relatedEvents || undefined,
         notes: form.value.notes || undefined,
       })
+
+      // Sync with junction table
+      if (form.value.characterIds.length > 0) {
+        await api.updateCharacters(
+          projectId,
+          item.id,
+          form.value.characterIds.map(characterId => ({ characterId })),
+        )
+      }
+
       selectedId.value = item.id
       toast.add(T.foreshadowing_created, 'success')
     }
@@ -120,9 +137,18 @@ export function useForeshadowingWorkspace(projectId: string) {
         status: form.value.status,
         importance: form.value.importance,
         relatedCharacters: form.value.relatedCharacters || null,
+        characterIds: form.value.characterIds,
         relatedEvents: form.value.relatedEvents || null,
         notes: form.value.notes || null,
       })
+
+      // Sync with junction table
+      await api.updateCharacters(
+        projectId,
+        selectedId.value,
+        form.value.characterIds.map(characterId => ({ characterId })),
+      )
+
       toast.add(T.foreshadowing_updated, 'success')
     }
     catch {
@@ -153,9 +179,18 @@ export function useForeshadowingWorkspace(projectId: string) {
       status: 'open',
       importance: 'normal',
       relatedCharacters: '',
+      characterIds: [],
       relatedEvents: '',
       notes: '',
     }
+  }
+
+  function toggleCharacter(id: string) {
+    const index = form.value.characterIds.indexOf(id)
+    if (index === -1)
+      form.value.characterIds.push(id)
+    else
+      form.value.characterIds.splice(index, 1)
   }
 
   return {
@@ -166,11 +201,13 @@ export function useForeshadowingWorkspace(projectId: string) {
     selectedItem,
     groupedItems,
     projectStore,
+    characterStore,
     foreshadowingStore,
     selectItem,
     handleCreate,
     handleUpdate,
     handleDelete,
     resetForm,
+    toggleCharacter,
   }
 }

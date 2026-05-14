@@ -86,7 +86,10 @@ export function renderAIContext(context: BuiltAIContext): string {
 
   if (context.conflicts.length > 0) {
     const conflictList = context.conflicts
-      .map(c => `- ${c.title}: ${c.type} / 强度 ${c.intensity} / 状态 ${c.status}。参与者: ${c.participants || '未定义'}。${c.description || ''}`)
+      .map((c) => {
+        const participants = c.participantNames?.join('、') || c.participants || '未定义'
+        return `- ${c.title}: ${c.type} / 强度 ${c.intensity} / 状态 ${c.status}。参与者: ${participants}。${c.description || ''}`
+      })
       .join('\n')
     sections.push(`【核心矛盾】\n${conflictList}`)
   }
@@ -111,7 +114,13 @@ export function renderAIContext(context: BuiltAIContext): string {
   }
 
   if (context.foreshadowingItems.length > 0) {
-    sections.push(`【伏笔台账】\n${context.foreshadowingItems.join('\n')}\n约束：不得无故回收未到时机的伏笔。如果新增重大伏笔，必须在章后管线登记。`)
+    const foreshadowingList = context.foreshadowingItems
+      .map((i) => {
+        const chars = i.characterNames?.join('、') || '无'
+        return `- ${i.title} (${i.status}/${i.importance}) 相关角色:${chars}${i.description ? `: ${i.description}` : ''}`
+      })
+      .join('\n')
+    sections.push(`【伏笔台账】\n${foreshadowingList}\n约束：不得无故回收未到时机的伏笔。如果新增重大伏笔，必须在章后管线登记。`)
   }
 
   if (context.factTriples.length > 0) {

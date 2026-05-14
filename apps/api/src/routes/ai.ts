@@ -1,5 +1,8 @@
 import type { Hono } from 'hono'
+import { and, desc, eq } from 'drizzle-orm'
 import { streamText } from 'hono/streaming'
+import { db } from '../db'
+import { aiContextSnapshots } from '../db/schema'
 import { renderAIContext } from '../services/ai-context-renderer'
 import { createAIContextSnapshot, estimateTokens } from '../services/ai-context-snapshot.service'
 import { buildProjectAIContext } from '../services/ai-context.service'
@@ -102,5 +105,22 @@ export function registerAiRoutes(app: Hono) {
         await stream.write(`\n\n[Error: ${error.message}]`)
       }
     })
+  })
+
+  // 获取上下文快照列表
+  app.get('/api/projects/:projectId/context-snapshots', async (c) => {
+    const projectId = c.req.param('projectId')
+    const snapshots = await db.select().from(aiContextSnapshots).where(eq(aiContextSnapshots.projectId, projectId)).orderBy(desc(aiContextSnapshots.createdAt)).limit(50)
+    return c.json(success(snapshots))
+  })
+
+  // 获取单个快照详情
+  app.get('/api/projects/:projectId/context-snapshots/:id', async (c) => {
+    const projectId = c.req.param('projectId')
+    const id = c.req.param('id')
+    const [snapshot] = await db.select().from(aiContextSnapshots).where(and(eq(aiContextSnapshots.id, id), eq(aiContextSnapshots.projectId, projectId)))
+    if (!snapshot)
+      return c.json(fail('Snapshot not found'), 404)
+    return c.json(success(snapshot))
   })
 }
