@@ -19,17 +19,26 @@ export interface HealthMetrics {
   sceneWordCountDeviation: { sceneId: string, sceneNumber: number, title: string | null, actual: number, target: number, deviation: number }[]
   sceneStatusDistribution: Record<string, number>
   risks: HealthRisk[]
+  radarMetrics: {
+    theme: number
+    character: number
+    foreshadowing: number
+    conflict: number
+    pacing: number
+    style: number
+  }
 }
 
 export interface HealthRisk {
   id: string
   severity: 'high' | 'medium' | 'low'
-  type: 'scene' | 'foreshadowing' | 'conflict' | 'quality' | 'structure' | 'knowledge' | 'consistency'
+  type: 'scene' | 'foreshadowing' | 'conflict' | 'quality' | 'structure' | 'knowledge' | 'consistency' | 'theme' | 'style' | 'pacing'
   title: string
   message: string
   actionLabel: string
   targetRoute?: string
   evidence?: string[]
-  fixActionType?: 'plan_scenes' | 'suggest_conflicts' | 'analyze_quality' | 'brainstorm_foreshadowing'
+  suggestions?: string[]
+  fixActionType?: 'plan_scenes' | 'suggest_conflicts' | 'analyze_quality' | 'brainstorm_foreshadowing' | 'create_task'
   fixActionPayload?: Record<string, any>
 }

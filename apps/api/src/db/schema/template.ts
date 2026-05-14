@@ -8,7 +8,9 @@ export const storyStructureTemplates = pgTable('story_structure_templates', {
   description: text('description'),
   genre: text('genre'),
   structureType: text('structure_type').$type<'three_act' | 'five_act' | 'hero_journey' | 'custom'>().notNull(),
-  actsJson: text('acts_json'),
+  actsJson: text('acts_json'), // 阶段定义
+  beatsJson: text('beats_json'), // 节奏点/节拍定义
+  conflictCurveJson: text('conflict_curve_json'), // 冲突曲线建议
   chapterCountEstimate: integer('chapter_count_estimate'),
   isBuiltin: integer('is_builtin').notNull().default(0),
   ...timestamps,

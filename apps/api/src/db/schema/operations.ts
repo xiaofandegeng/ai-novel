@@ -38,12 +38,24 @@ export const aiQualityFeedback = pgTable('ai_quality_feedback', {
 
 export const promptTemplates = pgTable('prompt_templates', {
   id: text('id').primaryKey(),
+  key: text('key').notNull().unique(), // e.g. 'draft_generate'
   name: text('name').notNull(),
-  taskType: text('task_type').notNull(),
+  description: text('description'),
   version: text('version').notNull(),
-  content: text('content').notNull(),
-  variablesSchema: jsonb('variables_schema'),
+  systemPrompt: text('system_prompt'),
+  userPromptTemplate: text('user_prompt_template').notNull(),
+  outputSchema: jsonb('output_schema'), // JSON schema for validation
   status: text('status').notNull().default('active'),
+  ...timestamps,
+})
+
+export const projectPromptOverrides = pgTable('project_prompt_overrides', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  templateKey: text('template_key').notNull(),
+  overrideSystemPrompt: text('override_system_prompt'),
+  overrideUserPromptTemplate: text('override_user_prompt_template'),
+  enabled: integer('enabled').notNull().default(1),
   ...timestamps,
 })
 
@@ -72,5 +84,29 @@ export const aiUsageRecords = pgTable('ai_usage_records', {
   latencyMs: integer('latency_ms').notNull().default(0),
   status: text('status').notNull(), // success, error
   errorCode: text('error_code'),
+  createdAt: timestamp('created_at', { mode: 'string' }).notNull().$defaultFn(() => new Date().toISOString()),
+})
+
+export const projectHealthReports = pgTable('project_health_reports', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  scope: text('scope').notNull(), // overall, theme, character, plot, style
+  score: integer('score').notNull(),
+  riskLevel: text('risk_level').$type<'low' | 'medium' | 'high'>().notNull(),
+  metricsJson: jsonb('metrics_json'), // 包含具体的指标证据和建议
+  generatedAt: timestamp('generated_at', { mode: 'string' }).notNull().$defaultFn(() => new Date().toISOString()),
+})
+
+export const chapterStyleFingerprints = pgTable('chapter_style_fingerprints', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  sentenceLengthAvg: integer('sentence_length_avg'),
+  dialogueRatio: integer('dialogue_ratio'), // 0-100
+  emotionDensity: integer('emotion_density'), // 0-100
+  conflictDensity: integer('conflict_density'), // 0-100
+  hookDensity: integer('hook_density'), // 0-100
+  styleSummary: text('style_summary'),
+  embeddingId: text('embedding_id'), // 关联 knowledge_embeddings
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().$defaultFn(() => new Date().toISOString()),
 })

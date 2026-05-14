@@ -19,8 +19,8 @@ import {
 
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-
 import { fetchHealthMetrics } from '../api/health-metrics'
+import HealthRadarChart from '../features/health/components/HealthRadarChart.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -94,18 +94,23 @@ onMounted(() => {
     <div v-if="metrics" class="space-y-8">
       <!-- Top Row: Overview Cards -->
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-4 md:grid-cols-2">
-        <NPanel class="relative overflow-hidden border-primary/10 from-primary-soft/30 to-bg-surface bg-gradient-to-br">
-          <div class="absolute opacity-5 -bottom-4 -right-4">
-            <Activity :size="100" />
-          </div>
-          <div class="relative z-10">
-            <span class="text-xs text-primary font-bold tracking-widest uppercase">总体健康分</span>
-            <div class="mt-2 flex items-baseline gap-1">
-              <span class="text-4xl text-text-primary font-bold">{{ overallScore }}</span>
-              <span class="text-sm text-text-muted">/ 100</span>
+        <NPanel class="relative overflow-hidden border-primary/10 from-primary-soft/30 to-bg-surface bg-gradient-to-br lg:col-span-2">
+          <div class="flex items-center gap-8">
+            <div class="relative flex-shrink-0">
+              <HealthRadarChart v-if="metrics" :metrics="metrics.radarMetrics" :size="160" />
             </div>
-            <div class="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-bg-page">
-              <div class="h-full bg-primary" :style="{ width: `${overallScore}%` }" />
+            <div class="flex-1">
+              <span class="text-xs text-primary font-bold tracking-widest uppercase">总体健康分</span>
+              <div class="mt-2 flex items-baseline gap-1">
+                <span class="text-5xl text-text-primary font-bold">{{ overallScore }}</span>
+                <span class="text-sm text-text-muted">/ 100</span>
+              </div>
+              <p class="mt-2 text-xs text-text-muted leading-relaxed">
+                基于主题、人物、伏笔、矛盾、节奏和文风六个维度的深度扫描结果。
+              </p>
+              <div class="mt-4 h-2 w-full overflow-hidden rounded-full bg-bg-page">
+                <div class="h-full bg-primary transition-all duration-1000" :style="{ width: `${overallScore}%` }" />
+              </div>
             </div>
           </div>
         </NPanel>
@@ -200,6 +205,16 @@ onMounted(() => {
                     <li v-for="ev in risk.evidence" :key="ev" class="flex items-center gap-2 text-xs text-text-muted">
                       <div class="h-1 w-1 rounded-full bg-border-light" />
                       {{ ev }}
+                    </li>
+                  </ul>
+                </div>
+                <div v-if="risk.suggestions && risk.suggestions.length > 0" class="mt-3 rounded-lg bg-primary/5 p-3">
+                  <div class="mb-1 flex items-center gap-1.5 text-[10px] text-primary font-bold tracking-wider uppercase">
+                    <Lightbulb :size="12" /> 修复建议
+                  </div>
+                  <ul class="space-y-1">
+                    <li v-for="sug in risk.suggestions" :key="sug" class="text-xs text-text-secondary leading-relaxed">
+                      • {{ sug }}
                     </li>
                   </ul>
                 </div>

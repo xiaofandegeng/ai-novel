@@ -1,3 +1,4 @@
+import type { HealthMetrics, HealthRisk } from '@ai-novel/shared'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import {
@@ -5,6 +6,7 @@ import {
   chapterMemories,
   chapters,
   chapterScenes,
+  chapterStyleFingerprints,
   conflicts,
   foreshadowingItems,
   knowledgeSources,
@@ -13,37 +15,7 @@ import {
   storyFactTriples,
 } from '../db/schema'
 
-export interface ProjectHealthMetrics {
-  totalChapters: number
-  completedChapters: number
-  totalWords: number
-  averageChapterWords: number
-  activeConflicts: number
-  conflictIntensityAvg: number
-  conflictIntensityTrend: { chapter: number, avgIntensity: number }[]
-  openForeshadowingCount: number
-  foreshadowingByStatus: Record<string, number>
-  confirmedTriples: number
-  pendingTriples: number
-  elementFrequency: { name: string, type: string, count: number }[]
-  qualityTrend: { chapter: number, score: number }[]
-  chaptersWithoutScenes: { chapterId: string, chapterNumber: number, title: string }[]
-  scenesWithoutContent: number
-  scenesWithoutPurpose: number
-  scenesWithoutConflict: number
-  sceneWordCountDeviation: { sceneId: string, sceneNumber: number, title: string | null, actual: number, target: number, deviation: number }[]
-  sceneStatusDistribution: Record<string, number>
-  risks: Array<{
-    id: string
-    severity: 'high' | 'medium' | 'low'
-    type: 'scene' | 'foreshadowing' | 'conflict' | 'quality' | 'structure' | 'knowledge' | 'consistency'
-    title: string
-    message: string
-    actionLabel: string
-    targetRoute?: string
-    evidence?: string[] // 证据来源，如 ["第12章伏笔未回收", "角色'张三'性格偏离"]
-  }>
-}
+export interface ProjectHealthMetrics extends HealthMetrics {}
 
 export async function getProjectHealthMetrics(projectId: string): Promise<ProjectHealthMetrics> {
   const [project] = await db.select().from(novelProjects).where(eq(novelProjects.id, projectId))
@@ -159,55 +131,20 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
     })
   }
 
-  // 2. 伏笔遗忘风险 (Foreshadowing Amnesia)
-  const forgottenForeshadowing = allForeshadowing.filter(f =>
-    f.status === 'open'
-    && f.expectedPayoffChapterId
-    && (allChapters.find(c => c.id === f.expectedPayoffChapterId)?.chapterNumber || 0) < (completedChapters + 1),
-  )
-  if (forgottenForeshadowing.length > 0) {
-    risks.push({
-      id: 'foreshadowing-amnesia',
-      severity: 'high',
-      type: 'foreshadowing',
-      title: '伏笔可能被遗忘',
-      message: `有 ${forgottenForeshadowing.length} 个伏笔已过预定回收章节但仍未闭环。`,
-      actionLabel: '检查伏笔',
-      targetRoute: `/project/${projectId}/foreshadowing`,
-      evidence: forgottenForeshadowing.map(f => `伏笔: ${f.title}`),
-    })
-  }
+  // 2. 伏笔遗忘风险
+  risks.push(...computeForeshadowingRisk(projectId, allForeshadowing, completedChapters, allChapters))
 
-  // 3. 人物 OOC 风险 (Character Inconsistency)
-  const oocReports = reports.filter(r => r.issues?.toLowerCase().includes('ooc') || r.issues?.includes('性格不符'))
-  if (oocReports.length > 0) {
-    risks.push({
-      id: 'character-ooc',
-      severity: 'high',
-      type: 'consistency',
-      title: '人物一致性异常',
-      message: '质量评估中多次提到角色行为与设定不符。',
-      actionLabel: '查看质量报告',
-      targetRoute: `/project/${projectId}/quality`,
-      evidence: oocReports.slice(0, 3).map(r => `章节 ${allChapters.find(c => c.id === r.chapterId)?.chapterNumber}: ${r.issues?.substring(0, 50)}...`),
-    })
-  }
+  // 3. 人物 OOC 风险
+  risks.push(...computeCharacterOOC(projectId, reports, allChapters))
 
-  // 4. 叙事停滞风险 (Narrative Stagnation)
-  const recentTrend = conflictIntensityTrend.slice(-3)
-  if (recentTrend.length >= 3 && recentTrend.every(t => t.avgIntensity <= 3)) {
-    risks.push({
-      id: 'narrative-stagnation',
-      severity: 'medium',
-      type: 'conflict',
-      title: '叙事张力不足',
-      message: '连续 3 个章节的冲突强度偏低，长篇推进可能面临瓶颈。',
-      actionLabel: '加强冲突',
-      targetRoute: `/project/${projectId}/conflicts`,
-    })
-  }
+  // 4. 叙事停滞风险
+  risks.push(...computeConflictStagnation(projectId, conflictIntensityTrend))
 
-  // 5. 知识库完整性 (Knowledge Integrity)
+  // 5. 风格漂移风险
+  const fingerprints = await db.select().from(chapterStyleFingerprints).where(eq(chapterStyleFingerprints.projectId, projectId))
+  risks.push(...computeStyleDrift(projectId, fingerprints))
+
+  // 6. 知识库完整性
   const pendingSources = await db.select().from(knowledgeSources).where(and(eq(knowledgeSources.projectId, projectId), eq(knowledgeSources.status, 'pending')))
   if (pendingSources.length > 0) {
     risks.push({
@@ -242,5 +179,115 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
     sceneWordCountDeviation,
     sceneStatusDistribution,
     risks,
+    radarMetrics: {
+      theme: 100 - (risks.filter(r => r.type === 'theme').length * 20),
+      character: 100 - (risks.filter(r => r.type === 'consistency').length * 15),
+      foreshadowing: 100 - (risks.filter(r => r.type === 'foreshadowing').length * 10),
+      conflict: 100 - (risks.filter(r => r.type === 'conflict').length * 15),
+      pacing: 100 - (risks.filter(r => r.type === 'pacing').length * 20),
+      style: 100 - (risks.filter(r => r.type === 'style').length * 15),
+    },
   }
+}
+
+// Advanced Risk Computation Functions
+
+export function computeForeshadowingRisk(
+  projectId: string,
+  allForeshadowing: any[],
+  completedChapters: number,
+  allChapters: any[],
+): HealthRisk[] {
+  const risks: HealthRisk[] = []
+  const forgottenForeshadowing = allForeshadowing.filter(f =>
+    f.status === 'open'
+    && f.expectedPayoffChapterId
+    && (allChapters.find(c => c.id === f.expectedPayoffChapterId)?.chapterNumber || 0) < (completedChapters + 1),
+  )
+
+  if (forgottenForeshadowing.length > 0) {
+    risks.push({
+      id: 'foreshadowing-amnesia',
+      severity: 'high',
+      type: 'foreshadowing',
+      title: '伏笔可能被遗忘',
+      message: `有 ${forgottenForeshadowing.length} 个伏笔已过预定回收章节但仍未闭环。`,
+      actionLabel: '检查伏笔',
+      targetRoute: `/project/${projectId}/foreshadowing`,
+      evidence: forgottenForeshadowing.map(f => `伏笔: ${f.title}`),
+      suggestions: ['建议在下一章安排回收情节', '如该线索已失效，请标记为“弃用”'],
+    })
+  }
+  return risks
+}
+
+export function computeConflictStagnation(
+  projectId: string,
+  conflictIntensityTrend: { chapter: number, avgIntensity: number }[],
+): HealthRisk[] {
+  const risks: HealthRisk[] = []
+  const recentTrend = conflictIntensityTrend.slice(-3)
+  if (recentTrend.length >= 3 && recentTrend.every(t => t.avgIntensity <= 3)) {
+    risks.push({
+      id: 'narrative-stagnation',
+      severity: 'medium',
+      type: 'conflict',
+      title: '叙事张力停滞',
+      message: '连续 3 个章节的冲突强度偏低，主线情节可能陷入沉闷。',
+      actionLabel: '加强冲突',
+      targetRoute: `/project/${projectId}/conflicts`,
+      suggestions: ['增加反派阻碍', '引入突发意外事件', '提升角色情感压力'],
+    })
+  }
+  return risks
+}
+
+export function computeCharacterOOC(
+  projectId: string,
+  reports: any[],
+  allChapters: any[],
+): HealthRisk[] {
+  const risks: HealthRisk[] = []
+  const oocReports = reports.filter(r => r.issues?.toLowerCase().includes('ooc') || r.issues?.includes('性格不符'))
+  if (oocReports.length > 0) {
+    risks.push({
+      id: 'character-ooc',
+      severity: 'high',
+      type: 'consistency',
+      title: '人物一致性异常 (OOC)',
+      message: '质量评估中多次提到角色行为与设定不符。',
+      actionLabel: '查看质量报告',
+      targetRoute: `/project/${projectId}/quality`,
+      evidence: oocReports.slice(0, 3).map(r => `章节 ${allChapters.find(c => c.id === r.chapterId)?.chapterNumber}: ${r.issues?.substring(0, 50)}...`),
+      suggestions: ['重新查阅人物设定集', '在下一章通过内心独白修正动机'],
+    })
+  }
+  return risks
+}
+
+export function computeStyleDrift(
+  projectId: string,
+  fingerprints: any[],
+): HealthRisk[] {
+  const risks: HealthRisk[] = []
+  if (fingerprints.length < 3)
+    return risks
+
+  const recent = fingerprints.slice(-3)
+  const avgSentenceLen = recent.reduce((sum, f) => sum + (f.sentenceLengthAvg || 0), 0) / 3
+  const first = fingerprints[0]
+
+  if (first.sentenceLengthAvg && Math.abs(avgSentenceLen - first.sentenceLengthAvg) > 15) {
+    risks.push({
+      id: 'style-drift-sentence',
+      severity: 'medium',
+      type: 'style',
+      title: '文风显著漂移',
+      message: '近期章节的平均句长与开篇风格差异较大，可能影响阅读连贯性。',
+      actionLabel: '查看文风分析',
+      targetRoute: `/project/${projectId}/quality`,
+      suggestions: ['查阅写作人格设定', '使用“文风对齐”功能校准'],
+    })
+  }
+  return risks
 }
