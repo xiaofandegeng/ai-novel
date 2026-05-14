@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import {
   chapterElements,
@@ -7,6 +7,7 @@ import {
   chapterScenes,
   conflicts,
   foreshadowingItems,
+  knowledgeSources,
   novelProjects,
   qualityReports,
   storyFactTriples,
@@ -35,11 +36,12 @@ export interface ProjectHealthMetrics {
   risks: Array<{
     id: string
     severity: 'high' | 'medium' | 'low'
-    type: 'scene' | 'foreshadowing' | 'conflict' | 'quality' | 'structure' | 'knowledge'
+    type: 'scene' | 'foreshadowing' | 'conflict' | 'quality' | 'structure' | 'knowledge' | 'consistency'
     title: string
     message: string
     actionLabel: string
     targetRoute?: string
+    evidence?: string[] // 证据来源，如 ["第12章伏笔未回收", "角色'张三'性格偏离"]
   }>
 }
 
@@ -62,19 +64,15 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
     ? Math.round(allConflicts.filter(c => c.status !== 'resolved' && c.status !== 'abandoned').reduce((s, c) => s + c.intensity, 0) / activeConflicts)
     : 0
 
-  // Conflict intensity trend (by chapter — use memories that have conflictProgress)
+  // Conflict intensity trend
   const memories = await db.select().from(chapterMemories).where(eq(chapterMemories.projectId, projectId))
   const chapterNumMap = new Map(allChapters.map(c => [c.id, c.chapterNumber]))
   const conflictIntensityTrend = memories
     .filter(m => m.conflictProgress)
     .map((m) => {
       let intensity = 5
-      if (m.conflictProgress) {
-        // Simple heuristic: look for numbers or keywords in conflictProgress
-        const match = m.conflictProgress.match(/(\d+)/)
-        if (match)
-          intensity = Math.min(10, Math.max(1, Number.parseInt(match[1])))
-      }
+      const match = m.conflictProgress?.match(/(\d+)/)
+      if (match) intensity = Math.min(10, Math.max(1, Number.parseInt(match[1])))
       return { chapter: chapterNumMap.get(m.chapterId) || 0, avgIntensity: intensity }
     })
     .sort((a, b) => a.chapter - b.chapter)
@@ -98,12 +96,8 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
   for (const el of allElements) {
     const key = `${el.elementType}:${el.elementName}`
     const existing = freqMap.get(key)
-    if (existing) {
-      existing.count++
-    }
-    else {
-      freqMap.set(key, { name: el.elementName, type: el.elementType, count: 1 })
-    }
+    if (existing) existing.count++
+    else freqMap.set(key, { name: el.elementName, type: el.elementType, count: 1 })
   }
   const elementFrequency = [...freqMap.values()].sort((a, b) => b.count - a.count).slice(0, 20)
 
@@ -119,8 +113,6 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
 
   // Scene-level metrics
   const allScenes = await db.select().from(chapterScenes).where(eq(chapterScenes.projectId, projectId))
-
-  // Chapters without scenes
   const scenesByChapter = new Map<string, typeof allScenes>()
   for (const s of allScenes) {
     const list = scenesByChapter.get(s.chapterId) || []
@@ -131,12 +123,9 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
     .filter(c => !scenesByChapter.has(c.id))
     .map(c => ({ chapterId: c.id, chapterNumber: c.chapterNumber, title: c.title }))
 
-  // Scene counts
   const scenesWithoutContent = allScenes.filter(s => !s.content).length
   const scenesWithoutPurpose = allScenes.filter(s => !s.purpose).length
   const scenesWithoutConflict = allScenes.filter(s => !s.conflict).length
-
-  // Scene word count deviation (only scenes with targetWords set)
   const sceneWordCountDeviation = allScenes
     .filter(s => s.targetWords && s.targetWords > 0)
     .map(s => ({
@@ -148,84 +137,85 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
       deviation: (s.content || '').length - s.targetWords!,
     }))
 
-  // Scene status distribution
   const sceneStatusDistribution: Record<string, number> = {}
   for (const s of allScenes) {
     sceneStatusDistribution[s.status] = (sceneStatusDistribution[s.status] || 0) + 1
   }
 
   const risks: ProjectHealthMetrics['risks'] = []
-  for (const chapter of chaptersWithoutScenes.slice(0, 5)) {
+
+  // 1. 场景规划风险
+  for (const chapter of chaptersWithoutScenes.slice(0, 3)) {
     risks.push({
       id: `chapter-without-scenes:${chapter.chapterId}`,
       severity: 'medium',
       type: 'scene',
       title: `第 ${chapter.chapterNumber} 章缺少场景规划`,
-      message: `《${chapter.title}》还没有拆成场景，后续 AI 生成较容易偏离章节节拍。`,
+      message: `《${chapter.title}》尚未拆分场景，建议先完成场景大纲。`,
       actionLabel: '去规划场景',
       targetRoute: `/project/${projectId}/outline?chapter=${chapter.chapterId}`,
     })
   }
 
-  if (scenesWithoutConflict > 0) {
+  // 2. 伏笔遗忘风险 (Foreshadowing Amnesia)
+  const forgottenForeshadowing = allForeshadowing.filter(f => 
+    f.status === 'open' && 
+    f.expectedPayoffChapterId && 
+    (allChapters.find(c => c.id === f.expectedPayoffChapterId)?.chapterNumber || 0) < (completedChapters + 1)
+  )
+  if (forgottenForeshadowing.length > 0) {
     risks.push({
-      id: 'scenes-without-conflict',
-      severity: scenesWithoutConflict >= 3 ? 'high' : 'medium',
-      type: 'scene',
-      title: '存在缺少冲突的场景',
-      message: `${scenesWithoutConflict} 个场景没有填写场景冲突，可能导致正文推进乏力。`,
-      actionLabel: '检查场景冲突',
-      targetRoute: `/project/${projectId}/outline`,
-    })
-  }
-
-  if (openForeshadowingCount >= 5) {
-    risks.push({
-      id: 'many-open-foreshadowing',
-      severity: 'medium',
-      type: 'foreshadowing',
-      title: '待回收伏笔较多',
-      message: `当前还有 ${openForeshadowingCount} 条伏笔未回收，建议安排兑现章节或标记放弃。`,
-      actionLabel: '查看伏笔台账',
-      targetRoute: `/project/${projectId}/foreshadowing`,
-    })
-  }
-
-  if (activeConflicts === 0 && totalChapters > 0) {
-    risks.push({
-      id: 'no-active-conflicts',
+      id: 'foreshadowing-amnesia',
       severity: 'high',
+      type: 'foreshadowing',
+      title: '伏笔可能被遗忘',
+      message: `有 ${forgottenForeshadowing.length} 个伏笔已过预定回收章节但仍未闭环。`,
+      actionLabel: '检查伏笔',
+      targetRoute: `/project/${projectId}/foreshadowing`,
+      evidence: forgottenForeshadowing.map(f => `伏笔: ${f.title}`),
+    })
+  }
+
+  // 3. 人物 OOC 风险 (Character Inconsistency)
+  const oocReports = reports.filter(r => r.issues?.toLowerCase().includes('ooc') || r.issues?.includes('性格不符'))
+  if (oocReports.length > 0) {
+    risks.push({
+      id: 'character-ooc',
+      severity: 'high',
+      type: 'consistency',
+      title: '人物一致性异常',
+      message: '质量评估中多次提到角色行为与设定不符。',
+      actionLabel: '查看质量报告',
+      targetRoute: `/project/${projectId}/quality`,
+      evidence: oocReports.slice(0, 3).map(r => `章节 ${allChapters.find(c => c.id === r.chapterId)?.chapterNumber}: ${r.issues?.substring(0, 50)}...`),
+    })
+  }
+
+  // 4. 叙事停滞风险 (Narrative Stagnation)
+  const recentTrend = conflictIntensityTrend.slice(-3)
+  if (recentTrend.length >= 3 && recentTrend.every(t => t.avgIntensity <= 3)) {
+    risks.push({
+      id: 'narrative-stagnation',
+      severity: 'medium',
       type: 'conflict',
-      title: '缺少活跃冲突',
-      message: '当前没有活跃冲突，长篇推进可能缺少持续张力。',
-      actionLabel: '补充冲突',
+      title: '叙事张力不足',
+      message: '连续 3 个章节的冲突强度偏低，长篇推进可能面临瓶颈。',
+      actionLabel: '加强冲突',
       targetRoute: `/project/${projectId}/conflicts`,
     })
   }
 
-  const lowQuality = qualityTrend.find(item => item.score < 60)
-  if (lowQuality) {
+  // 5. 知识库完整性 (Knowledge Integrity)
+  const pendingSources = await db.select().from(knowledgeSources).where(and(eq(knowledgeSources.projectId, projectId), eq(knowledgeSources.status, 'pending')))
+  if (pendingSources.length > 0) {
     risks.push({
-      id: `low-quality:${lowQuality.chapter}`,
-      severity: 'medium',
-      type: 'quality',
-      title: `第 ${lowQuality.chapter} 章质量评分偏低`,
-      message: `该章节质量评分为 ${lowQuality.score}，建议复查节奏、冲突和人物动机。`,
-      actionLabel: '打开质量评估',
-      targetRoute: `/project/${projectId}/quality`,
-    })
-  }
-
-  const largeDeviation = sceneWordCountDeviation.find(item => Math.abs(item.deviation) > item.target * 0.3)
-  if (largeDeviation) {
-    risks.push({
-      id: `scene-word-deviation:${largeDeviation.sceneId}`,
+      id: 'knowledge-pending',
       severity: 'low',
-      type: 'scene',
-      title: '场景字数偏离目标',
-      message: `${largeDeviation.title || `场景 ${largeDeviation.sceneNumber}`} 实际 ${largeDeviation.actual} 字，目标 ${largeDeviation.target} 字。`,
-      actionLabel: '调整场景正文',
-      targetRoute: `/project/${projectId}/write`,
+      type: 'knowledge',
+      title: '知识库待处理',
+      message: `有 ${pendingSources.length} 个知识源尚未完成 AI 分析和向量化。`,
+      actionLabel: '同步知识库',
+      targetRoute: `/project/${projectId}/knowledge`,
     })
   }
 

@@ -21,7 +21,7 @@ import {
   knowledgeNotes,
   knowledgeSources,
   novelProjects,
-  personaMemoryFragments,
+  personaMemoryCards,
   projectAppliedTemplates,
   projectPersonaConfigs,
   qualityReports,
@@ -37,7 +37,6 @@ import {
   writingJobSteps,
   writingPersonas,
 } from '../db/schema'
-import { buildEmbeddingText, createLocalEmbedding, serializeEmbedding } from '../services/embedding.service'
 
 const now = new Date().toISOString()
 
@@ -58,7 +57,7 @@ async function clearProjectData() {
   await db.delete(writingJobs)
   await db.delete(aiContextSnapshots)
   await db.delete(projectPersonaConfigs)
-  await db.delete(personaMemoryFragments)
+  await db.delete(personaMemoryCards)
   await db.delete(writingPersonas)
   await db.delete(workStyleReports)
   await db.delete(chapterAnalyses)
@@ -687,15 +686,11 @@ async function seed() {
   await db.insert(knowledgeEmbeddings).values(chunks.map(chunk => ({
     id: id(),
     projectId,
-    sourceType: 'knowledge_chunk',
     sourceId: chunk.id,
-    embedding: serializeEmbedding(createLocalEmbedding(buildEmbeddingText({
-      title: chunk.title,
-      summary: chunk.summary,
-      techniques: chunk.techniques,
-    }))),
-    summary: chunk.summary,
-    tags: chunk.techniques,
+    embeddingModel: 'text-embedding-3-small',
+    embeddingVector: Array.from({ length: 1536 }).map(() => 0), // Dummy vector
+    contentType: 'technique' as const,
+    contentHash: `seed_${chunk.id}`,
     createdAt: now,
   })))
   await db.insert(knowledgeNotes).values({
@@ -888,26 +883,22 @@ async function seed() {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(personaMemoryFragments).values([
+  await db.insert(personaMemoryCards).values([
     {
       id: id(),
       projectId,
-      fragmentType: 'pacing_preference',
+      cardType: 'pacing',
       content: '章节结尾优先使用“证据反咬主角”的钩子，而不是单纯出现新敌人。',
-      confidence: 86,
-      sourceType: 'accumulated',
-      sourceChapterIds: j([chapterIds[0], chapterIds[1]]),
+      tags: 'pacing,ending_hook',
       createdAt: now,
       updatedAt: now,
     },
     {
       id: id(),
       projectId,
-      fragmentType: 'style_pattern',
+      cardType: 'style',
       content: '用雨、镜面、旧照片等反光物承载记忆异常，减少直接说明。',
-      confidence: 82,
-      sourceType: 'ai_extracted',
-      sourceChapterIds: j([chapterIds[0]]),
+      tags: 'style,symbolism',
       createdAt: now,
       updatedAt: now,
     },

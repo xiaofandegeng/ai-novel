@@ -24,11 +24,12 @@ export interface HealthMetrics {
 export interface HealthRisk {
   id: string
   severity: 'high' | 'medium' | 'low'
-  type: 'scene' | 'foreshadowing' | 'conflict' | 'quality' | 'structure' | 'knowledge'
+  type: 'scene' | 'foreshadowing' | 'conflict' | 'quality' | 'structure' | 'knowledge' | 'consistency'
   title: string
   message: string
   actionLabel: string
   targetRoute?: string
+  evidence?: string[]
   fixActionType?: 'plan_scenes' | 'suggest_conflicts' | 'analyze_quality' | 'brainstorm_foreshadowing'
   fixActionPayload?: Record<string, any>
 }

@@ -2,7 +2,7 @@ import type { KnowledgeContextSnippet } from '@ai-novel/shared'
 import { and, eq, or, sql } from 'drizzle-orm'
 import { db } from '../db'
 import { knowledgeChunks, knowledgeEmbeddings, storyFactTriples } from '../db/schema'
-import { buildEmbeddingText, cosineSimilarity, createLocalEmbedding, parseEmbedding } from './embedding.service'
+import { searchSimilarEmbeddings } from './embedding.service'
 
 interface RetrievedKnowledge extends KnowledgeContextSnippet {
   score: number
@@ -18,10 +18,19 @@ interface RetrievalInput {
   limit: number
 }
 
+interface SearchResult { 
+  id: string
+  title: string | null
+  summary: string | null
+  techniques: string | null
+  matchedTerms: string[]
+  vectorScore?: number 
+}
+
 async function keywordSearch(
   projectId: string,
   terms: string[],
-): Promise<Array<{ id: string, title: string | null, summary: string | null, techniques: string | null, matchedTerms: string[] }>> {
+): Promise<SearchResult[]> {
   if (terms.length === 0)
     return []
 
@@ -104,147 +113,108 @@ async function expandViaFactTriples(
   return [...expanded]
 }
 
-interface SearchResult { id: string, title: string | null, summary: string | null, techniques: string | null, matchedTerms: string[], vectorScore?: number }
-
 async function embeddingIndexSearch(
   projectId: string,
-  terms: string[],
+  query: string,
 ): Promise<SearchResult[]> {
-  if (terms.length === 0)
+  const similiarRows = await searchSimilarEmbeddings({
+    projectId,
+    query,
+    limit: 15,
+  })
+
+  const chunkIds = similiarRows.map(r => r.chunkId).filter(Boolean) as string[]
+  if (chunkIds.length === 0)
     return []
 
-  const rows = await db
-    .select({
-      id: knowledgeEmbeddings.id,
-      summary: knowledgeEmbeddings.summary,
-      tags: knowledgeEmbeddings.tags,
-      embedding: knowledgeEmbeddings.embedding,
-    })
-    .from(knowledgeEmbeddings)
-    .where(eq(knowledgeEmbeddings.projectId, projectId))
-    .limit(200)
+  const chunks = await db
+    .select()
+    .from(knowledgeChunks)
+    .where(and(
+      eq(knowledgeChunks.projectId, projectId),
+      sql`${knowledgeChunks.id} IN ${chunkIds}`
+    ))
 
-  const queryEmbedding = createLocalEmbedding(terms.join(' '))
+  const chunkMap = new Map(chunks.map(c => [c.id, c]))
 
-  return rows
-    .map((row) => {
-      const existingEmbedding = parseEmbedding(row.embedding)
-      const embedding = existingEmbedding || createLocalEmbedding(buildEmbeddingText({
-        summary: row.summary,
-        tags: row.tags,
-      }))
-      const vectorScore = cosineSimilarity(queryEmbedding, embedding)
-      const matchedTerms = terms.filter((term) => {
-        const pattern = term.toLowerCase()
-        return (
-          (row.summary?.toLowerCase().includes(pattern))
-          || (row.tags?.toLowerCase().includes(pattern))
-        )
-      })
-      return {
-        id: row.id,
-        title: null,
-        summary: row.summary,
-        techniques: row.tags,
-        matchedTerms,
-        vectorScore,
-      }
-    })
-    .filter(row => row.vectorScore > 0.05 || row.matchedTerms.length > 0)
-    .sort((a, b) => (b.vectorScore || 0) - (a.vectorScore || 0))
-    .slice(0, 15)
+  return similiarRows.map((r) => {
+    const chunk = r.chunkId ? chunkMap.get(r.chunkId) : null
+    return {
+      id: r.id,
+      title: chunk?.title || null,
+      summary: chunk?.summary || null,
+      techniques: chunk?.techniques || null,
+      matchedTerms: [],
+      vectorScore: r.similarity,
+    }
+  }).filter(r => r.summary !== null)
 }
 
 function fuseResults(
   keywordResults: SearchResult[],
   expansionResults: SearchResult[],
   embeddingResults: SearchResult[],
-  factExpansionTerms: string[],
-  inputTerms: string[],
-  characterNames: string[],
-  conflictTitles: string[],
   limit: number,
 ): RetrievedKnowledge[] {
-  const scoreMap = new Map<string, { result: SearchResult, score: number, reasons: Set<string> }>()
+  const scoreMap = new Map<string, { result: SearchResult, keywordScore: number, vectorScore: number, graphScore: number, reasons: Set<string> }>()
 
-  function addResult(result: SearchResult, reason: string, weight: number) {
-    const existing = scoreMap.get(result.id)
-    if (existing) {
-      existing.score += weight
-      existing.reasons.add(reason)
+  function ensureEntry(result: SearchResult) {
+    if (!scoreMap.has(result.id)) {
+      scoreMap.set(result.id, { 
+        result, 
+        keywordScore: 0, 
+        vectorScore: 0, 
+        graphScore: 0, 
+        reasons: new Set() 
+      })
     }
-    else {
-      scoreMap.set(result.id, { result, score: weight, reasons: new Set([reason]) })
-    }
+    return scoreMap.get(result.id)!
   }
 
   for (const r of keywordResults) {
-    if (!r.summary)
-      continue
-    const baseScore = r.matchedTerms.length * 2
-    addResult(r, `关键词匹配: ${r.matchedTerms.join(', ')}`, baseScore)
-
-    // Boost if matches character names
-    const charMatch = r.matchedTerms.some(t =>
-      characterNames.some(name => name.includes(t) || t.includes(name)),
-    )
-    if (charMatch)
-      addResult(r, '角色相关', 3)
-
-    // Boost if matches conflict titles
-    const conflictMatch = r.matchedTerms.some(t =>
-      conflictTitles.some(title => title.includes(t) || t.includes(title)),
-    )
-    if (conflictMatch)
-      addResult(r, '冲突相关', 2)
-  }
-
-  for (const r of expansionResults) {
-    if (!r.summary)
-      continue
-    addResult(r, `事实图谱扩展: ${r.matchedTerms.join(', ')}`, r.matchedTerms.length)
+    const entry = ensureEntry(r)
+    entry.keywordScore = Math.min(1, r.matchedTerms.length / 3)
+    entry.reasons.add(`关键词匹配: ${r.matchedTerms.join(', ')}`)
   }
 
   for (const r of embeddingResults) {
-    if (!r.summary)
-      continue
-    const vectorScore = r.vectorScore || 0
-    const reason = r.matchedTerms.length > 0
-      ? `向量检索 + 知识索引匹配: ${r.matchedTerms.join(', ')}`
-      : `向量检索相似度: ${Math.round(vectorScore * 100)}`
-    addResult(r, reason, Math.max(1, vectorScore * 8) + r.matchedTerms.length * 2)
+    const entry = ensureEntry(r)
+    entry.vectorScore = r.vectorScore || 0
+    entry.reasons.add(`语义相关性: ${Math.round((r.vectorScore || 0) * 100)}%`)
+  }
+
+  for (const r of expansionResults) {
+    const entry = ensureEntry(r)
+    entry.graphScore = Math.min(1, r.matchedTerms.length / 2)
+    entry.reasons.add(`图谱关联: ${r.matchedTerms.join(', ')}`)
   }
 
   return [...scoreMap.values()]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map(({ result, score, reasons }) => ({
-      title: result.title || 'Knowledge Piece',
+    .map(({ result, keywordScore, vectorScore, graphScore, reasons }) => ({
+      title: result.title || '知识片段',
       summary: result.summary!,
       techniques: result.techniques || undefined,
-      score,
+      score: (keywordScore * 0.3) + (vectorScore * 0.5) + (graphScore * 0.2),
       reasons: [...reasons],
     }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
 }
 
 export async function retrieveKnowledgeForAI(input: RetrievalInput): Promise<RetrievedKnowledge[]> {
-  const { projectId, terms, characterNames, conflictTitles, factTripleSubjects, limit } = input
+  const { projectId, terms, factTripleSubjects, limit } = input
 
   if (terms.length === 0)
     return []
 
-  // 1. Keyword search with primary terms
   const keywordResults = await keywordSearch(projectId, terms)
 
-  // 2. Expand via confirmed fact triples
   const expansionTerms = await expandViaFactTriples(projectId, factTripleSubjects)
   const expansionResults = expansionTerms.length > 0
     ? await keywordSearch(projectId, expansionTerms.slice(0, 15))
     : []
 
-  // 3. Embedding index search
-  const embeddingResults = await embeddingIndexSearch(projectId, terms)
+  const embeddingResults = await embeddingIndexSearch(projectId, terms.join(' '))
 
-  // 4. Fuse and rank
-  return fuseResults(keywordResults, expansionResults, embeddingResults, expansionTerms, terms, characterNames, conflictTitles, limit)
+  return fuseResults(keywordResults, expansionResults, embeddingResults, limit)
 }

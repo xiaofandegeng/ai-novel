@@ -1,9 +1,9 @@
 import { and, eq, like, or } from 'drizzle-orm'
 import { db } from '../db'
-import { knowledgeChunks, knowledgeEmbeddings, knowledgeNotes, knowledgeSources } from '../db/schema'
+import { knowledgeChunks, knowledgeNotes, knowledgeSources } from '../db/schema'
 import { fail, generateId, now } from '../utils'
 import { callAIJSON } from './ai.service'
-import { buildEmbeddingText, createLocalEmbedding, serializeEmbedding } from './embedding.service'
+import { getOrCreateEmbedding } from './embedding.service'
 
 export async function listSources(projectId: string) {
   return db.select().from(knowledgeSources).where(eq(knowledgeSources.projectId, projectId))
@@ -167,25 +167,27 @@ export async function analyzeSource(projectId: string, sourceId: string, content
       await db.insert(knowledgeChunks).values(chunksData)
     }
 
-    // Insert embedding index rows
-    const embeddingRows = chunksData
-      .filter(chunk => chunk.summary || chunk.techniques)
-      .map(chunk => ({
-        id: generateId(),
-        projectId,
-        sourceType: 'knowledge_chunk',
-        sourceId: chunk.id,
-        embedding: serializeEmbedding(createLocalEmbedding(buildEmbeddingText({
-          title: chunk.title,
-          summary: chunk.summary,
-          techniques: chunk.techniques,
-        }))),
-        summary: chunk.summary || null,
-        tags: chunk.techniques || null,
-      }))
-
-    if (embeddingRows.length > 0)
-      await db.insert(knowledgeEmbeddings).values(embeddingRows)
+    // Insert embedding index rows (Semantic Search RAG)
+    for (const chunk of chunksData) {
+      if (chunk.summary) {
+        await getOrCreateEmbedding({
+          projectId,
+          sourceId,
+          chunkId: chunk.id,
+          text: chunk.summary,
+          contentType: 'knowledge_summary',
+        })
+      }
+      if (chunk.techniques) {
+        await getOrCreateEmbedding({
+          projectId,
+          sourceId,
+          chunkId: chunk.id,
+          text: chunk.techniques,
+          contentType: 'technique',
+        })
+      }
+    }
 
     // Update source to completed
     await db

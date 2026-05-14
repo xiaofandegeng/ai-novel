@@ -1,4 +1,4 @@
-import { integer, pgTable, text } from 'drizzle-orm/pg-core'
+import { integer, pgTable, text, vector } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
 import { novelProjects } from './project'
 
@@ -40,10 +40,11 @@ export const knowledgeNotes = pgTable('knowledge_notes', {
 export const knowledgeEmbeddings = pgTable('knowledge_embeddings', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  sourceType: text('source_type').notNull(),
-  sourceId: text('source_id').notNull(),
-  embedding: text('embedding'),
-  summary: text('summary'),
-  tags: text('tags'),
-  createdAt: timestamps.createdAt,
+  sourceId: text('source_id'),
+  chunkId: text('chunk_id'),
+  embeddingModel: text('embedding_model').notNull(),
+  embeddingVector: vector('embedding_vector', { dimensions: 1536 }),
+  contentType: text('content_type').$type<'knowledge_summary' | 'technique' | 'chapter_memory' | 'fact_summary' | 'persona_memory'>().notNull(),
+  contentHash: text('content_hash').notNull(),
+  ...timestamps,
 })

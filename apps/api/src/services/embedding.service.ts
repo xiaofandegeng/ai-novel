@@ -1,92 +1,119 @@
-const VECTOR_SIZE = 128
+import crypto from 'node:crypto'
+import { and, eq, sql } from 'drizzle-orm'
+import { generateId, now } from '../utils'
+import { db } from '../db'
+import { knowledgeEmbeddings } from '../db/schema'
+import { callAIEmbedding, getEffectiveAISettings } from './ai.service'
 
-function hashToken(token: string): number {
-  let hash = 2166136261
-  for (let i = 0; i < token.length; i++) {
-    hash ^= token.charCodeAt(i)
-    hash = Math.imul(hash, 16777619)
+export type EmbeddingContentType
+  = | 'knowledge_summary'
+    | 'technique'
+    | 'chapter_memory'
+    | 'fact_summary'
+    | 'persona_memory'
+
+export interface EmbeddingInput {
+  projectId: string
+  text: string
+  contentType: EmbeddingContentType
+  sourceId?: string
+  chunkId?: string
+}
+
+/**
+ * 计算文本哈希，用于幂等性校验
+ */
+function getContentHash(text: string): string {
+  return crypto.createHash('sha256').update(text).digest('hex')
+}
+
+/**
+ * 获取或创建向量嵌入
+ */
+export async function getOrCreateEmbedding(input: EmbeddingInput): Promise<number[]> {
+  const contentHash = getContentHash(input.text)
+  const settings = await getEffectiveAISettings()
+  const model = 'text-embedding-3-small' // 暂时写死或从 settings 扩展
+
+  // 1. 尝试从数据库查找已有记录
+  const [existing] = await db
+    .select()
+    .from(knowledgeEmbeddings)
+    .where(
+      and(
+        eq(knowledgeEmbeddings.projectId, input.projectId),
+        eq(knowledgeEmbeddings.contentHash, contentHash),
+        eq(knowledgeEmbeddings.embeddingModel, model),
+      ),
+    )
+
+  if (existing && existing.embeddingVector) {
+    return existing.embeddingVector as number[]
   }
-  return hash >>> 0
+
+  // 2. 调用 AI 生成向量
+  const vector = await callAIEmbedding(input.text, { model })
+
+  // 3. 存储到数据库
+  const timestamp = now()
+  await db.insert(knowledgeEmbeddings).values({
+    id: generateId(),
+    projectId: input.projectId,
+    sourceId: input.sourceId,
+    chunkId: input.chunkId,
+    embeddingModel: model,
+    embeddingVector: vector,
+    contentType: input.contentType,
+    contentHash,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }).onConflictDoUpdate({
+    target: knowledgeEmbeddings.id,
+    set: {
+      embeddingVector: vector,
+      updatedAt: timestamp,
+    },
+  })
+
+  return vector
 }
 
-export function tokenizeForEmbedding(text: string): string[] {
-  const normalized = text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim()
-
-  const tokens = normalized.split(/\s+/).filter(Boolean)
-  const chineseChars = [...text.matchAll(/\p{Script=Han}/gu)].map(match => match[0])
-  const chineseBigrams: string[] = []
-  for (let i = 0; i < chineseChars.length - 1; i++)
-    chineseBigrams.push(`${chineseChars[i]}${chineseChars[i + 1]}`)
-
-  return [...tokens, ...chineseBigrams].filter(token => token.length >= 2)
-}
-
-export function createLocalEmbedding(text: string): number[] {
-  const vector = Array.from({ length: VECTOR_SIZE }, () => 0)
-  const tokens = tokenizeForEmbedding(text)
-
-  for (const token of tokens) {
-    const hash = hashToken(token)
-    const index = hash % VECTOR_SIZE
-    const sign = hash & 1 ? 1 : -1
-    vector[index] += sign
-  }
-
-  const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0))
-  if (magnitude === 0)
-    return vector
-
-  return vector.map(value => Number((value / magnitude).toFixed(6)))
-}
-
-export function serializeEmbedding(vector: number[]): string {
-  return JSON.stringify(vector)
-}
-
-export function parseEmbedding(value: string | null): number[] | null {
-  if (!value)
-    return null
-  try {
-    const parsed = JSON.parse(value)
-    if (!Array.isArray(parsed))
-      return null
-    const vector = parsed.map(Number)
-    return vector.length === VECTOR_SIZE && vector.every(Number.isFinite) ? vector : null
-  }
-  catch {
-    return null
-  }
-}
-
-export function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length)
-    return 0
-  let dot = 0
-  let left = 0
-  let right = 0
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i]
-    left += a[i] * a[i]
-    right += b[i] * b[i]
-  }
-  if (left === 0 || right === 0)
-    return 0
-  return dot / (Math.sqrt(left) * Math.sqrt(right))
-}
-
-export function buildEmbeddingText(input: {
-  title?: string | null
-  summary?: string | null
-  techniques?: string | null
-  tags?: string | null
+/**
+ * 向量相似度检索
+ */
+export async function searchSimilarEmbeddings(params: {
+  projectId: string
+  query: string
+  contentType?: EmbeddingContentType
+  limit?: number
 }) {
-  return [
-    input.title,
-    input.summary,
-    input.techniques,
-    input.tags,
-  ].filter(Boolean).join('\n')
+  const { projectId, query, contentType, limit = 5 } = params
+
+  // 1. 生成查询向量
+  const queryVector = await callAIEmbedding(query)
+
+  // 2. 使用 pgvector 进行余弦相似度检索
+  // 1 - (v1 <=> v2) = cosine similarity
+  const vectorStr = `[${queryVector.join(',')}]`
+
+  const queryBuilder = db
+    .select({
+      id: knowledgeEmbeddings.id,
+      sourceId: knowledgeEmbeddings.sourceId,
+      chunkId: knowledgeEmbeddings.chunkId,
+      contentType: knowledgeEmbeddings.contentType,
+      // 使用 pgvector 的 <=> 运算符（余弦距离）
+      similarity: sql<number>`1 - (${knowledgeEmbeddings.embeddingVector} <=> ${vectorStr}::vector)`,
+    })
+    .from(knowledgeEmbeddings)
+    .where(
+      and(
+        eq(knowledgeEmbeddings.projectId, projectId),
+        contentType ? eq(knowledgeEmbeddings.contentType, contentType) : undefined,
+      ),
+    )
+    .orderBy(sql`${knowledgeEmbeddings.embeddingVector} <=> ${vectorStr}::vector`)
+    .limit(limit)
+
+  return await queryBuilder
 }

@@ -129,3 +129,13 @@ export const personaMemoryFragments = pgTable('persona_memory_fragments', {
   sourceChapterIds: text('source_chapter_ids'),
   ...timestamps,
 })
+export const personaMemoryCards = pgTable('persona_memory_cards', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  personaId: text('persona_id').references(() => writingPersonas.id, { onDelete: 'set null' }),
+  cardType: text('card_type').$type<'technique' | 'style' | 'fingerprint' | 'pacing' | 'character_voice'>().notNull(),
+  content: text('content').notNull(),
+  tags: text('tags'), // 逗号分隔或 JSON
+  embeddingId: text('embedding_id'), // 关联 knowledge_embeddings 的 id
+  ...timestamps,
+})

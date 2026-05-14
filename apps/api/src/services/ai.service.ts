@@ -232,3 +232,25 @@ export async function* streamChat(
     }
   }
 }
+export async function callAIEmbedding(text: string, options?: { model?: string }): Promise<number[]> {
+  const settings = await assertAIConfigured()
+  const client = createOpenAIClient(settings)
+
+  // 默认使用主流的 embedding 模型名，部分兼容源可能需要用户在设置中自定义
+  const model = options?.model || 'text-embedding-3-small'
+
+  try {
+    const response = await client.embeddings.create({
+      model,
+      input: text,
+    })
+    return response.data[0].embedding
+  }
+  catch (err: any) {
+    // 某些提供商可能不支持 embeddings 接口，或者模型名不同
+    if (err?.status === 404 || err?.message?.includes('model_not_found')) {
+      throw new Error(`当前 AI 提供商或模型 (${model}) 不支持向量嵌入接口`)
+    }
+    throw err
+  }
+}

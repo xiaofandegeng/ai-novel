@@ -192,6 +192,15 @@ onMounted(() => {
                 <p class="mt-2 text-sm text-text-muted leading-relaxed">
                   {{ risk.message }}
                 </p>
+                <div v-if="risk.evidence && risk.evidence.length > 0" class="mt-3 border-t border-border-light/30 pt-3">
+                  <div class="mb-1 text-[11px] text-text-muted font-bold tracking-wider uppercase">证据来源</div>
+                  <ul class="space-y-1">
+                    <li v-for="ev in risk.evidence" :key="ev" class="flex items-center gap-2 text-xs text-text-muted">
+                      <div class="h-1 w-1 rounded-full bg-border-light" />
+                      {{ ev }}
+                    </li>
+                  </ul>
+                </div>
                 <div class="mt-4 flex gap-3">
                   <NButton
                     v-if="risk.targetRoute"
