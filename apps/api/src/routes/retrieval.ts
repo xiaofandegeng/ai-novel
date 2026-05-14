@@ -18,13 +18,15 @@ export function registerRetrievalRoutes(app: Hono) {
     const results = await retrieveKnowledgeForAI({
       projectId,
       terms,
-      characterNames: [],
-      conflictTitles: [],
-      factTripleSubjects: [],
+      factTripleSubjects: terms, // Use terms as potential subjects too
       limit,
     })
 
-    return c.json({ results })
+    return c.json({
+      query,
+      terms,
+      results,
+    })
   })
 
   app.route('/api/projects/:projectId/retrieval', retrieval)

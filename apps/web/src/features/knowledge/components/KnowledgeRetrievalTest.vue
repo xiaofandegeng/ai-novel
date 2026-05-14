@@ -1,103 +1,165 @@
 <script setup lang="ts">
-import { NButton, NInput, NLoadingState } from '@ai-novel/ui'
-import { Brain, Search, Target } from 'lucide-vue-next'
+import type { RetrievalResult } from '../../../api/retrieval'
+import { NButton, NInput, NPanel, NTag } from '@ai-novel/ui'
+import {
+  BarChart3,
+  BookOpen,
+  HelpCircle,
+  History,
+  Search,
+  Target,
+  User,
+  Zap,
+} from 'lucide-vue-next'
 import { ref } from 'vue'
-import { useKnowledgeStore } from '@/stores/knowledge.store'
+import { retrievalApi } from '../../../api/retrieval'
 
 const props = defineProps<{
   projectId: string
 }>()
 
-interface RetrievalResult {
-  title: string
-  summary: string
-  score: number
-  reasons: string[]
-  techniques?: string
-}
-
-const knowledgeStore = useKnowledgeStore()
 const query = ref('')
-const loading = ref(false)
+const searching = ref(false)
 const results = ref<RetrievalResult[]>([])
+const terms = ref<string[]>([])
 
 async function handleSearch() {
   if (!query.value.trim())
     return
 
-  loading.value = true
+  searching.value = true
   try {
-    results.value = await knowledgeStore.testRetrieval(props.projectId, query.value)
+    const data = await retrievalApi.test(props.projectId, query.value)
+    results.value = data.results
+    terms.value = data.terms
   }
-  catch (err) {
-    console.error('Retrieval test failed:', err)
+  catch (e) {
+    console.error(e)
   }
   finally {
-    loading.value = false
+    searching.value = false
+  }
+}
+
+function getSourceIcon(source: string) {
+  switch (source) {
+    case 'character': return User
+    case 'bible': return BookOpen
+    case 'memory': return History
+    case 'fact': return Zap
+    default: return BookOpen
+  }
+}
+
+function getSourceColor(source: string) {
+  switch (source) {
+    case 'character': return 'text-orange-500'
+    case 'bible': return 'text-purple-500'
+    case 'memory': return 'text-blue-500'
+    case 'fact': return 'text-yellow-500'
+    default: return 'text-primary'
   }
 }
 </script>
 
 <template>
-  <div class="border border-border-light rounded-xl bg-bg-surface/50 p-6 shadow-inner backdrop-blur-sm space-y-6">
-    <div class="flex gap-3">
-      <div class="flex-1">
-        <NInput
-          v-model="query"
-          label="语义搜索测试"
-          placeholder="输入查询语句，测试语义召回效果..."
-          @keyup.enter="handleSearch"
-        >
-          <template #prefix>
-            <Search :size="18" class="text-text-muted" />
-          </template>
-        </NInput>
+  <div class="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
+    <div class="border border-primary/20 rounded-2xl bg-primary/5 p-6">
+      <div class="mb-4 flex items-center gap-3">
+        <Target class="text-primary" :size="24" />
+        <div>
+          <h2 class="text-lg text-text-primary font-bold">
+            RAG 检索诊断工具
+          </h2>
+          <p class="text-xs text-text-muted">
+            测试多路融合检索算法（Keyword 45%, Vector 25%, Recency 20%, Importance 10%）
+          </p>
+        </div>
       </div>
-      <NButton :loading="loading" variant="primary" @click="handleSearch">
-        测试检索
-      </NButton>
-    </div>
 
-    <div v-if="loading" class="flex justify-center py-12">
-      <NLoadingState />
-    </div>
+      <div class="flex gap-3">
+        <div class="flex-1">
+          <NInput
+            v-model="query"
+            label=""
+            placeholder="输入搜索词或场景描述，测试 RAG 召回..."
+            @keyup.enter="handleSearch"
+          />
+        </div>
+        <NButton variant="primary" :loading="searching" @click="handleSearch">
+          <Search class="mr-2" :size="16" />
+          运行测试
+        </NButton>
+      </div>
 
-    <div v-else-if="results.length > 0" class="space-y-4">
-      <div v-for="(res, idx) in results" :key="idx" class="border border-border-light rounded-lg bg-bg-surface p-4 transition-all hover:shadow-md">
-        <div class="mb-2 flex items-start justify-between">
-          <div class="flex items-center gap-2">
-            <h4 class="text-text-primary font-bold">
-              {{ res.title }}
-            </h4>
-            <span class="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs text-primary font-medium">
-              Score: {{ Math.round(res.score * 100) }}%
-            </span>
-          </div>
-          <div class="flex gap-1">
-            <span v-for="reason in res.reasons" :key="reason" class="inline-flex items-center rounded-md bg-bg-muted px-1.5 py-0.5 text-[9px] text-text-secondary font-medium">
-              {{ reason }}
-            </span>
-          </div>
-        </div>
-        <p class="line-clamp-3 mb-3 text-sm text-text-secondary leading-relaxed">
-          {{ res.summary }}
-        </p>
-        <div v-if="res.techniques" class="border-l-2 border-primary/40 rounded bg-bg-subtle p-3 text-xs text-text-muted">
-          <div class="mb-1 flex items-center gap-1.5 text-[10px] font-bold tracking-wider uppercase">
-            <Brain :size="12" /> 写作技巧
-          </div>
-          {{ res.techniques }}
-        </div>
+      <div v-if="terms.length > 0" class="mt-4 flex flex-wrap gap-2">
+        <span class="py-1 text-[10px] text-text-muted font-bold uppercase">提取关键词:</span>
+        <NTag v-for="t in terms" :key="t" size="sm" variant="default">
+          {{ t }}
+        </NTag>
       </div>
     </div>
 
-    <div v-else-if="query && !loading" class="py-12 text-center opacity-40">
-      <Target :size="48" class="mx-auto mb-3" />
-      <p>未找到相关知识召回</p>
+    <div v-if="results.length > 0" class="space-y-4">
+      <div v-for="r in results" :key="r.id" class="group">
+        <NPanel class="border-l-4 p-5 transition-all hover:border-primary/40" :style="{ borderLeftColor: `var(--color-primary)` }">
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex-1 space-y-3">
+              <div class="flex items-center gap-2">
+                <component :is="getSourceIcon(r.source)" :size="16" :class="getSourceColor(r.source)" />
+                <h3 class="text-text-primary font-bold">
+                  {{ r.title }}
+                </h3>
+                <NTag size="sm" variant="ai">
+                  {{ Math.round(r.score * 100) }} 分
+                </NTag>
+              </div>
+
+              <p class="line-clamp-3 text-sm text-text-secondary leading-relaxed">
+                {{ r.summary }}
+              </p>
+
+              <div class="flex flex-wrap gap-2">
+                <span v-for="reason in r.reasons" :key="reason" class="border border-border-light rounded-full bg-bg-page px-2 py-0.5 text-[10px] text-text-muted">
+                  {{ reason }}
+                </span>
+              </div>
+            </div>
+
+            <div class="w-48 shrink-0 border-l border-border-light pl-4 space-y-4">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] text-text-muted font-bold uppercase">权重分配</span>
+                <BarChart3 :size="12" class="text-text-muted" />
+              </div>
+
+              <div class="space-y-2">
+                <div v-for="(val, key) in r.scoreBreakdown" :key="key" class="space-y-1">
+                  <div class="flex justify-between text-[10px]">
+                    <span class="text-text-muted capitalize">{{ key }}</span>
+                    <span class="font-mono">{{ Math.round(val * 100) }}%</span>
+                  </div>
+                  <div class="h-1 w-full overflow-hidden rounded-full bg-bg-page">
+                    <div
+                      class="h-full bg-primary transition-all duration-1000"
+                      :style="{ width: `${val * 100}%`, opacity: val > 0 ? 1 : 0.2 }"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </NPanel>
+      </div>
     </div>
 
-    <div v-else class="py-8 text-center text-xs italic opacity-30">
-      <p>RAG 检索测试将综合评估关键词匹配、语义相似度和图谱关联度。</p>
+    <div v-else-if="!searching" class="bg-bg-card/30 border-2 border-border-light rounded-2xl border-dashed py-20 text-center">
+      <HelpCircle :size="48" class="mx-auto mb-4 text-text-muted/20" />
+      <h3 class="text-text-primary font-bold">
+        暂无测试结果
+      </h3>
+      <p class="mt-1 text-sm text-text-muted">
+        在上方输入搜索词来评估检索器的召回效果
+      </p>
     </div>
   </div>
 </template>

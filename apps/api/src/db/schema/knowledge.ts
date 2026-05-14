@@ -24,6 +24,8 @@ export const knowledgeChunks = pgTable('knowledge_chunks', {
   summary: text('summary'),
   techniques: text('techniques'),
   orderIndex: integer('order_index').notNull(),
+  importance: integer('importance').notNull().default(5), // 1-10
+  lastRetrievedAt: integer('last_retrieved_at'), // timestamp
   createdAt: timestamps.createdAt,
 })
 

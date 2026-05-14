@@ -4,6 +4,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { triggerChapterPostprocess } from '../api/ai'
 import { recordWritingActivity } from '../api/writing-goals'
+import AIQualityFeedbackPanel from '../features/operations/components/AIQualityFeedbackPanel.vue'
 import AIMultiCandidatePanel from '../features/writing/components/AIMultiCandidatePanel.vue'
 import AIPendingResultPanel from '../features/writing/components/AIPendingResultPanel.vue'
 import AssemblePreviewOverlay from '../features/writing/components/AssemblePreviewOverlay.vue'
@@ -144,6 +145,14 @@ function openMultiCandidatePanel() {
 
 function closeMultiCandidatePanel() {
   showMultiCandidate.value = false
+}
+
+const showFeedback = ref(false)
+const feedbackData = ref<any>(null)
+
+function openFeedback(data: any) {
+  feedbackData.value = data
+  showFeedback.value = true
 }
 
 async function handleSelectCandidate(candidateId: string) {
@@ -369,6 +378,17 @@ async function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discar
       date: new Date().toISOString().slice(0, 10),
       aiWordsAccepted: acceptedAiWords,
     })
+
+    // Open feedback panel
+    const res = pendingAIResult.value
+    if (res && (action === 'insert' || action === 'replace')) {
+      openFeedback({
+        modelProvider: res.modelProvider || 'unknown',
+        modelName: res.modelName || 'unknown',
+        taskType: res.source || 'generation',
+        contextSnapshotId: res.contextSnapshotId,
+      })
+    }
   }
 }
 
@@ -542,5 +562,16 @@ async function handleUpdateMemory() {
       @select="handleSelectCandidate"
       @rate="handleRateCandidate"
     />
+    <!-- AI Quality Feedback Panel -->
+    <div v-if="showFeedback && feedbackData" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+      <div class="max-w-md w-full">
+        <AIQualityFeedbackPanel
+          v-bind="feedbackData"
+          :project-id="projectId"
+          :chapter-id="currentChapterId"
+          @close="showFeedback = false"
+        />
+      </div>
+    </div>
   </NAppLayout>
 </template>
