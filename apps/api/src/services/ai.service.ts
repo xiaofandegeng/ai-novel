@@ -8,6 +8,31 @@ import { db } from '../db'
 import { aiSettings } from '../db/schema'
 import { now } from '../utils'
 
+export class AIError extends Error {
+  constructor(message: string, public code: string, public status?: number) {
+    super(message)
+    this.name = 'AIError'
+  }
+}
+
+export class AIParseError extends AIError {
+  constructor(message: string, public rawContent: string) {
+    super(message, 'PARSE_ERROR')
+    this.name = 'AIParseError'
+  }
+}
+
+export class AIConfigurationError extends AIError {
+  constructor(message: string) {
+    super(message, 'CONFIG_ERROR')
+    this.name = 'AIConfigurationError'
+  }
+}
+
+async function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 const GLOBAL_AI_SETTINGS_ID = 'global'
 
 interface EffectiveAISettings {
@@ -158,7 +183,7 @@ export async function testAIConnection(input?: UpdateAIProviderSettingsInput) {
 export async function assertAIConfigured() {
   const settings = await getEffectiveAISettings()
   if (!settings.apiKey) {
-    throw new Error('AI 服务未配置，请先到项目设置完成配置检测')
+    throw new AIConfigurationError('AI 服务未配置，请先到项目设置完成配置检测')
   }
   return settings
 }
@@ -169,25 +194,49 @@ export async function callAIJSON<T = Record<string, unknown>>(
     model?: string
     temperature?: number
     responseFormat?: { type: 'json_object' }
+    maxRetries?: number
   },
 ): Promise<T> {
   const settings = await assertAIConfigured()
   const client = createOpenAIClient(settings)
-  const response = await client.chat.completions.create({
-    model: options?.model || settings.model,
-    messages,
-    temperature: (options?.temperature ?? settings.temperature) / 100,
-    response_format: options?.responseFormat || { type: 'json_object' },
-  })
-  const content = response.choices[0]?.message?.content
-  if (!content)
-    throw new Error('AI 返回内容为空')
-  try {
-    return JSON.parse(content) as T
+  const maxRetries = options?.maxRetries ?? 2
+  let lastError: any
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await client.chat.completions.create({
+        model: options?.model || settings.model,
+        messages,
+        temperature: (options?.temperature ?? settings.temperature) / 100,
+        response_format: options?.responseFormat || { type: 'json_object' },
+      })
+
+      const content = response.choices[0]?.message?.content
+      if (!content)
+        throw new AIError('AI 返回内容为空', 'EMPTY_RESPONSE')
+
+      try {
+        return JSON.parse(content) as T
+      }
+      catch (e: any) {
+        throw new AIParseError(`AI 返回的 JSON 无法解析: ${e.message}`, content)
+      }
+    }
+    catch (err: any) {
+      lastError = err
+      // Don't retry configuration or parse errors (unless we think retrying helps with parse)
+      if (err instanceof AIConfigurationError)
+        throw err
+
+      if (attempt < maxRetries) {
+        const delay = 2 ** attempt * 1000
+        console.warn(`AI call failed, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries}):`, err.message)
+        await sleep(delay)
+      }
+    }
   }
-  catch {
-    throw new Error('AI 返回的 JSON 无法解析')
-  }
+
+  throw lastError || new AIError('AI 请求失败', 'UNKNOWN_ERROR')
 }
 
 export async function* streamChat(

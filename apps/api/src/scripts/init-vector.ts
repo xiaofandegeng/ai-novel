@@ -1,9 +1,9 @@
-import postgres from 'postgres'
-import process from 'node:process'
-import { userInfo } from 'node:os'
-import { config } from 'dotenv'
-import { resolve } from 'node:path'
 import { existsSync } from 'node:fs'
+import { userInfo } from 'node:os'
+import { resolve } from 'node:path'
+import process from 'node:process'
+import { config } from 'dotenv'
+import postgres from 'postgres'
 
 for (const envPath of [resolve(process.cwd(), '.env'), resolve(process.cwd(), '../../.env')]) {
   if (existsSync(envPath))
@@ -18,9 +18,11 @@ async function main() {
   try {
     await sql`CREATE EXTENSION IF NOT EXISTS vector;`
     console.log('pgvector extension enabled.')
-  } catch (err) {
+  }
+  catch (err) {
     console.error('Failed to enable pgvector:', err)
-  } finally {
+  }
+  finally {
     await sql.end()
   }
 }

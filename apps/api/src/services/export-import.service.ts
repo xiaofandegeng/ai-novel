@@ -10,13 +10,16 @@ import {
   chapterScenes,
   characterRelationships,
   characters,
+  conflictParticipants,
   conflicts,
+  foreshadowingCharacters,
   foreshadowingItems,
   knowledgeChunks,
   knowledgeEmbeddings,
   knowledgeNotes,
   knowledgeSources,
   novelProjects,
+  personaMemoryCards,
   projectPersonaConfigs,
   qualityReports,
   storyBibles,
@@ -55,7 +58,7 @@ const ACT_FIELDS = ['title', 'description', 'theme', 'keyEvents', 'targetChapter
 const CONFLICT_FIELDS = ['title', 'type', 'intensity', 'status', 'participants', 'description', 'resolution']
 const KNOWLEDGE_SOURCE_FIELDS = ['title', 'sourceType', 'author', 'status', 'fileName', 'fileSize']
 const KNOWLEDGE_CHUNK_FIELDS = ['chunkType', 'title', 'content', 'summary', 'techniques', 'orderIndex']
-const KNOWLEDGE_EMBEDDING_FIELDS = ['sourceType', 'embedding', 'summary', 'tags']
+const KNOWLEDGE_EMBEDDING_FIELDS = ['chunkId', 'embeddingModel', 'embeddingVector', 'contentType', 'contentHash']
 const KNOWLEDGE_NOTE_FIELDS = ['title', 'content', 'tags']
 const QUALITY_REPORT_FIELDS = ['scope', 'score', 'rhythmScore', 'conflictScore', 'logicScore', 'characterScore', 'styleScore', 'issues', 'suggestions']
 const POSTPROCESS_SUGGESTION_FIELDS = ['suggestionType', 'payload', 'confidence', 'status', 'reason']
@@ -63,6 +66,9 @@ const WRITING_JOB_FIELDS = ['mode', 'status', 'lastError']
 const WRITING_JOB_STEP_FIELDS = ['stepType', 'status', 'input', 'output', 'error', 'startedAt', 'finishedAt']
 const AI_CONTEXT_SNAPSHOT_FIELDS = ['scene', 'requestId', 'modelProvider', 'modelName', 'contextPayload', 'renderedPromptPreview', 'tokenEstimate']
 const PERSONA_CONFIG_FIELDS = ['strength', 'enabledForOutline', 'enabledForDraft', 'enabledForPolish', 'enabledForQualityReview', 'projectOverrides', 'disabledRules']
+const PERSONA_MEMORY_CARD_FIELDS = ['cardType', 'content', 'tags']
+const FORESHADOWING_CHARACTER_FIELDS = ['relationType']
+const CONFLICT_PARTICIPANT_FIELDS = ['roleInConflict']
 const WRITING_PERSONA_FIELDS = [
   'name',
   'description',
@@ -108,6 +114,9 @@ export async function exportProjectData(projectId: string) {
     : []
   const contextSnapshots = await db.select().from(aiContextSnapshots).where(eq(aiContextSnapshots.projectId, projectId))
   const personaConfigs = await db.select().from(projectPersonaConfigs).where(eq(projectPersonaConfigs.projectId, projectId))
+  const memoryCards = await db.select().from(personaMemoryCards).where(eq(personaMemoryCards.projectId, projectId))
+  const fChars = await db.select().from(foreshadowingCharacters).where(eq(foreshadowingCharacters.projectId, projectId))
+  const cParts = await db.select().from(conflictParticipants).where(eq(conflictParticipants.projectId, projectId))
 
   const personaIds = personaConfigs.map(c => c.personaId)
   const personas = personaIds.length > 0
@@ -141,6 +150,9 @@ export async function exportProjectData(projectId: string) {
     aiContextSnapshots: contextSnapshots,
     writingPersonas: personas,
     personaConfigs,
+    personaMemoryCards: memoryCards,
+    foreshadowingCharacters: fChars,
+    conflictParticipants: cParts,
   }
 }
 
@@ -209,8 +221,15 @@ export async function importProjectData(data: Record<string, unknown>) {
     for (const k of (data.knowledgeChunks as Record<string, unknown>[] || []))
       await safeInsert(knowledgeChunks, { id: remapId(k.id as string), projectId, sourceId: remapId(k.sourceId as string), ...pick(k, KNOWLEDGE_CHUNK_FIELDS) })
 
-    for (const emb of ((data.knowledgeEmbeddings as Record<string, unknown>[] | undefined) || []))
-      await safeInsert(knowledgeEmbeddings, { id: remapId(emb.id as string), projectId, sourceId: remapId(emb.sourceId as string), ...pick(emb, KNOWLEDGE_EMBEDDING_FIELDS) })
+    for (const emb of ((data.knowledgeEmbeddings as Record<string, unknown>[] | undefined) || [])) {
+      await safeInsert(knowledgeEmbeddings, {
+        id: remapId(emb.id as string),
+        projectId,
+        sourceId: emb.sourceId ? remapId(emb.sourceId as string) : null,
+        chunkId: emb.chunkId ? remapId(emb.chunkId as string) : null,
+        ...pick(emb, KNOWLEDGE_EMBEDDING_FIELDS),
+      })
+    }
 
     for (const n of (data.knowledgeNotes as Record<string, unknown>[] || []))
       await safeInsert(knowledgeNotes, { id: remapId(n.id as string), projectId, sourceId: n.sourceId ? remapId(n.sourceId as string) : null, ...pick(n, KNOWLEDGE_NOTE_FIELDS) })
@@ -220,6 +239,15 @@ export async function importProjectData(data: Record<string, unknown>) {
 
     for (const sg of (data.suggestions as Record<string, unknown>[] || []))
       await safeInsert(chapterPostprocessSuggestions, { id: remapId(sg.id as string), projectId, chapterId: remapId(sg.chapterId as string), runId: null, ...pick(sg, POSTPROCESS_SUGGESTION_FIELDS) })
+
+    for (const mc of ((data.personaMemoryCards as Record<string, unknown>[] | undefined) || []))
+      await safeInsert(personaMemoryCards, { id: remapId(mc.id as string), projectId, ...pick(mc, PERSONA_MEMORY_CARD_FIELDS) })
+
+    for (const fc of ((data.foreshadowingCharacters as Record<string, unknown>[] | undefined) || []))
+      await safeInsert(foreshadowingCharacters, { id: remapId(fc.id as string), projectId, foreshadowingId: remapId(fc.foreshadowingId as string), characterId: remapId(fc.characterId as string), ...pick(fc, FORESHADOWING_CHARACTER_FIELDS) })
+
+    for (const cp of ((data.conflictParticipants as Record<string, unknown>[] | undefined) || []))
+      await safeInsert(conflictParticipants, { id: remapId(cp.id as string), projectId, conflictId: remapId(cp.conflictId as string), characterId: remapId(cp.characterId as string), ...pick(cp, CONFLICT_PARTICIPANT_FIELDS) })
 
     for (const job of ((data.writingJobs as Record<string, unknown>[] | undefined) || [])) {
       await safeInsert(writingJobs, {

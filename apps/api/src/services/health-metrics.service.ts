@@ -72,7 +72,8 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
     .map((m) => {
       let intensity = 5
       const match = m.conflictProgress?.match(/(\d+)/)
-      if (match) intensity = Math.min(10, Math.max(1, Number.parseInt(match[1])))
+      if (match)
+        intensity = Math.min(10, Math.max(1, Number.parseInt(match[1])))
       return { chapter: chapterNumMap.get(m.chapterId) || 0, avgIntensity: intensity }
     })
     .sort((a, b) => a.chapter - b.chapter)
@@ -96,7 +97,8 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
   for (const el of allElements) {
     const key = `${el.elementType}:${el.elementName}`
     const existing = freqMap.get(key)
-    if (existing) existing.count++
+    if (existing)
+      existing.count++
     else freqMap.set(key, { name: el.elementName, type: el.elementType, count: 1 })
   }
   const elementFrequency = [...freqMap.values()].sort((a, b) => b.count - a.count).slice(0, 20)
@@ -158,10 +160,10 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
   }
 
   // 2. 伏笔遗忘风险 (Foreshadowing Amnesia)
-  const forgottenForeshadowing = allForeshadowing.filter(f => 
-    f.status === 'open' && 
-    f.expectedPayoffChapterId && 
-    (allChapters.find(c => c.id === f.expectedPayoffChapterId)?.chapterNumber || 0) < (completedChapters + 1)
+  const forgottenForeshadowing = allForeshadowing.filter(f =>
+    f.status === 'open'
+    && f.expectedPayoffChapterId
+    && (allChapters.find(c => c.id === f.expectedPayoffChapterId)?.chapterNumber || 0) < (completedChapters + 1),
   )
   if (forgottenForeshadowing.length > 0) {
     risks.push({

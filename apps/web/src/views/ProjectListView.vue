@@ -37,14 +37,36 @@ const form = ref({
   targetWords: '',
 })
 
-onMounted(async () => {
+const limit = 12
+const offset = ref(0)
+const hasMore = ref(true)
+
+async function loadProjects(append = false) {
   try {
-    await projectStore.fetchProjects()
+    const nextOffset = append ? offset.value + limit : 0
+    const projects = await projectStore.fetchProjects({ limit, offset: nextOffset })
+
+    if (projects.length < limit) {
+      hasMore.value = false
+    }
+    else {
+      hasMore.value = true
+    }
+
+    offset.value = nextOffset
   }
   finally {
     loading.value = false
   }
+}
+
+onMounted(() => {
+  loadProjects()
 })
+
+async function handleLoadMore() {
+  await loadProjects(true)
+}
 
 const filteredProjects = computed(() => {
   if (!searchQuery.value.trim())
@@ -277,6 +299,12 @@ function statusLabel(status: string) {
               <Trash2 :size="14" />
             </NIconButton>
           </article>
+        </div>
+
+        <div v-if="hasMore && !searchQuery" class="mt-12 flex justify-center pb-12">
+          <NButton variant="secondary" @click="handleLoadMore">
+            加载更多项目
+          </NButton>
         </div>
       </div>
     </main>

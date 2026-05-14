@@ -37,6 +37,19 @@ export interface KnowledgeNote {
   createdAt: string
 }
 
+export interface KnowledgeEmbedding {
+  id: string
+  projectId: string
+  sourceId?: string | null
+  chunkId?: string | null
+  embeddingModel: string
+  embeddingVector?: number[] | null
+  contentType: 'knowledge_summary' | 'technique' | 'chapter_memory' | 'fact_summary' | 'persona_memory'
+  contentHash: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface KnowledgeSourceDetail extends KnowledgeSource {
   chunks: KnowledgeChunk[]
 }

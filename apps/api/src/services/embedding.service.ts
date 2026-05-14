@@ -1,9 +1,9 @@
 import crypto from 'node:crypto'
 import { and, eq, sql } from 'drizzle-orm'
-import { generateId, now } from '../utils'
 import { db } from '../db'
 import { knowledgeEmbeddings } from '../db/schema'
-import { callAIEmbedding, getEffectiveAISettings } from './ai.service'
+import { generateId, now } from '../utils'
+import { callAIEmbedding } from './ai.service'
 
 export type EmbeddingContentType
   = | 'knowledge_summary'
@@ -32,7 +32,6 @@ function getContentHash(text: string): string {
  */
 export async function getOrCreateEmbedding(input: EmbeddingInput): Promise<number[]> {
   const contentHash = getContentHash(input.text)
-  const settings = await getEffectiveAISettings()
   const model = 'text-embedding-3-small' // 暂时写死或从 settings 扩展
 
   // 1. 尝试从数据库查找已有记录

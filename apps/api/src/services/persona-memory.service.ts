@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../db'
-import { chapters, personaMemoryCards, knowledgeEmbeddings } from '../db/schema'
+import { chapters, knowledgeEmbeddings, personaMemoryCards } from '../db/schema'
 import { generateId, now } from '../utils'
 import { callAIJSON } from './ai.service'
 import { getOrCreateEmbedding, searchSimilarEmbeddings } from './embedding.service'
@@ -15,11 +15,11 @@ export async function createMemoryCard(projectId: string, input: {
 }) {
   const id = generateId()
   const timestamp = now()
-  
+
   // 1. 生成向量嵌入
   let embeddingId: string | undefined
   try {
-    const vector = await getOrCreateEmbedding({
+    await getOrCreateEmbedding({
       projectId,
       text: input.content,
       contentType: 'persona_memory',
@@ -31,11 +31,12 @@ export async function createMemoryCard(projectId: string, input: {
     const [emb] = await db.select().from(knowledgeEmbeddings).where(
       and(
         eq(knowledgeEmbeddings.projectId, projectId),
-        eq(knowledgeEmbeddings.sourceId, id)
-      )
+        eq(knowledgeEmbeddings.sourceId, id),
+      ),
     )
     embeddingId = emb?.id
-  } catch (err) {
+  }
+  catch (err) {
     console.warn('Failed to generate embedding for persona memory card:', err)
   }
 
@@ -62,16 +63,19 @@ export async function buildPersonaMemoryContext(projectId: string, scene?: strin
   // scene=outline -> technique, pacing
   // scene=draft -> style, fingerprint, character_voice
   // scene=polish -> style, technique
-  
+
   const typeFilters: MemoryCardType[] = []
-  if (scene === 'outline') typeFilters.push('technique', 'pacing')
-  else if (scene === 'draft') typeFilters.push('style', 'fingerprint', 'character_voice')
-  else if (scene === 'polish') typeFilters.push('style', 'technique')
+  if (scene === 'outline')
+    typeFilters.push('technique', 'pacing')
+  else if (scene === 'draft')
+    typeFilters.push('style', 'fingerprint', 'character_voice')
+  else if (scene === 'polish')
+    typeFilters.push('style', 'technique')
   else typeFilters.push('style', 'technique', 'fingerprint', 'pacing', 'character_voice')
 
   // 2. 检索逻辑
   let cards: any[] = []
-  
+
   if (query) {
     // 向量检索
     try {
@@ -81,30 +85,33 @@ export async function buildPersonaMemoryContext(projectId: string, scene?: strin
         contentType: 'persona_memory',
         limit: 10,
       })
-      
+
       const cardIds = results.map(r => r.sourceId).filter(Boolean) as string[]
       if (cardIds.length > 0) {
         cards = await db.select().from(personaMemoryCards).where(
           and(
             eq(personaMemoryCards.projectId, projectId),
-            sql`${personaMemoryCards.id} IN ${cardIds}`
-          )
+            sql`${personaMemoryCards.id} IN ${cardIds}`,
+          ),
         )
       }
-    } catch (err) {
+    }
+    catch {
       // 降级到全量或关键词
       cards = await db.select().from(personaMemoryCards).where(eq(personaMemoryCards.projectId, projectId)).limit(20)
     }
-  } else {
+  }
+  else {
     cards = await db.select().from(personaMemoryCards).where(
       and(
         eq(personaMemoryCards.projectId, projectId),
-        sql`${personaMemoryCards.cardType} IN ${typeFilters}`
-      )
+        sql`${personaMemoryCards.cardType} IN ${typeFilters}`,
+      ),
     ).limit(10)
   }
 
-  if (cards.length === 0) return []
+  if (cards.length === 0)
+    return []
 
   const lines: string[] = ['### 写作人格记忆 (Persona Memory)']
   for (const card of cards) {
@@ -113,9 +120,9 @@ export async function buildPersonaMemoryContext(projectId: string, scene?: strin
       style: '风格偏好',
       fingerprint: '指纹特征',
       pacing: '节奏控制',
-      character_voice: '人物声线'
+      character_voice: '人物声线',
     }[card.cardType as MemoryCardType] || card.cardType
-    
+
     lines.push(`- [${typeLabel}] ${card.content}`)
   }
 
@@ -127,7 +134,8 @@ export async function buildPersonaMemoryContext(projectId: string, scene?: strin
  */
 export async function extractPersonaCardsFromChapter(projectId: string, chapterId: string) {
   const [chapter] = await db.select().from(chapters).where(and(eq(chapters.id, chapterId), eq(chapters.projectId, projectId)))
-  if (!chapter || !chapter.draft) return []
+  if (!chapter || !chapter.draft)
+    return []
 
   const prompt = `你是一位顶尖的文学风格分析专家。请分析以下小说章节的写作风格和技巧，提取 2-3 条“人格记忆卡”。
 每条记忆卡应是抽象、可复用的写作指令（如：“善用视觉暂留式描写，在大动作间隙插入环境微细节”）。
@@ -145,7 +153,7 @@ ${chapter.draft.substring(0, 3000)}
 
   const parsed = await callAIJSON<{ cards: Array<{ type: string, content: string }> }>(
     [{ role: 'user', content: prompt }],
-    { temperature: 30 }
+    { temperature: 30 },
   )
 
   const created = []
@@ -165,18 +173,18 @@ ${chapter.draft.substring(0, 3000)}
  */
 export async function getFragments(projectId: string, fragmentType?: string) {
   let q = db.select().from(personaMemoryCards).where(eq(personaMemoryCards.projectId, projectId))
-  
+
   if (fragmentType) {
     const typeMap: Record<string, any> = {
       style_pattern: 'style',
       dialogue_pattern: 'character_voice',
       narrative_preference: 'technique',
       vocabulary_tendency: 'fingerprint',
-      pacing_preference: 'pacing'
+      pacing_preference: 'pacing',
     }
     const newType = typeMap[fragmentType] || fragmentType
     q = db.select().from(personaMemoryCards).where(
-      and(eq(personaMemoryCards.projectId, projectId), eq(personaMemoryCards.cardType, newType))
+      and(eq(personaMemoryCards.projectId, projectId), eq(personaMemoryCards.cardType, newType)),
     )
   }
 
@@ -188,7 +196,7 @@ export async function getFragments(projectId: string, fragmentType?: string) {
     content: row.content,
     confidence: 100,
     sourceType: 'ai_extracted',
-    createdAt: row.createdAt
+    createdAt: row.createdAt,
   }))
 }
 
@@ -196,14 +204,15 @@ export async function getFragments(projectId: string, fragmentType?: string) {
  * 提取风格模式 (兼容旧接口)
  */
 export async function extractStylePatterns(projectId: string, chapterIds?: string[]) {
-  if (!chapterIds || chapterIds.length === 0) return []
-  
+  if (!chapterIds || chapterIds.length === 0)
+    return []
+
   const created = []
   for (const cid of chapterIds) {
     const cards = await extractPersonaCardsFromChapter(projectId, cid)
     created.push(...cards)
   }
-  
+
   return created.map(row => ({
     id: row.id,
     projectId: row.projectId,
@@ -211,6 +220,6 @@ export async function extractStylePatterns(projectId: string, chapterIds?: strin
     content: row.content,
     confidence: 100,
     sourceType: 'ai_extracted',
-    createdAt: row.createdAt
+    createdAt: row.createdAt,
   }))
 }

@@ -6,22 +6,26 @@ import {
   BookOpen,
   Bot,
   ChevronRight,
+  Download,
   HelpCircle,
+  RefreshCw,
   Save,
   Settings,
   ShieldCheck,
   Sparkles,
   Trash2,
+  Upload,
 } from 'lucide-vue-next'
 import { onMounted, reactive, ref } from 'vue'
 
 import { useRoute, useRouter } from 'vue-router'
+import { exportProject, importProject } from '../api/data-portability'
+
 import {
   getProjectPersonaConfig,
   listPublishedPersonas,
   updateProjectPersonaConfig,
 } from '../api/persona'
-
 import { deleteProject, fetchProject, updateProject } from '../api/projects'
 
 const route = useRoute()
@@ -115,6 +119,50 @@ async function handleDelete() {
   }
   catch (e: any) {
     toast.add(`删除失败: ${e.message}`, 'error')
+  }
+}
+
+async function handleExport() {
+  try {
+    const data = await exportProject(projectId)
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `plotpilot-project-${project.value?.title || projectId}-${new Date().toISOString().split('T')[0]}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.add('项目导出成功', 'success')
+  }
+  catch (e: any) {
+    toast.add(`导出失败: ${e.message}`, 'error')
+  }
+}
+
+const fileInput = ref<HTMLInputElement | null>(null)
+
+function triggerImport() {
+  fileInput.value?.click()
+}
+
+async function handleImport(event: Event) {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file)
+    return
+
+  try {
+    const text = await file.text()
+    const data = JSON.parse(text)
+    const result = await importProject(data)
+    toast.add(`项目导入成功！新项目 ID: ${result.projectId}`, 'success')
+    router.push(`/project/${result.projectId}/settings`)
+  }
+  catch (e: any) {
+    toast.add(`导入失败: ${e.message}`, 'error')
+  }
+  finally {
+    target.value = ''
   }
 }
 
@@ -312,6 +360,49 @@ onMounted(() => {
             </div>
           </div>
         </NPanel>
+        <!-- Data Portability Section -->
+        <section class="space-y-4">
+          <h2 class="flex items-center gap-2 px-1 text-lg text-text-primary font-bold">
+            <Download class="text-primary" :size="18" />
+            数据备份与迁移
+          </h2>
+          <NPanel class="p-6">
+            <div class="grid grid-cols-2 gap-8">
+              <div class="space-y-3">
+                <h3 class="text-sm text-text-primary font-bold">
+                  导出项目备份
+                </h3>
+                <p class="text-xs text-text-muted leading-relaxed">
+                  导出当前项目的完整数据（包括大纲、正文、设定、知识库及 AI 上下文快照）。备份文件可用于在其他环境导入或作为历史留档。
+                </p>
+                <NButton class="w-full" variant="secondary" @click="handleExport">
+                  <Download class="mr-2" :size="16" />
+                  导出完整备份 (.json)
+                </NButton>
+              </div>
+
+              <div class="space-y-3">
+                <h3 class="text-sm text-text-primary font-bold">
+                  导入项目数据
+                </h3>
+                <p class="text-xs text-text-muted leading-relaxed">
+                  上传通过本系统导出的备份文件。导入将创建一个全新的项目，不会覆盖当前项目。请确保备份文件格式正确。
+                </p>
+                <input
+                  ref="fileInput"
+                  type="file"
+                  accept=".json"
+                  class="hidden"
+                  @change="handleImport"
+                >
+                <NButton class="w-full" variant="secondary" @click="triggerImport">
+                  <Upload class="mr-2" :size="16" />
+                  上传并导入新项目
+                </NButton>
+              </div>
+            </div>
+          </NPanel>
+        </section>
       </section>
     </div>
 

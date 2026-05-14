@@ -7,8 +7,15 @@ export const useProjectStore = defineStore('projects', () => {
   const projects = ref<NovelProject[]>([])
   const currentProject = ref<NovelProject | null>(null)
 
-  async function fetchProjects() {
-    projects.value = await projectsApi.fetchProjects()
+  async function fetchProjects(params?: { limit?: number, offset?: number }) {
+    const rows = await projectsApi.fetchProjects(params)
+    if (params?.offset && params.offset > 0) {
+      projects.value = [...projects.value, ...rows]
+    }
+    else {
+      projects.value = rows
+    }
+    return rows
   }
 
   async function fetchProject(id: string) {

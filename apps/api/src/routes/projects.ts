@@ -6,7 +6,9 @@ import { fail, generateId, now, success, updatedFields } from '../utils'
 
 export function registerProjectRoutes(app: Hono) {
   app.get('/api/projects', async (c) => {
-    const rows = await db.select().from(novelProjects)
+    const limit = Number(c.req.query('limit') || '50')
+    const offset = Number(c.req.query('offset') || '0')
+    const rows = await db.select().from(novelProjects).limit(limit).offset(offset)
     return c.json(success(rows))
   })
 

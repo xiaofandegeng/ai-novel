@@ -1,7 +1,7 @@
 import type { KnowledgeContextSnippet } from '@ai-novel/shared'
 import { and, eq, or, sql } from 'drizzle-orm'
 import { db } from '../db'
-import { knowledgeChunks, knowledgeEmbeddings, storyFactTriples } from '../db/schema'
+import { knowledgeChunks, storyFactTriples } from '../db/schema'
 import { searchSimilarEmbeddings } from './embedding.service'
 
 interface RetrievedKnowledge extends KnowledgeContextSnippet {
@@ -18,13 +18,13 @@ interface RetrievalInput {
   limit: number
 }
 
-interface SearchResult { 
+interface SearchResult {
   id: string
   title: string | null
   summary: string | null
   techniques: string | null
   matchedTerms: string[]
-  vectorScore?: number 
+  vectorScore?: number
 }
 
 async function keywordSearch(
@@ -132,7 +132,7 @@ async function embeddingIndexSearch(
     .from(knowledgeChunks)
     .where(and(
       eq(knowledgeChunks.projectId, projectId),
-      sql`${knowledgeChunks.id} IN ${chunkIds}`
+      sql`${knowledgeChunks.id} IN ${chunkIds}`,
     ))
 
   const chunkMap = new Map(chunks.map(c => [c.id, c]))
@@ -160,12 +160,12 @@ function fuseResults(
 
   function ensureEntry(result: SearchResult) {
     if (!scoreMap.has(result.id)) {
-      scoreMap.set(result.id, { 
-        result, 
-        keywordScore: 0, 
-        vectorScore: 0, 
-        graphScore: 0, 
-        reasons: new Set() 
+      scoreMap.set(result.id, {
+        result,
+        keywordScore: 0,
+        vectorScore: 0,
+        graphScore: 0,
+        reasons: new Set(),
       })
     }
     return scoreMap.get(result.id)!

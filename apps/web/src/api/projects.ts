@@ -1,8 +1,14 @@
 import type { CreateProjectInput, NovelProject, UpdateProjectInput } from '@ai-novel/shared'
 import { apiDel, apiGet, apiPatch, apiPost } from './client'
 
-export function fetchProjects() {
-  return apiGet<NovelProject[]>('/api/projects')
+export function fetchProjects(params?: { limit?: number, offset?: number }) {
+  const query = new URLSearchParams()
+  if (params?.limit)
+    query.set('limit', params.limit.toString())
+  if (params?.offset)
+    query.set('offset', params.offset.toString())
+  const queryString = query.toString()
+  return apiGet<NovelProject[]>(`/api/projects${queryString ? `?${queryString}` : ''}`)
 }
 
 export function fetchProject(id: string) {
