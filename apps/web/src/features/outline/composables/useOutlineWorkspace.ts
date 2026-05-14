@@ -167,14 +167,33 @@ export function useOutlineWorkspace(projectId: string) {
         toast.add(T.outline_saved, 'success')
       }
       else if (selectedType.value === 'chapter') {
+        // --- 强制双向一致性整理 ---
+        // 1. 确保所有勾选的角色都在元素列表中有 'appears' 记录
         outlineForm.value.characterIds.forEach((id) => {
-          const exists = chapterElementDrafts.value.some(e => e.elementType === 'character' && e.elementId === id)
-          if (!exists)
-            addCharacterElement(id, 'normal')
+          const char = characterStore.characters.find(c => c.id === id)
+          if (!char)
+            return
+
+          const exists = chapterElementDrafts.value.some(
+            e => e.elementType === 'character' && e.elementId === id && e.relationType === 'appears',
+          )
+          if (!exists) {
+            chapterElementDrafts.value.push({
+              elementType: 'character',
+              elementId: char.id,
+              elementName: char.name,
+              relationType: 'appears',
+              importance: 'normal',
+            })
+          }
         })
+
+        // 2. 确保所有 'appears' 记录的角色都被勾选了
         chapterElementDrafts.value.forEach((e) => {
-          if (e.elementType === 'character' && e.elementId && !outlineForm.value.characterIds.includes(e.elementId))
-            outlineForm.value.characterIds.push(e.elementId)
+          if (e.elementType === 'character' && e.elementId && e.relationType === 'appears') {
+            if (!outlineForm.value.characterIds.includes(e.elementId))
+              outlineForm.value.characterIds.push(e.elementId)
+          }
         })
 
         const data = {
@@ -239,10 +258,12 @@ export function useOutlineWorkspace(projectId: string) {
     const index = outlineForm.value.characterIds.indexOf(charId)
     if (index === -1) {
       outlineForm.value.characterIds.push(charId)
+      // 自动同步到硬约束
       addCharacterElement(charId, 'normal')
     }
     else {
       outlineForm.value.characterIds.splice(index, 1)
+      // 自动移除对应的 'appears' 硬约束
       const elementIndex = chapterElementDrafts.value.findIndex(
         e => e.elementType === 'character' && e.elementId === charId && e.relationType === 'appears',
       )
@@ -256,23 +277,29 @@ export function useOutlineWorkspace(projectId: string) {
     if (!char)
       return
     const exists = chapterElementDrafts.value.some(
-      e => e.elementType === 'character' && e.elementId === charId,
+      e => e.elementType === 'character' && e.elementId === charId && e.relationType === 'appears',
     )
-    if (exists)
-      return
-    chapterElementDrafts.value.push({
-      elementType: 'character',
-      elementId: char.id,
-      elementName: char.name,
-      relationType: 'appears',
-      importance,
-    })
+    if (!exists) {
+      chapterElementDrafts.value.push({
+        elementType: 'character',
+        elementId: char.id,
+        elementName: char.name,
+        relationType: 'appears',
+        importance,
+      })
+    }
 
     if (!outlineForm.value.characterIds.includes(charId))
       outlineForm.value.characterIds.push(charId)
   }
 
   function removeElement(index: number) {
+    const el = chapterElementDrafts.value[index]
+    if (el && el.elementType === 'character' && el.elementId && el.relationType === 'appears') {
+      const charIndex = outlineForm.value.characterIds.indexOf(el.elementId)
+      if (charIndex !== -1)
+        outlineForm.value.characterIds.splice(charIndex, 1)
+    }
     chapterElementDrafts.value.splice(index, 1)
   }
 

@@ -7,6 +7,7 @@ import {
   History,
   Maximize2,
   Minimize2,
+  ShieldCheck,
 } from 'lucide-vue-next'
 
 defineProps<{
@@ -24,6 +25,7 @@ const emit = defineEmits<{
   (e: 'update:fullScreen', value: boolean): void
   (e: 'snapshot'): void
   (e: 'updateMemory'): void
+  (e: 'runQualityAudit'): void
 }>()
 </script>
 
@@ -68,6 +70,16 @@ const emit = defineEmits<{
       @click="emit('updateMemory')"
     >
       <Brain :size="16" class="mr-1.5" /> 更新记忆
+    </NButton>
+    <NButton
+      variant="ghost"
+      size="sm"
+      :disabled="!draftExists"
+      class="text-text-muted hover:text-semantic-warning"
+      title="进行主题与人设对齐审计"
+      @click="emit('runQualityAudit')"
+    >
+      <ShieldCheck :size="16" class="mr-1.5" /> 质量审计
     </NButton>
     <div class="h-4 w-px bg-border-light" />
     <div class="text-xs text-text-muted font-medium">

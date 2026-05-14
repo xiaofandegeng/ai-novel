@@ -19,13 +19,16 @@ export async function assertChapterBelongsToProject(projectId: string, chapterId
 }
 
 export async function assertCharactersBelongToProject(projectId: string, ids: string[]) {
+  const results = []
   for (const id of ids) {
-    const [row] = await db.select({ id: characters.id }).from(characters).where(
+    const [row] = await db.select().from(characters).where(
       and(eq(characters.id, id), eq(characters.projectId, projectId)),
     )
     if (!row)
       throw new Error(`角色 ${id} 不属于当前项目`)
+    results.push(row)
   }
+  return results
 }
 
 export async function assertOptionalChapterBelongsToProject(projectId: string, chapterId?: string | null) {

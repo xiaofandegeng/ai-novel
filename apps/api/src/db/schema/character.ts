@@ -1,4 +1,4 @@
-import { integer, pgTable, text } from 'drizzle-orm/pg-core'
+import { integer, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
 import { novelProjects } from './project'
 
@@ -27,4 +27,7 @@ export const characterRelationships = pgTable('character_relationships', {
   status: text('status'),
   description: text('description'),
   ...timestamps,
-})
+}, table => ({
+  relationshipUnique: uniqueIndex('character_relationships_unique')
+    .on(table.projectId, table.characterAId, table.characterBId),
+}))

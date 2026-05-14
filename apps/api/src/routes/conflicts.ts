@@ -2,6 +2,7 @@ import type { Hono } from 'hono'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { conflicts } from '../db/schema'
+import { matchCharacterIdsFromText } from '../services/character-utils.service'
 import { fail, generateId, success, updatedFields } from '../utils'
 
 export function registerConflictRoutes(app: Hono) {
@@ -14,6 +15,12 @@ export function registerConflictRoutes(app: Hono) {
   app.post('/api/projects/:projectId/conflicts', async (c) => {
     const projectId = c.req.param('projectId')
     const body = await c.req.json()
+
+    let participantIds = body.participantIds
+    if (!participantIds || (Array.isArray(participantIds) && participantIds.length === 0)) {
+      participantIds = await matchCharacterIdsFromText(projectId, body.participants)
+    }
+
     const id = generateId()
     const [row] = await db.insert(conflicts).values({
       id,
@@ -23,7 +30,7 @@ export function registerConflictRoutes(app: Hono) {
       intensity: body.intensity,
       status: body.status,
       participants: body.participants,
-      participantIds: body.participantIds ? JSON.stringify(body.participantIds) : null,
+      participantIds: participantIds ? JSON.stringify(participantIds) : null,
       description: body.description,
       resolution: body.resolution,
     }).returning()
@@ -34,13 +41,19 @@ export function registerConflictRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
     const body = await c.req.json()
+
+    let participantIds = body.participantIds
+    if (body.participants !== undefined && (!participantIds || (Array.isArray(participantIds) && participantIds.length === 0))) {
+      participantIds = await matchCharacterIdsFromText(projectId, body.participants)
+    }
+
     const fields = updatedFields({
       title: body.title,
       type: body.type,
       intensity: body.intensity,
       status: body.status,
       participants: body.participants,
-      participantIds: body.participantIds ? JSON.stringify(body.participantIds) : undefined,
+      participantIds: participantIds ? JSON.stringify(participantIds) : undefined,
       description: body.description,
       resolution: body.resolution,
     })

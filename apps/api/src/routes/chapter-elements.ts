@@ -60,20 +60,22 @@ export function registerChapterElementRoutes(app: Hono) {
 
     // 校验 elementId 归属（针对角色类型）及名称一致性
     const charElementsWithId = incoming.filter((el: any) => el.elementType === 'character' && el.elementId)
+    let charMap: Record<string, string> = {}
     if (charElementsWithId.length > 0) {
       const charIds = charElementsWithId.map((el: any) => el.elementId)
       try {
-        await assertCharactersBelongToProject(projectId, charIds)
+        const dbChars = await assertCharactersBelongToProject(projectId, charIds)
+        charMap = Object.fromEntries(dbChars.map(c => [c.id, c.name]))
       }
-      catch {
-        return c.json(fail('包含不属于当前项目的角色ID'), 400)
+      catch (err: any) {
+        return c.json(fail(err.message || '包含不属于当前项目的角色ID'), 400)
       }
     }
 
     const normalized: NormalizedElement[] = incoming.map((el: any) => ({
       elementType: el.elementType as 'character' | 'location' | 'item' | 'organization' | 'event',
       elementId: el.elementId || null,
-      elementName: el.elementName.trim(),
+      elementName: (el.elementId && charMap[el.elementId]) ? charMap[el.elementId] : el.elementName.trim(),
       relationType: el.relationType as 'appears' | 'mentioned' | 'scene' | 'uses' | 'involved' | 'occurs',
       importance: (el.importance || 'normal') as 'major' | 'normal' | 'minor',
       appearanceOrder: el.appearanceOrder ?? null,
@@ -110,10 +112,11 @@ export function registerChapterElementRoutes(app: Hono) {
 
     if (body.elementType === 'character' && body.elementId) {
       try {
-        await assertCharactersBelongToProject(projectId, [body.elementId])
+        const [dbChar] = await assertCharactersBelongToProject(projectId, [body.elementId])
+        body.elementName = dbChar.name
       }
-      catch {
-        return c.json(fail('角色不属于当前项目'), 400)
+      catch (err: any) {
+        return c.json(fail(err.message || '角色不属于当前项目'), 400)
       }
     }
 
@@ -139,6 +142,17 @@ export function registerChapterElementRoutes(app: Hono) {
     const id = c.req.param('id')
     await assertChapterBelongsToProject(projectId, chapterId)
     const body = await c.req.json()
+
+    if (body.elementId && (body.elementType === 'character' || !body.elementType)) {
+      try {
+        const [dbChar] = await assertCharactersBelongToProject(projectId, [body.elementId])
+        body.elementName = dbChar.name
+      }
+      catch (err: any) {
+        return c.json(fail(err.message || '角色不属于当前项目'), 400)
+      }
+    }
+
     const fields = updatedFields({
       elementType: body.elementType,
       elementId: body.elementId,

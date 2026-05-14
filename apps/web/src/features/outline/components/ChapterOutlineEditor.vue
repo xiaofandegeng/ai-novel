@@ -105,9 +105,12 @@ const statusOptions = [
 
     <!-- Chapter Structured Elements -->
     <section class="space-y-4">
-      <h3 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
-        <Layers :size="16" /> AI 写作硬约束
-      </h3>
+      <div class="flex items-center justify-between">
+        <h3 class="flex items-center gap-2 text-sm text-text-primary font-bold tracking-wider uppercase">
+          <Layers :size="16" /> AI 写作硬约束
+        </h3>
+        <span class="text-[10px] text-text-muted font-medium">角色与上方列表同步，事件由 AI 优先参考</span>
+      </div>
       <div>
         <label class="mb-2 block text-xs text-text-muted font-semibold">必须出场人物 (Character Constraints)</label>
         <div class="flex flex-wrap gap-2">

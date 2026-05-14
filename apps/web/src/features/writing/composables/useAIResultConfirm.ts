@@ -5,7 +5,7 @@ import { T } from '@/utils/toast-message'
 
 export interface PendingAIResult {
   content: string
-  source: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft' | 'chat'
+  source: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft' | 'chat' | 'quality'
   selectionStart: number
   selectionEnd: number
   originalText: string
@@ -14,7 +14,7 @@ export interface PendingAIResult {
 }
 
 export interface AIActionType {
-  type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'
+  type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft' | 'quality'
 }
 
 type ToastType = 'success' | 'info' | 'warning' | 'error'
@@ -90,6 +90,33 @@ export function useAIResultConfirm(
   }
 
   function buildAIPrompt(type: AIActionType['type']): string {
+    if (type === 'quality') {
+      return `请作为一名极其严苛的文学编辑和逻辑审查官，针对当前章节的正文内容，结合我提供的全方位上下文（全局背景、叙事路径、人物深度设定、章节心理路程），进行一次全面的“质量审计”。
+
+审计维度与要求：
+1. **主题偏离度检查**：当前内容是否背离了作品的全局主题？是否有为了写而写的“注水”嫌疑？
+2. **角色一致性审计**：
+   - 识别文中出现的所有角色。
+   - 是否出现了未在设定中提及的冗余角色？
+   - 主角及关键配角的言行、心理活动是否符合其“欲望、恐惧、弧光”的设定？是否出现了 OOC（人设崩坏）？
+3. **剧情走向校验**：本章内容是否精准完成了大纲预设的转折？是否因为局部描写过于发散而导致剧情走向偏离了原本的“叙事路径”？
+4. **冗余与废话分析**：是否存在不必要的对话或与主线无关的支线描写？
+
+请按以下格式给出审计报告：
+### 【审计总结】
+（一句话概括本章质量现状及核心风险）
+
+### 【维度得分 (1-10)】
+- 主题契合度：
+- 角色一致性：
+- 剧情推进度：
+
+### 【具体风险点与修正建议】
+- [风险类型] 描述：... 建议：...
+
+### 【亮点记录】
+（值得保留的精彩描写或精妙处理）`
+    }
     if (type === 'draft') {
       return `请作为一名资深的文学创作者，根据我提供的全方位上下文（全局背景、叙事路径、人物深度设定、章节心理路程），为我撰写本章的正文。
 

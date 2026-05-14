@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "character_relationships_unique" ON "character_relationships" USING btree ("project_id","character_a_id","character_b_id");

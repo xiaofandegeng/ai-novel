@@ -324,9 +324,8 @@ async function applyOneSuggestion(
         throw new Error(`匹配不到角色：${!charA ? characterAName : ''} ${!charB ? characterBName : ''}`)
       }
 
-      // 不再强制排序 ID，以保留方向性（如 A 是 B 的导师）
-      const charAId = charA.id
-      const charBId = charB.id
+      // 规范化 ID 顺序，确保数据库中 A < B，符合唯一索引要求
+      const [charAId, charBId] = charA.id < charB.id ? [charA.id, charB.id] : [charB.id, charA.id]
 
       const [existing] = await db.select().from(characterRelationships).where(and(
         eq(characterRelationships.projectId, projectId),

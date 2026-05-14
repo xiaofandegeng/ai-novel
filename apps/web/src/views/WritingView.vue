@@ -272,9 +272,9 @@ function handleSelection(payload: { text: string, start: number, end: number }) 
   selectionEnd.value = payload.end
 }
 
-function handleRunAI(type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft') {
+function handleRunAI(type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft' | 'quality') {
   if (sceneMode.value && !currentSceneId.value) {
-    toast.add('请先选择一个场景，再使用 AI 生成场景正文。', 'warning')
+    toast.add('请先选择一个场景，再使用 AI 生成内容。', 'warning')
     return
   }
 
@@ -284,6 +284,7 @@ function handleRunAI(type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft
     expand: '扩写',
     shorten: '精简',
     draft: '起草初稿',
+    quality: '内容审计',
   }
   const sceneMap = {
     continue: 'draft' as const,
@@ -291,6 +292,7 @@ function handleRunAI(type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft
     draft: 'draft' as const,
     polish: 'polish' as const,
     shorten: 'polish' as const,
+    quality: 'quality' as const,
   }
   const prompt = buildAIPrompt(type)
   toast.add(`AI ${actionLabels[type]}已开始`, 'info')
@@ -393,6 +395,7 @@ async function handleUpdateMemory() {
         :draft-exists="!!draft"
         @snapshot="handleSnapshot"
         @update-memory="handleUpdateMemory"
+        @run-quality-audit="handleRunAI('quality')"
       />
     </template>
 

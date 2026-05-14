@@ -2,6 +2,7 @@ import type { Hono } from 'hono'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { foreshadowingItems } from '../db/schema'
+import { matchCharacterIdsFromText } from '../services/character-utils.service'
 import { assertOptionalChapterBelongsToProject } from '../services/ownership.service'
 import { fail, generateId, success, updatedFields } from '../utils'
 
@@ -18,6 +19,12 @@ export function registerForeshadowingRoutes(app: Hono) {
     await assertOptionalChapterBelongsToProject(projectId, body.setupChapterId)
     await assertOptionalChapterBelongsToProject(projectId, body.expectedPayoffChapterId)
     await assertOptionalChapterBelongsToProject(projectId, body.payoffChapterId)
+
+    let characterIds = body.characterIds
+    if (!characterIds || (Array.isArray(characterIds) && characterIds.length === 0)) {
+      characterIds = await matchCharacterIdsFromText(projectId, body.relatedCharacters)
+    }
+
     const id = generateId()
     const [row] = await db.insert(foreshadowingItems).values({
       id,
@@ -30,7 +37,7 @@ export function registerForeshadowingRoutes(app: Hono) {
       status: body.status || 'open',
       importance: body.importance || 'normal',
       relatedCharacters: body.relatedCharacters,
-      characterIds: body.characterIds ? JSON.stringify(body.characterIds) : null,
+      characterIds: characterIds ? JSON.stringify(characterIds) : null,
       relatedEvents: body.relatedEvents,
       notes: body.notes,
     }).returning()
@@ -44,6 +51,12 @@ export function registerForeshadowingRoutes(app: Hono) {
     await assertOptionalChapterBelongsToProject(projectId, body.setupChapterId)
     await assertOptionalChapterBelongsToProject(projectId, body.expectedPayoffChapterId)
     await assertOptionalChapterBelongsToProject(projectId, body.payoffChapterId)
+
+    let characterIds = body.characterIds
+    if (body.relatedCharacters !== undefined && (!characterIds || (Array.isArray(characterIds) && characterIds.length === 0))) {
+      characterIds = await matchCharacterIdsFromText(projectId, body.relatedCharacters)
+    }
+
     const fields = updatedFields({
       title: body.title,
       description: body.description,
@@ -53,7 +66,7 @@ export function registerForeshadowingRoutes(app: Hono) {
       status: body.status,
       importance: body.importance,
       relatedCharacters: body.relatedCharacters,
-      characterIds: body.characterIds ? JSON.stringify(body.characterIds) : undefined,
+      characterIds: characterIds ? JSON.stringify(characterIds) : undefined,
       relatedEvents: body.relatedEvents,
       notes: body.notes,
     })
