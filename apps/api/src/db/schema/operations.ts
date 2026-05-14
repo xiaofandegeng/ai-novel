@@ -41,9 +41,12 @@ export const promptTemplates = pgTable('prompt_templates', {
   key: text('key').notNull().unique(), // e.g. 'draft_generate'
   name: text('name').notNull(),
   description: text('description'),
+  taskType: text('task_type'), // KEEPING
   version: text('version').notNull(),
+  content: text('content'), // KEEPING
   systemPrompt: text('system_prompt'),
-  userPromptTemplate: text('user_prompt_template').notNull(),
+  userPromptTemplate: text('user_prompt_template'),
+  variablesSchema: jsonb('variables_schema'), // KEEPING
   outputSchema: jsonb('output_schema'), // JSON schema for validation
   status: text('status').notNull().default('active'),
   ...timestamps,

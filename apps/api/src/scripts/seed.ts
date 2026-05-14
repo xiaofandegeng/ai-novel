@@ -24,6 +24,8 @@ import {
   personaMemoryCards,
   projectAppliedTemplates,
   projectPersonaConfigs,
+  projectPromptOverrides,
+  promptTemplates,
   qualityReports,
   referenceChapterAnalysisErrors,
   referenceChapters,
@@ -31,6 +33,7 @@ import {
   referenceWorks,
   storyBibles,
   storyFactTriples,
+  storyStructureTemplates,
   volumes,
   workStyleReports,
   writingJobs,
@@ -87,6 +90,9 @@ async function clearProjectData() {
   await db.delete(storyBibles)
   await db.delete(projectAppliedTemplates)
   await db.delete(novelProjects)
+  await db.delete(promptTemplates)
+  await db.delete(projectPromptOverrides)
+  await db.delete(storyStructureTemplates)
 }
 
 async function seed() {
@@ -989,6 +995,73 @@ async function seed() {
     tokenEstimate: 420,
     createdAt: now,
   })
+
+  // Builtin Prompt Templates
+  await db.insert(promptTemplates).values([
+    {
+      id: id(),
+      key: 'draft_generate',
+      name: '正文生成',
+      description: '根据场景大纲和上下文生成小说正文',
+      version: '1.0.0',
+      systemPrompt: '你是一位优秀的长篇小说作家，擅长细腻的描写和自然的对白。',
+      userPromptTemplate: '任务：生成章节《{{chapterTitle}}》的正文。\n情节：{{outline}}\n上下文：{{context}}',
+      outputSchema: j({ type: 'string' }),
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: id(),
+      key: 'outline_brainstorm',
+      name: '大纲脑暴',
+      description: '根据故事梗概生成详细章节大纲',
+      version: '1.0.0',
+      systemPrompt: '你是一位资深编剧，擅长架构复杂的多线故事和长线伏笔。',
+      userPromptTemplate: '任务：为小说《{{projectTitle}}》脑暴后续章节。\n核心矛盾：{{mainConflict}}\n当前进度：{{progress}}',
+      outputSchema: j({ type: 'array', items: { type: 'object' } }),
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+
+  // Builtin Story Structure Templates
+  await db.insert(storyStructureTemplates).values([
+    {
+      id: id(),
+      name: '英雄旅程 (Hero\'s Journey)',
+      description: '经典的 12 阶段英雄旅程模型。',
+      genre: '通用',
+      structureType: 'hero_journey',
+      actsJson: j(['启程', '启蒙', '归来']),
+      beatsJson: j([
+        { name: '平凡世界', description: '介绍英雄的日常生活和渴望。' },
+        { name: '冒险召唤', description: '一个打破平衡的事件。' },
+        { name: '拒绝召唤', description: '英雄的犹豫和恐惧。' },
+        { name: '遇见导师', description: '获得指引或工具。' },
+      ]),
+      isBuiltin: 1,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: id(),
+      name: '悬疑钩子流',
+      description: '高压、多反转、强钩子的悬疑叙事结构。',
+      genre: '悬疑',
+      structureType: 'five_act',
+      actsJson: j(['悬念引入', '线索升级', '身份危机', '最终对决', '余韵/反转']),
+      beatsJson: j([
+        { name: '异常物件', description: '出现不合常理的物件打破现状。' },
+        { name: '验证失败', description: '主角尝试用常理修复现状却失败。' },
+        { name: '代价显现', description: '为了追查真相必须牺牲部分自我。' },
+      ]),
+      isBuiltin: 1,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
 
   console.log('Seed data inserted successfully')
   console.log(`Project: 测试小说《镜中城回声》 (${projectId})`)

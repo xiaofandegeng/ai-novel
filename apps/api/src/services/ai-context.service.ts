@@ -29,6 +29,7 @@ import {
 import { retrieveKnowledgeForAI } from './knowledge-retrieval.service'
 import { buildPersonaMemoryContext } from './persona-memory.service'
 import { buildPersonaPromptForProject } from './persona-prompt.service'
+import { StoryStructureService } from './story-structure.service'
 
 function buildKnowledgeSearchTerms(input: {
   userInstruction?: string
@@ -415,6 +416,9 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     }
   }
 
+  // 13. Story Structure Context
+  const structureContext = await StoryStructureService.getProjectStructureContext(projectId, chapterId)
+
   return {
     scene,
     task: userInstruction || '根据上下文完成创作任务',
@@ -493,6 +497,7 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     chapterElements: chapterElementSummaries,
     foreshadowingItems: foreshadowingSummaries,
     factTriples: factTripleContext,
+    structure: structureContext,
     constraints: [
       '保持已有设定一致性',
       '不得让角色做出违背既定动机的行为',

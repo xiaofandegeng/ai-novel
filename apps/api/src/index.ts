@@ -28,6 +28,7 @@ import { registerPersonaRoutes } from './routes/persona'
 import { registerPersonaMemoryRoutes } from './routes/persona-memory'
 import { registerPostprocessSuggestionRoutes } from './routes/postprocess-suggestions'
 import { registerProjectRoutes } from './routes/projects'
+import { registerPromptTemplateRoutes } from './routes/prompt-templates'
 import { registerQualityRoutes } from './routes/quality'
 import { registerRelationshipRoutes } from './routes/relationships'
 import { registerRetrievalRoutes } from './routes/retrieval'
@@ -79,6 +80,7 @@ registerDataPortabilityRoutes(app)
 registerAuthoringEventRoutes(app)
 registerAIQualityFeedbackRoutes(app)
 registerAIUsageRoutes(app)
+registerPromptTemplateRoutes(app)
 registerAuthoringReportRoutes(app)
 registerCharacterArcRoutes(app)
 registerConflictTimelineRoutes(app)

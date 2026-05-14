@@ -142,5 +142,10 @@ export interface BuiltAIContext {
   chapterElements: string[]
   foreshadowingItems: ForeshadowingContextSummary[]
   factTriples: string[]
+  structure?: {
+    allActs: Array<{ title: string, description: string | null }>
+    currentAct: { title: string, description: string | null, progress: string } | null
+    nextAct: { title: string, description: string | null } | null
+  }
   constraints: string[]
 }

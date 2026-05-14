@@ -1,11 +1,11 @@
 import type { Hono } from 'hono'
-import { applyTemplate, listTemplates } from '../services/story-structure.service'
+import { StoryStructureService } from '../services/story-structure.service'
 import { fail, success } from '../utils'
 
 export function registerStoryStructureRoutes(app: Hono) {
   app.get('/api/story-structure/templates', async (c) => {
     const genre = c.req.query('genre')
-    const rows = await listTemplates(genre)
+    const rows = await StoryStructureService.listTemplates(genre)
     return c.json(success(rows))
   })
 
@@ -15,7 +15,7 @@ export function registerStoryStructureRoutes(app: Hono) {
     if (!body.templateId)
       return c.json(fail('templateId is required'), 400)
     try {
-      const acts = await applyTemplate(projectId, body.templateId)
+      const acts = await StoryStructureService.applyTemplate(projectId, body.templateId)
       return c.json(success(acts), 201)
     }
     catch (e: any) {
