@@ -62,9 +62,64 @@ const otherElements = computed(() =>
   ),
 )
 
-const aiContext = computed(() =>
-  `Setting: ${props.storyBible?.worldview || ''}. Current Chapter Outline: ${props.chapter?.goals || ''}`,
-)
+const aiContext = computed(() => {
+  const parts = []
+
+  // 1. World Setting
+  if (props.storyBible?.worldview || props.storyBible?.rules) {
+    let world = '### 世界观与规则\n'
+    if (props.storyBible.worldview)
+      world += `设定：${props.storyBible.worldview}\n`
+    if (props.storyBible.rules)
+      world += `铁律与禁忌：${props.storyBible.rules}\n`
+    parts.push(world)
+  }
+
+  // 2. Chapter Goals & Outline
+  if (props.chapter) {
+    let goals = '### 本章创作目标与悬念\n'
+    if (props.chapter.goals)
+      goals += `目标：${props.chapter.goals}\n`
+    if (props.chapter.events)
+      goals += `大纲：${props.chapter.events}\n`
+    if (props.chapter.endingHook)
+      goals += `结尾悬念：${props.chapter.endingHook}\n`
+    parts.push(goals)
+  }
+
+  // 3. Present Characters Detailed
+  if (presentCharacters.value.length > 0) {
+    let chars = '### 登场人物详述\n'
+    presentCharacters.value.forEach((c) => {
+      chars += `- **${c.name}** (${getCharacterRoleLabel(c.role)})\n`
+      if (c.personality)
+        chars += `  性格：${c.personality}\n`
+      if (c.goal)
+        chars += `  核心目标：${c.goal}\n`
+      if (c.secret)
+        chars += `  隐秘（AI创作参考）：${c.secret}\n`
+    })
+    parts.push(chars)
+  }
+
+  // 4. Hard Constraints
+  if (props.chapterElements.length > 0) {
+    let elements = '### 创作硬约束（必须体现）\n'
+    const charConstraints = mustAppearCharacters.value.map(e => e.elementName).join('、')
+    const eventConstraints = keyEvents.value.map(e => e.elementName).join('、')
+    const otherConstraints = otherElements.value.map(e => e.elementName).join('、')
+
+    if (charConstraints)
+      elements += `- 必须出场：${charConstraints}\n`
+    if (eventConstraints)
+      elements += `- 关键事件：${eventConstraints}\n`
+    if (otherConstraints)
+      elements += `- 包含元素：${otherConstraints}\n`
+    parts.push(elements)
+  }
+
+  return parts.join('\n')
+})
 
 function sendMessageToAI(prompt: string, scene: AIScene = 'chat') {
   pendingScene.value = scene
