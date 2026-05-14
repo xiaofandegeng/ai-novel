@@ -132,7 +132,13 @@ export function useCharacterWorkspace(projectId: string) {
         name: '新角色',
         role: 'supporting',
       })
-      toast.add(T.character_added, 'success')
+      const autoLink = await characterStore.autoLinkCharacter(projectId, newChar.id)
+      toast.add(
+        autoLink.suggestionsCreated > 0
+          ? `${T.character_added}，已生成 ${autoLink.suggestionsCreated} 条关系候选`
+          : T.character_added,
+        'success',
+      )
       selectCharacter(newChar.id)
     }
     catch {
@@ -196,6 +202,31 @@ export function useCharacterWorkspace(projectId: string) {
     return createdCount
   }
 
+  async function createAutoLinkSuggestions(newCharacter: Character, directRelationshipCount: number) {
+    try {
+      const result = await characterStore.autoLinkCharacter(projectId, newCharacter.id)
+      return {
+        directRelationshipCount,
+        suggestionCount: result.suggestionsCreated,
+      }
+    }
+    catch {
+      return {
+        directRelationshipCount,
+        suggestionCount: 0,
+      }
+    }
+  }
+
+  function characterCreatedMessage(directRelationshipCount: number, suggestionCount: number) {
+    const parts = ['AI 推荐角色已创建']
+    if (directRelationshipCount > 0)
+      parts.push(`已直接关联 ${directRelationshipCount} 段人物关系`)
+    if (suggestionCount > 0)
+      parts.push(`新增 ${suggestionCount} 条待确认关系候选`)
+    return parts.join('，')
+  }
+
   function clearAIProposal() {
     aiProposal.value = null
     aiError.value = ''
@@ -210,8 +241,14 @@ export function useCharacterWorkspace(projectId: string) {
         ...charForm.value,
         role: (charForm.value.role || undefined) as CharacterRole | undefined,
       }
-      await characterStore.updateCharacter(projectId, selectedCharId.value, data)
-      toast.add(T.character_updated, 'success')
+      const updated = await characterStore.updateCharacter(projectId, selectedCharId.value, data)
+      const autoLink = await characterStore.autoLinkCharacter(projectId, updated.id)
+      toast.add(
+        autoLink.suggestionsCreated > 0
+          ? `${T.character_updated}，新增 ${autoLink.suggestionsCreated} 条关系候选`
+          : T.character_updated,
+        'success',
+      )
     }
     catch {
       toast.add(getErrorMessage('character_save'), 'error')
@@ -331,9 +368,10 @@ export function useCharacterWorkspace(projectId: string) {
     try {
       const newChar = await characterStore.createCharacter(projectId, toCreateCharacterInput(candidate))
       const relationshipCount = await createSuggestedRelationships(newChar, candidate)
+      const autoLink = await createAutoLinkSuggestions(newChar, relationshipCount)
       clearAIProposal()
       selectCharacter(newChar.id)
-      toast.add(relationshipCount > 0 ? `AI 推荐角色已创建，并关联 ${relationshipCount} 段人物关系` : 'AI 推荐角色已创建', 'success')
+      toast.add(characterCreatedMessage(autoLink.directRelationshipCount, autoLink.suggestionCount), 'success')
     }
     catch {
       toast.add(getErrorMessage('character_add'), 'error')
@@ -344,6 +382,7 @@ export function useCharacterWorkspace(projectId: string) {
     try {
       const newChar = await characterStore.createCharacter(projectId, toCreateCharacterInput(candidate))
       const relationshipCount = await createSuggestedRelationships(newChar, candidate)
+      const autoLink = await createAutoLinkSuggestions(newChar, relationshipCount)
       selectCharacter(newChar.id)
 
       if (aiProposal.value?.kind === 'batch_create') {
@@ -355,7 +394,7 @@ export function useCharacterWorkspace(projectId: string) {
         clearAIProposal()
       }
 
-      toast.add(relationshipCount > 0 ? `AI 推荐角色已创建，并关联 ${relationshipCount} 段人物关系` : 'AI 推荐角色已创建', 'success')
+      toast.add(characterCreatedMessage(autoLink.directRelationshipCount, autoLink.suggestionCount), 'success')
     }
     catch {
       toast.add(getErrorMessage('character_add'), 'error')
@@ -370,15 +409,19 @@ export function useCharacterWorkspace(projectId: string) {
     try {
       let lastCreatedId = ''
       let relationshipCount = 0
+      let suggestionCount = 0
       for (const candidate of candidates) {
         const newChar = await characterStore.createCharacter(projectId, toCreateCharacterInput(candidate))
         lastCreatedId = newChar.id
-        relationshipCount += await createSuggestedRelationships(newChar, candidate)
+        const directCount = await createSuggestedRelationships(newChar, candidate)
+        relationshipCount += directCount
+        const autoLink = await createAutoLinkSuggestions(newChar, directCount)
+        suggestionCount += autoLink.suggestionCount
       }
       clearAIProposal()
       if (lastCreatedId)
         selectCharacter(lastCreatedId)
-      toast.add(`已创建 ${candidates.length} 个小角色，并关联 ${relationshipCount} 段人物关系`, 'success')
+      toast.add(`已创建 ${candidates.length} 个小角色，直接关联 ${relationshipCount} 段人物关系，新增 ${suggestionCount} 条待确认关系候选`, 'success')
     }
     catch {
       toast.add('部分小角色创建失败，请检查后重试', 'error')

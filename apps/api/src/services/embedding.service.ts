@@ -23,10 +23,8 @@ export interface EmbeddingInput {
 
 async function getEmbeddingConfig() {
   const settings = await getEffectiveAISettings()
-  // 暂时使用通用模型名，后续可扩展专用 embedding 配置
   return {
-    model: settings.provider === 'openai' ? 'text-embedding-3-small' : settings.model,
-    provider: settings.provider,
+    model: settings.embeddingModel || 'text-embedding-3-small',
   }
 }
 
@@ -53,6 +51,7 @@ export async function getOrCreateEmbedding(input: EmbeddingInput): Promise<numbe
         eq(knowledgeEmbeddings.projectId, input.projectId),
         eq(knowledgeEmbeddings.contentHash, contentHash),
         eq(knowledgeEmbeddings.embeddingModel, model),
+        eq(knowledgeEmbeddings.contentType, input.contentType),
       ),
     )
 

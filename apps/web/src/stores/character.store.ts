@@ -33,5 +33,9 @@ export const useCharacterStore = defineStore('characters', () => {
     return await charactersApi.inferRelationships(projectId)
   }
 
-  return { characters, fetchCharacters, createCharacter, updateCharacter, deleteCharacter, inferRelationships }
+  async function autoLinkCharacter(projectId: string, id: string) {
+    return await charactersApi.autoLinkCharacter(projectId, id)
+  }
+
+  return { characters, fetchCharacters, createCharacter, updateCharacter, deleteCharacter, inferRelationships, autoLinkCharacter }
 })

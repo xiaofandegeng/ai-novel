@@ -2,6 +2,7 @@ import type { Hono } from 'hono'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { characters } from '../db/schema'
+import { autoLinkCharacterToGraph } from '../services/character-auto-link.service'
 import { inferRelationshipsFromBios } from '../services/character-inference.service'
 import { fail, generateId, now, success, updatedFields } from '../utils'
 
@@ -14,6 +15,18 @@ export function registerCharacterRoutes(app: Hono) {
     }
     catch (e: any) {
       return c.json(fail(e.message || '推导失败'), 500)
+    }
+  })
+
+  app.post('/api/projects/:projectId/characters/:id/auto-link', async (c) => {
+    const projectId = c.req.param('projectId')
+    const id = c.req.param('id')
+    try {
+      const result = await autoLinkCharacterToGraph(projectId, id)
+      return c.json(success(result))
+    }
+    catch (e: any) {
+      return c.json(fail(e.message || '自动关联关系网失败'), 500)
     }
   })
 

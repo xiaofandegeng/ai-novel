@@ -11,3 +11,7 @@ export const deleteCharacter = crud.delete
 export function inferRelationships(projectId: string) {
   return apiPost<{ suggestionsCreated: number, message: string }>(`/api/projects/${projectId}/characters/infer-relationships`, {})
 }
+
+export function autoLinkCharacter(projectId: string, id: string) {
+  return apiPost<{ suggestionsCreated: number, message: string }>(`/api/projects/${projectId}/characters/${id}/auto-link`, {})
+}
