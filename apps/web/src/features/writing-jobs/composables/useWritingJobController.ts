@@ -41,6 +41,7 @@ export const MODE_LABEL: Record<WritingJobMode, string> = {
 export const STEP_LABEL: Record<WritingJobStepType, string> = {
   prepare_context: '构建上下文',
   generate_plan: '生成大纲',
+  generate_scene_draft: '生成场景大纲',
   confirm_plan: '审查大纲',
   generate_draft: '生成正文',
   consistency_check: '一致性检查',
@@ -51,6 +52,7 @@ export const STEP_LABEL: Record<WritingJobStepType, string> = {
   confirm_suggestions: '审查建议',
   apply_suggestions: '应用建议',
   update_health: '更新健康指标',
+  done: '任务完成',
 }
 
 export const STEP_STATUS_CONFIG: Record<WritingJobStepStatus, { label: string, variant: 'default' | 'info' | 'success' | 'error' | 'warning', icon: any }> = {
@@ -61,7 +63,7 @@ export const STEP_STATUS_CONFIG: Record<WritingJobStepStatus, { label: string, v
   skipped: { label: '已跳过', variant: 'default', icon: SkipForward },
 }
 
-export const CONFIRM_STEP_TYPES = new Set(['confirm_plan', 'confirm_apply', 'confirm_suggestions'])
+export const CONFIRM_STEP_TYPES = new Set(['confirm_plan', 'consistency_check', 'confirm_apply', 'confirm_suggestions'])
 
 export function useWritingJobController(projectId: string) {
   const toast = useToast()

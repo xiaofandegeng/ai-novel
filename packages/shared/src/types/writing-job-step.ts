@@ -1,4 +1,4 @@
-export type WritingJobStepType = 'prepare_context' | 'generate_plan' | 'confirm_plan' | 'generate_draft' | 'consistency_check' | 'confirm_apply' | 'apply_draft' | 'save_version' | 'postprocess' | 'confirm_suggestions' | 'apply_suggestions' | 'update_health'
+export type WritingJobStepType = 'prepare_context' | 'generate_plan' | 'confirm_plan' | 'generate_draft' | 'generate_scene_draft' | 'consistency_check' | 'confirm_apply' | 'apply_draft' | 'save_version' | 'postprocess' | 'confirm_suggestions' | 'apply_suggestions' | 'update_health' | 'done'
 export type WritingJobStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
 
 export interface WritingJobStep {

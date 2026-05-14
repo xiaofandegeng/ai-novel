@@ -14,13 +14,13 @@ import {
 import { fail, generateId, success } from '../utils'
 
 export function registerWritingJobRoutes(app: Hono) {
-  app.get('/api/projects/:projectId/writing-job', async (c) => {
+  app.get('/api/projects/:projectId/writing-jobs', async (c) => {
     const projectId = c.req.param('projectId')
     const [row] = await db.select().from(writingJobs).where(eq(writingJobs.projectId, projectId))
     return c.json(success(row || null))
   })
 
-  app.post('/api/projects/:projectId/writing-job', async (c) => {
+  app.post('/api/projects/:projectId/writing-jobs', async (c) => {
     const projectId = c.req.param('projectId')
     const body = await c.req.json()
     await assertOptionalChapterBelongsToProject(projectId, body.currentChapterId)
@@ -55,7 +55,7 @@ export function registerWritingJobRoutes(app: Hono) {
     return c.json(success(row), 201)
   })
 
-  app.post('/api/projects/:projectId/writing-job/:id/start', async (c) => {
+  app.post('/api/projects/:projectId/writing-jobs/:id/start', async (c) => {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
 
@@ -74,7 +74,7 @@ export function registerWritingJobRoutes(app: Hono) {
     }
   })
 
-  app.post('/api/projects/:projectId/writing-job/:id/pause', async (c) => {
+  app.post('/api/projects/:projectId/writing-jobs/:id/pause', async (c) => {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
     const [row] = await db.update(writingJobs).set({
@@ -86,7 +86,7 @@ export function registerWritingJobRoutes(app: Hono) {
     return c.json(success(row))
   })
 
-  app.post('/api/projects/:projectId/writing-job/:id/continue', async (c) => {
+  app.post('/api/projects/:projectId/writing-jobs/:id/continue', async (c) => {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
     const [row] = await db.update(writingJobs).set({
@@ -99,7 +99,7 @@ export function registerWritingJobRoutes(app: Hono) {
     return c.json(success(row))
   })
 
-  app.delete('/api/projects/:projectId/writing-job/:id', async (c) => {
+  app.delete('/api/projects/:projectId/writing-jobs/:id', async (c) => {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
     const [row] = await db.delete(writingJobs).where(
@@ -112,7 +112,7 @@ export function registerWritingJobRoutes(app: Hono) {
 
   // Step-related endpoints
 
-  app.get('/api/projects/:projectId/writing-job/:jobId/steps', async (c) => {
+  app.get('/api/projects/:projectId/writing-jobs/:jobId/steps', async (c) => {
     const projectId = c.req.param('projectId')
     const jobId = c.req.param('jobId')
 
@@ -127,7 +127,7 @@ export function registerWritingJobRoutes(app: Hono) {
     return c.json(success(steps))
   })
 
-  app.post('/api/projects/:projectId/writing-job/:jobId/steps/:stepId/approve', async (c) => {
+  app.post('/api/projects/:projectId/writing-jobs/:jobId/steps/:stepId/approve', async (c) => {
     const projectId = c.req.param('projectId')
     const jobId = c.req.param('jobId')
     const stepId = c.req.param('stepId')
@@ -146,7 +146,7 @@ export function registerWritingJobRoutes(app: Hono) {
     }
   })
 
-  app.post('/api/projects/:projectId/writing-job/:jobId/steps/:stepId/reject', async (c) => {
+  app.post('/api/projects/:projectId/writing-jobs/:jobId/steps/:stepId/reject', async (c) => {
     const projectId = c.req.param('projectId')
     const jobId = c.req.param('jobId')
     const stepId = c.req.param('stepId')
@@ -165,15 +165,10 @@ export function registerWritingJobRoutes(app: Hono) {
     }
   })
 
-  app.post('/api/projects/:projectId/writing-job/:jobId/retry', async (c) => {
+  app.post('/api/projects/:projectId/writing-jobs/:jobId/steps/:stepId/retry', async (c) => {
     const projectId = c.req.param('projectId')
     const jobId = c.req.param('jobId')
-    const body = await c.req.json().catch(() => ({}))
-    const stepId = body.stepId
-
-    if (!stepId) {
-      return c.json(fail('stepId is required'), 400)
-    }
+    const stepId = c.req.param('stepId')
 
     try {
       await retryStep(projectId, jobId, stepId)

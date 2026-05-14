@@ -6,6 +6,8 @@ export type AuthoringEventType
     | 'ai_generation_confirmed'
     | 'ai_generation_discarded'
     | 'draft_applied'
+    | 'draft_write'
+    | 'scene_write'
     | 'postprocess_started'
     | 'suggestion_applied'
     | 'health_risk_opened'

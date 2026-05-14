@@ -7,6 +7,7 @@ import { renderAIContext } from './ai-context-renderer'
 import { createAIContextSnapshot } from './ai-context-snapshot.service'
 import { buildProjectAIContext } from './ai-context.service'
 import { callAIJSON, getEffectiveAISettings } from './ai.service'
+import { AuthoringEventService } from './authoring-event.service'
 import { runChapterPostprocess } from './chapter-postprocess.service'
 import { runConsistencyGuard } from './consistency-guard.service'
 import { getProjectHealthMetrics } from './health-metrics.service'
@@ -22,6 +23,7 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'generate_plan',
     'confirm_plan',
     'update_health',
+    'done',
   ],
   draft_only: [
     'prepare_context',
@@ -34,6 +36,7 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'confirm_suggestions',
     'apply_suggestions',
     'update_health',
+    'done',
   ],
   outline_then_draft: [
     'prepare_context',
@@ -48,10 +51,11 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'confirm_suggestions',
     'apply_suggestions',
     'update_health',
+    'done',
   ],
   scene_draft: [
     'prepare_context',
-    'generate_plan',
+    'generate_scene_draft',
     'confirm_plan',
     'generate_draft',
     'consistency_check',
@@ -62,11 +66,13 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'confirm_suggestions',
     'apply_suggestions',
     'update_health',
+    'done',
   ],
 }
 
 const CONFIRM_STEPS = new Set<WritingJobStepType>([
   'confirm_plan',
+  'consistency_check',
   'confirm_apply',
   'confirm_suggestions',
 ])
@@ -74,6 +80,7 @@ const CONFIRM_STEPS = new Set<WritingJobStepType>([
 const STEP_LABELS: Record<WritingJobStepType, string> = {
   prepare_context: '构建上下文',
   generate_plan: '生成大纲',
+  generate_scene_draft: '生成场景大纲',
   confirm_plan: '审查大纲',
   generate_draft: '生成正文',
   consistency_check: '一致性检查',
@@ -84,6 +91,7 @@ const STEP_LABELS: Record<WritingJobStepType, string> = {
   confirm_suggestions: '审查建议',
   apply_suggestions: '应用建议',
   update_health: '更新健康指标',
+  done: '任务完成',
 }
 
 export function getStepLabel(stepType: WritingJobStepType): string {
@@ -190,6 +198,49 @@ async function executePrepareContext(
   }).catch(err => console.error('Failed to create AI context snapshot:', err))
 
   const output = JSON.stringify({ context, rendered })
+  await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
+  return output
+}
+
+async function executeGenerateSceneDraft(
+  contextOutput: string,
+  sceneTitle: string | null,
+  stepId: string,
+): Promise<string> {
+  const parsed = JSON.parse(contextOutput)
+  const contextPrompt = parsed.rendered || ''
+
+  const sceneInfo = sceneTitle ? `场景: ${sceneTitle}` : '当前场景'
+
+  const messages = [
+    {
+      role: 'user' as const,
+      content: `你是一位专业的长篇小说场景大纲撰写者。请根据以下上下文，为当前场景生成详细的执行计划。
+
+${contextPrompt}
+
+---
+
+请为【${sceneInfo}】生成详细的场景执行计划，返回严格 JSON 格式：
+
+{
+  "title": "场景标题",
+  "goals": "本场景核心目标",
+  "conflicts": "本场景主要冲突点",
+  "events": "场景内关键行动列表",
+  "emotionalArc": "本场景情绪走向",
+  "outline": "详细场景大纲（200-400字，包含场景起因、经过、转折和结果）"
+}
+
+要求：
+- 场景必须推进当前章节的目标
+- 角色行为必须符合上下文设定的性格
+- 注意场景内部的节奏张力`,
+    },
+  ]
+
+  const plan = await callAIJSON<Record<string, any>>(messages, { temperature: 60 })
+  const output = JSON.stringify(plan)
   await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
   return output
 }
@@ -339,6 +390,15 @@ async function executeApplyDraft(
   if (!row)
     throw new Error('章节不存在或不属于当前项目')
 
+  // Log event
+  await AuthoringEventService.logEvent({
+    projectId,
+    chapterId,
+    eventType: 'draft_write',
+    source: 'ai',
+    payload: { wordCount: content.length, jobId: stepId },
+  }).catch(err => console.error('Failed to log authoring event:', err))
+
   const output = JSON.stringify({
     chapterId,
     wordCount: content.length,
@@ -374,6 +434,16 @@ async function executeApplySceneDraft(
 
   if (!row)
     throw new Error('场景不存在或不属于当前项目')
+
+  // Log event
+  await AuthoringEventService.logEvent({
+    projectId,
+    sceneId,
+    chapterId: row.chapterId,
+    eventType: 'scene_write',
+    source: 'ai',
+    payload: { wordCount: content.length, jobId: stepId },
+  }).catch(err => console.error('Failed to log authoring event:', err))
 
   const output = JSON.stringify({
     sceneId,
@@ -520,6 +590,15 @@ async function executeStep(
         break
       }
 
+      case 'generate_scene_draft': {
+        const contextOutput = previousStepOutputs.get('prepare_context') || '{}'
+        const sceneTitle = sceneId
+          ? (await db.select({ title: chapterScenes.title }).from(chapterScenes).where(eq(chapterScenes.id, sceneId)))[0]?.title
+          : null
+        await executeGenerateSceneDraft(contextOutput, sceneTitle, step.id)
+        break
+      }
+
       case 'confirm_plan':
         // This is a pause point — mark completed (it's a marker) and signal pause
         await updateStep(step.id, { status: 'completed', finishedAt: now() })
@@ -534,7 +613,11 @@ async function executeStep(
 
       case 'consistency_check': {
         const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
-        await executeConsistencyCheck(projectId, chapterId, sceneId, draftOutput, step.id)
+        const output = await executeConsistencyCheck(projectId, chapterId, sceneId, draftOutput, step.id)
+        const report = JSON.parse(output)
+        if (report.overallStatus === 'blocked' || report.overallStatus === 'warning') {
+          return false // Pause for review if there are risks
+        }
         break
       }
 
@@ -576,6 +659,10 @@ async function executeStep(
 
       case 'update_health':
         await executeUpdateHealth(projectId, step.id)
+        break
+
+      case 'done':
+        await updateStep(step.id, { status: 'completed', finishedAt: now() })
         break
 
       default:
@@ -659,6 +746,13 @@ async function runNextSteps(projectId: string, jobId: string, fromStepIndex?: nu
 // ---- Public API ----
 
 export async function startJob(projectId: string, jobId: string): Promise<void> {
+  // Verify job belongs to project
+  const [job] = await db.select().from(writingJobs).where(
+    and(eq(writingJobs.id, jobId), eq(writingJobs.projectId, projectId)),
+  )
+  if (!job)
+    throw new Error('Job not found or does not belong to this project')
+
   // Initialize steps if none exist
   const existingSteps = await getJobSteps(jobId)
   if (existingSteps.length === 0) {
