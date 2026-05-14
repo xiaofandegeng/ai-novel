@@ -3,6 +3,7 @@ import { and, asc, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { conflictTimelineEvents } from '../db/schema'
 import { generateId } from '../utils'
+import { assertConflictBelongsToProject, assertOptionalChapterBelongsToProject, assertOptionalSceneBelongsToProject } from './ownership.service'
 
 export class ConflictTimelineService {
   static async getConflictTimeline(projectId: string, conflictId: string) {
@@ -21,6 +22,10 @@ export class ConflictTimelineService {
   }
 
   static async createEvent(projectId: string, data: CreateConflictTimelineEventInput) {
+    await assertConflictBelongsToProject(projectId, data.conflictId)
+    await assertOptionalChapterBelongsToProject(projectId, data.chapterId)
+    await assertOptionalSceneBelongsToProject(projectId, data.sceneId)
+
     const values = {
       id: generateId(),
       projectId,

@@ -10,6 +10,7 @@ import {
   foreshadowingItems,
   novelProjects,
   storyBibles,
+  volumes,
 } from '../db/schema'
 
 export interface ManuscriptExportOptions {
@@ -37,11 +38,25 @@ export async function exportManuscriptMarkdown(
   if (!project)
     throw new Error('项目不存在')
 
-  const allChapters = await db
-    .select()
-    .from(chapters)
-    .where(eq(chapters.projectId, projectId))
-    .orderBy(asc(chapters.chapterNumber))
+  const [allChapters, allVolumes] = await Promise.all([
+    db
+      .select()
+      .from(chapters)
+      .where(eq(chapters.projectId, projectId))
+      .orderBy(asc(chapters.chapterNumber)),
+    db
+      .select()
+      .from(volumes)
+      .where(eq(volumes.projectId, projectId))
+      .orderBy(asc(volumes.orderIndex)),
+  ])
+
+  const volumeOrder = new Map(allVolumes.map((volume, index) => [volume.id, volume.orderIndex ?? index]))
+  allChapters.sort((a, b) => {
+    const volumeDiff = (volumeOrder.get(a.volumeId ?? '') ?? Number.MAX_SAFE_INTEGER)
+      - (volumeOrder.get(b.volumeId ?? '') ?? Number.MAX_SAFE_INTEGER)
+    return volumeDiff || a.chapterNumber - b.chapterNumber
+  })
 
   const chapterList = options.includeUnfinishedChapters
     ? allChapters

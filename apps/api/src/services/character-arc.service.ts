@@ -2,6 +2,7 @@ import { and, asc, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { characterArcEvents } from '../db/schema'
 import { generateId, now, updatedFields } from '../utils'
+import { assertCharacterBelongsToProject, assertOptionalChapterBelongsToProject, assertOptionalSceneBelongsToProject } from './ownership.service'
 
 export class CharacterArcService {
   static async getCharacterTimeline(projectId: string, characterId: string) {
@@ -31,6 +32,10 @@ export class CharacterArcService {
     evidence?: string
     sourceType?: string
   }) {
+    await assertCharacterBelongsToProject(projectId, data.characterId)
+    await assertOptionalChapterBelongsToProject(projectId, data.chapterId)
+    await assertOptionalSceneBelongsToProject(projectId, data.sceneId)
+
     const id = generateId()
     const timestamp = now()
     const [row] = await db.insert(characterArcEvents).values({
@@ -62,6 +67,9 @@ export class CharacterArcService {
     relationshipImpact?: string | null
     evidence?: string | null
   }) {
+    await assertOptionalChapterBelongsToProject(projectId, data.chapterId)
+    await assertOptionalSceneBelongsToProject(projectId, data.sceneId)
+
     const fields = updatedFields({
       eventType: data.eventType,
       chapterId: data.chapterId,

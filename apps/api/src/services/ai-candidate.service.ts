@@ -1,8 +1,9 @@
 import type { CreateAICandidateInput } from '@ai-novel/shared'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import { aiGenerationCandidates } from '../db/schema'
 import { generateId, now } from '../utils'
+import { assertOptionalChapterBelongsToProject } from './ownership.service'
 
 export class AICandidateService {
   static async getCandidates(projectId: string, filters?: { chapterId?: string, taskType?: string }) {
@@ -27,18 +28,18 @@ export class AICandidateService {
       return null
 
     // Clear previous selections for the same chapter and task type
-    if (candidate.chapterId) {
-      await db.update(aiGenerationCandidates)
-        .set({ userSelected: 0, updatedAt: now() })
-        .where(
-          and(
-            eq(aiGenerationCandidates.projectId, projectId),
-            eq(aiGenerationCandidates.chapterId, candidate.chapterId),
-            eq(aiGenerationCandidates.taskType, candidate.taskType),
-            eq(aiGenerationCandidates.userSelected, 1),
-          ),
-        )
-    }
+    await db.update(aiGenerationCandidates)
+      .set({ userSelected: 0, updatedAt: now() })
+      .where(
+        and(
+          eq(aiGenerationCandidates.projectId, projectId),
+          candidate.chapterId
+            ? eq(aiGenerationCandidates.chapterId, candidate.chapterId)
+            : isNull(aiGenerationCandidates.chapterId),
+          eq(aiGenerationCandidates.taskType, candidate.taskType),
+          eq(aiGenerationCandidates.userSelected, 1),
+        ),
+      )
 
     // Mark this candidate as selected
     const [updated] = await db.update(aiGenerationCandidates)
@@ -61,6 +62,8 @@ export class AICandidateService {
   }
 
   static async createCandidate(projectId: string, data: CreateAICandidateInput) {
+    await assertOptionalChapterBelongsToProject(projectId, data.chapterId)
+
     const id = generateId()
     const timestamp = now()
     const [row] = await db.insert(aiGenerationCandidates).values({

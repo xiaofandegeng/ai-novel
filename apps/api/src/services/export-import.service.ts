@@ -3,15 +3,19 @@ import { db } from '../db'
 import {
   acts,
   aiContextSnapshots,
+  aiGenerationCandidates,
   chapterElements,
   chapterMemories,
   chapterPostprocessSuggestions,
   chapters,
   chapterScenes,
+  characterArcEvents,
   characterRelationships,
   characters,
   conflictParticipants,
   conflicts,
+  conflictTimelineEvents,
+  dailyWritingStats,
   foreshadowingCharacters,
   foreshadowingItems,
   knowledgeChunks,
@@ -25,6 +29,7 @@ import {
   storyBibles,
   storyFactTriples,
   volumes,
+  writingGoals,
   writingJobs,
   writingJobSteps,
   writingPersonas,
@@ -69,6 +74,11 @@ const PERSONA_CONFIG_FIELDS = ['strength', 'enabledForOutline', 'enabledForDraft
 const PERSONA_MEMORY_CARD_FIELDS = ['cardType', 'content', 'tags']
 const FORESHADOWING_CHARACTER_FIELDS = ['relationType']
 const CONFLICT_PARTICIPANT_FIELDS = ['roleInConflict']
+const CHARACTER_ARC_EVENT_FIELDS = ['eventType', 'beforeState', 'afterState', 'motivationChange', 'relationshipImpact', 'evidence', 'sourceType']
+const CONFLICT_TIMELINE_EVENT_FIELDS = ['intensityBefore', 'intensityAfter', 'statusBefore', 'statusAfter', 'reason', 'evidence', 'sourceType']
+const WRITING_GOAL_FIELDS = ['goalType', 'targetWords', 'targetChapters', 'startDate', 'endDate', 'status']
+const DAILY_WRITING_STATS_FIELDS = ['date', 'wordsAdded', 'chaptersCompleted', 'aiWordsAccepted', 'manualWordsAdded']
+const AI_GENERATION_CANDIDATE_FIELDS = ['provider', 'model', 'taskType', 'content', 'qualityScore', 'userSelected', 'userRating']
 const WRITING_PERSONA_FIELDS = [
   'name',
   'description',
@@ -117,6 +127,11 @@ export async function exportProjectData(projectId: string) {
   const memoryCards = await db.select().from(personaMemoryCards).where(eq(personaMemoryCards.projectId, projectId))
   const fChars = await db.select().from(foreshadowingCharacters).where(eq(foreshadowingCharacters.projectId, projectId))
   const cParts = await db.select().from(conflictParticipants).where(eq(conflictParticipants.projectId, projectId))
+  const arcEvents = await db.select().from(characterArcEvents).where(eq(characterArcEvents.projectId, projectId))
+  const conflictTimeline = await db.select().from(conflictTimelineEvents).where(eq(conflictTimelineEvents.projectId, projectId))
+  const goals = await db.select().from(writingGoals).where(eq(writingGoals.projectId, projectId))
+  const dailyStats = await db.select().from(dailyWritingStats).where(eq(dailyWritingStats.projectId, projectId))
+  const aiCandidates = await db.select().from(aiGenerationCandidates).where(eq(aiGenerationCandidates.projectId, projectId))
 
   const personaIds = personaConfigs.map(c => c.personaId)
   const personas = personaIds.length > 0
@@ -153,6 +168,11 @@ export async function exportProjectData(projectId: string) {
     personaMemoryCards: memoryCards,
     foreshadowingCharacters: fChars,
     conflictParticipants: cParts,
+    characterArcEvents: arcEvents,
+    conflictTimelineEvents: conflictTimeline,
+    writingGoals: goals,
+    dailyWritingStats: dailyStats,
+    aiGenerationCandidates: aiCandidates,
   }
 }
 
@@ -249,6 +269,34 @@ export async function importProjectData(data: Record<string, unknown>) {
     for (const cp of ((data.conflictParticipants as Record<string, unknown>[] | undefined) || []))
       await safeInsert(conflictParticipants, { id: remapId(cp.id as string), projectId, conflictId: remapId(cp.conflictId as string), characterId: remapId(cp.characterId as string), ...pick(cp, CONFLICT_PARTICIPANT_FIELDS) })
 
+    for (const event of ((data.characterArcEvents as Record<string, unknown>[] | undefined) || [])) {
+      await safeInsert(characterArcEvents, {
+        id: remapId(event.id as string),
+        projectId,
+        characterId: remapId(event.characterId as string),
+        chapterId: event.chapterId ? remapId(event.chapterId as string) : null,
+        sceneId: event.sceneId ? remapId(event.sceneId as string) : null,
+        ...pick(event, CHARACTER_ARC_EVENT_FIELDS),
+      })
+    }
+
+    for (const event of ((data.conflictTimelineEvents as Record<string, unknown>[] | undefined) || [])) {
+      await safeInsert(conflictTimelineEvents, {
+        id: remapId(event.id as string),
+        projectId,
+        conflictId: remapId(event.conflictId as string),
+        chapterId: event.chapterId ? remapId(event.chapterId as string) : null,
+        sceneId: event.sceneId ? remapId(event.sceneId as string) : null,
+        ...pick(event, CONFLICT_TIMELINE_EVENT_FIELDS),
+      })
+    }
+
+    for (const goal of ((data.writingGoals as Record<string, unknown>[] | undefined) || []))
+      await safeInsert(writingGoals, { id: remapId(goal.id as string), projectId, ...pick(goal, WRITING_GOAL_FIELDS) })
+
+    for (const stat of ((data.dailyWritingStats as Record<string, unknown>[] | undefined) || []))
+      await safeInsert(dailyWritingStats, { id: remapId(stat.id as string), projectId, ...pick(stat, DAILY_WRITING_STATS_FIELDS) })
+
     for (const job of ((data.writingJobs as Record<string, unknown>[] | undefined) || [])) {
       await safeInsert(writingJobs, {
         id: remapId(job.id as string),
@@ -268,6 +316,16 @@ export async function importProjectData(data: Record<string, unknown>) {
         projectId,
         chapterId: snapshot.chapterId ? remapId(snapshot.chapterId as string) : null,
         ...pick(snapshot, AI_CONTEXT_SNAPSHOT_FIELDS),
+      })
+    }
+
+    for (const candidate of ((data.aiGenerationCandidates as Record<string, unknown>[] | undefined) || [])) {
+      await safeInsert(aiGenerationCandidates, {
+        id: remapId(candidate.id as string),
+        projectId,
+        chapterId: candidate.chapterId ? remapId(candidate.chapterId as string) : null,
+        contextSnapshotId: candidate.contextSnapshotId ? remapId(candidate.contextSnapshotId as string) : null,
+        ...pick(candidate, AI_GENERATION_CANDIDATE_FIELDS),
       })
     }
 

@@ -2,6 +2,7 @@ import type { Chapter } from '@ai-novel/shared'
 import type { ComputedRef } from 'vue'
 import type { useChapterStore } from '../../../stores/chapter.store'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { recordWritingActivity } from '../../../api/writing-goals'
 
 export function useWritingDraft(
   projectId: string,
@@ -33,11 +34,20 @@ export function useWritingDraft(
 
     saving.value = true
     try {
+      const previousLength = lastSavedDraft.value.length
       await chapterStore.updateChapter(projectId, currentChapterId.value, {
         draft: draft.value,
         status: 'writing',
       })
       lastSavedDraft.value = draft.value
+      const wordsAdded = Math.max(0, draft.value.length - previousLength)
+      if (wordsAdded > 0) {
+        await recordWritingActivity(projectId, {
+          date: new Date().toISOString().slice(0, 10),
+          wordsAdded,
+          manualWordsAdded: wordsAdded,
+        })
+      }
     }
     catch (e) {
       console.error('Auto-save failed', e)

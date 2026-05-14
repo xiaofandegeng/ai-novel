@@ -4,6 +4,7 @@ import { db } from '../db'
 import { chapters, chapterScenes } from '../db/schema'
 import { novelProjects } from '../db/schema/project'
 import { callAIJSON } from './ai.service'
+import { assertChapterBelongsToProject } from './ownership.service'
 
 interface BeatSuggestion {
   sceneNumber: number
@@ -28,11 +29,15 @@ interface PacingWarning {
 }
 
 export async function generateSceneBeats(projectId: string, chapterId: string) {
+  await assertChapterBelongsToProject(projectId, chapterId)
+
   const [project] = await db.select({ title: novelProjects.title, genre: novelProjects.genre }).from(novelProjects).where(eq(novelProjects.id, projectId))
   if (!project)
     throw new Error('Project not found')
 
-  const [chapter] = await db.select().from(chapters).where(eq(chapters.id, chapterId))
+  const [chapter] = await db.select().from(chapters).where(
+    and(eq(chapters.id, chapterId), eq(chapters.projectId, projectId)),
+  )
   if (!chapter)
     throw new Error('Chapter not found')
 

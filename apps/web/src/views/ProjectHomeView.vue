@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { WritingGoalProgress } from '@ai-novel/shared'
 import {
   NAppLayout,
   NButton,
@@ -44,8 +45,28 @@ const storyBibleStore = useStoryBibleStore()
 
 const loading = ref(true)
 const aiConfigured = ref(false)
-const goalProgress = ref<any>(null)
+const goalProgress = ref<WritingGoalProgress | null>(null)
 const todayStats = ref<{ wordsAdded: number, aiWordsAccepted: number, manualWordsAdded: number } | null>(null)
+
+async function refreshWritingGoals() {
+  const goals = await goalsApi.fetchActiveGoals(projectId)
+  if (goals.length > 0) {
+    goalProgress.value = await goalsApi.fetchGoalProgress(projectId, goals[0].id)
+  }
+  else {
+    goalProgress.value = null
+  }
+
+  const today = new Date().toISOString().slice(0, 10)
+  const stats = await goalsApi.fetchDailyStats(projectId, today, today)
+  todayStats.value = stats.length > 0
+    ? {
+        wordsAdded: stats[0].wordsAdded,
+        aiWordsAccepted: stats[0].aiWordsAccepted,
+        manualWordsAdded: stats[0].manualWordsAdded,
+      }
+    : null
+}
 
 onMounted(async () => {
   try {
@@ -66,19 +87,7 @@ onMounted(async () => {
     }
     // Load writing goal progress
     try {
-      const goals = await goalsApi.fetchActiveGoals(projectId)
-      if (goals.length > 0) {
-        goalProgress.value = await goalsApi.fetchGoalProgress(projectId, goals[0].id)
-      }
-      const today = new Date().toISOString().slice(0, 10)
-      const stats = await goalsApi.fetchDailyStats(projectId, today, today)
-      if (stats.length > 0) {
-        todayStats.value = {
-          wordsAdded: stats[0].wordsAdded,
-          aiWordsAccepted: stats[0].aiWordsAccepted,
-          manualWordsAdded: stats[0].manualWordsAdded,
-        }
-      }
+      await refreshWritingGoals()
     }
     catch {
       // Goals not available yet, silently ignore
@@ -123,6 +132,30 @@ async function handleExport() {
   }
   finally {
     isExporting.value = false
+  }
+}
+
+async function handleSetWritingGoal() {
+  try {
+    const existing = await goalsApi.fetchActiveGoals(projectId)
+    if (existing.length > 0) {
+      toast.add('当前已有进行中的写作目标', 'info')
+      await refreshWritingGoals()
+      return
+    }
+
+    const targetWords = Math.max(1000, Math.round((projectStore.currentProject?.targetWords || 100000) / 100))
+    await goalsApi.createGoal(projectId, {
+      goalType: 'daily_words',
+      targetWords,
+      startDate: new Date().toISOString().slice(0, 10),
+      status: 'active',
+    })
+    await refreshWritingGoals()
+    toast.add(`已创建每日 ${targetWords.toLocaleString()} 字目标`, 'success')
+  }
+  catch {
+    toast.add('写作目标创建失败，请稍后重试', 'error')
   }
 }
 
@@ -305,7 +338,7 @@ function handleExploreCharacters() {
             :progress="goalProgress"
             :today-stats="todayStats"
             :loading="loading"
-            @set-goal="() => {}"
+            @set-goal="handleSetWritingGoal"
           />
 
           <NPanel

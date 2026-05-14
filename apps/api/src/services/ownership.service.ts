@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../db'
-import { chapters, characters, conflicts, foreshadowingItems, volumes } from '../db/schema'
+import { chapters, chapterScenes, characters, conflicts, foreshadowingItems, volumes } from '../db/schema'
 
 export async function assertVolumeBelongsToProject(projectId: string, volumeId: string) {
   const [row] = await db.select({ id: volumes.id }).from(volumes).where(
@@ -16,6 +16,22 @@ export async function assertChapterBelongsToProject(projectId: string, chapterId
   )
   if (!row)
     throw new Error('章节不属于当前项目')
+}
+
+export async function assertSceneBelongsToProject(projectId: string, sceneId: string) {
+  const [row] = await db.select({ id: chapterScenes.id }).from(chapterScenes).where(
+    and(eq(chapterScenes.id, sceneId), eq(chapterScenes.projectId, projectId)),
+  )
+  if (!row)
+    throw new Error('场景不属于当前项目')
+}
+
+export async function assertCharacterBelongsToProject(projectId: string, characterId: string) {
+  const [row] = await db.select({ id: characters.id }).from(characters).where(
+    and(eq(characters.id, characterId), eq(characters.projectId, projectId)),
+  )
+  if (!row)
+    throw new Error('角色不属于当前项目')
 }
 
 export async function assertConflictBelongsToProject(projectId: string, conflictId: string) {
@@ -59,6 +75,12 @@ export async function assertOptionalChapterBelongsToProject(projectId: string, c
   if (!chapterId)
     return
   await assertChapterBelongsToProject(projectId, chapterId)
+}
+
+export async function assertOptionalSceneBelongsToProject(projectId: string, sceneId?: string | null) {
+  if (!sceneId)
+    return
+  await assertSceneBelongsToProject(projectId, sceneId)
 }
 
 export async function assertOptionalVolumeBelongsToProject(projectId: string, volumeId?: string | null) {

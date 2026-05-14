@@ -3,6 +3,7 @@ import { NAppLayout, useToast } from '@ai-novel/ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { triggerChapterPostprocess } from '../api/ai'
+import { recordWritingActivity } from '../api/writing-goals'
 import AIMultiCandidatePanel from '../features/writing/components/AIMultiCandidatePanel.vue'
 import AIPendingResultPanel from '../features/writing/components/AIPendingResultPanel.vue'
 import AssemblePreviewOverlay from '../features/writing/components/AssemblePreviewOverlay.vue'
@@ -130,7 +131,7 @@ const {
   selecting: multiSelecting,
   rating: multiRating,
   loadCandidates: loadMultiCandidates,
-  handleSelect: handleSelectCandidate,
+  handleSelect: selectMultiCandidate,
   handleRate: handleRateCandidate,
 } = useMultiCandidate(projectId)
 
@@ -143,6 +144,20 @@ function openMultiCandidatePanel() {
 
 function closeMultiCandidatePanel() {
   showMultiCandidate.value = false
+}
+
+async function handleSelectCandidate(candidateId: string) {
+  const candidate = await selectMultiCandidate(candidateId)
+  if (!candidate)
+    return
+
+  applyAIResult(candidate.content, {
+    provider: candidate.provider,
+    model: candidate.model,
+    snapshotId: candidate.contextSnapshotId ?? undefined,
+  })
+  showMultiCandidate.value = false
+  toast.add('候选方案已进入 AI 确认区，请确认后再写入正文', 'success')
 }
 
 // --- Data loading ---
@@ -329,6 +344,9 @@ function handleRunAI(type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft
 }
 
 async function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discard') {
+  const acceptedAiWords = (action === 'insert' || action === 'replace')
+    ? pendingAIResult.value?.content.length ?? 0
+    : 0
   confirmAIResult(action, {
     projectId,
     currentChapterId: currentChapterId.value,
@@ -345,6 +363,12 @@ async function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discar
   }
   else {
     await handleSave()
+  }
+  if (acceptedAiWords > 0) {
+    await recordWritingActivity(projectId, {
+      date: new Date().toISOString().slice(0, 10),
+      aiWordsAccepted: acceptedAiWords,
+    })
   }
 }
 
@@ -363,6 +387,12 @@ async function handleInsertAI(content: string) {
   }
   else {
     await handleSave()
+  }
+  if (content.length > 0) {
+    await recordWritingActivity(projectId, {
+      date: new Date().toISOString().slice(0, 10),
+      aiWordsAccepted: content.length,
+    })
   }
 }
 
