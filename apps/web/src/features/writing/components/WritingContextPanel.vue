@@ -15,6 +15,8 @@ const props = defineProps<{
   chapterElements: ChapterElement[]
   projectId: string
   sceneId?: string | null
+  projectSummary?: string
+  storyPath?: string
 }>()
 
 const emit = defineEmits<{
@@ -65,39 +67,65 @@ const otherElements = computed(() =>
 const aiContext = computed(() => {
   const parts = []
 
-  // 1. World Setting
-  if (props.storyBible?.worldview || props.storyBible?.rules) {
-    let world = '### 世界观与规则\n'
+  // 0. Global Project Context (Anchor)
+  if (props.projectSummary) {
+    parts.push(`### 作品全局背景（核心锚点）\n${props.projectSummary}`)
+  }
+
+  // 0.5 Narrative History (Path)
+  if (props.storyPath) {
+    parts.push(`### 前情提要（叙事路径）\n${props.storyPath}`)
+  }
+
+  // 1. World Setting & Global Conflict
+  if (props.storyBible) {
+    let world = '### 世界观与宏观轨迹\n'
     if (props.storyBible.worldview)
       world += `设定：${props.storyBible.worldview}\n`
     if (props.storyBible.rules)
       world += `铁律与禁忌：${props.storyBible.rules}\n`
+    if (props.storyBible.mainConflict)
+      world += `核心冲突（整本书的引擎）：${props.storyBible.mainConflict}\n`
+    if (props.storyBible.timeline)
+      world += `故事时间轴：${props.storyBible.timeline}\n`
     parts.push(world)
   }
 
-  // 2. Chapter Goals & Outline
+  // 2. Chapter Goals & Psychological Journey
   if (props.chapter) {
-    let goals = '### 本章创作目标与悬念\n'
+    let goals = '### 本章创作目标与心理路程\n'
     if (props.chapter.goals)
-      goals += `目标：${props.chapter.goals}\n`
+      goals += `本章核心目标：${props.chapter.goals}\n`
     if (props.chapter.events)
-      goals += `大纲：${props.chapter.events}\n`
+      goals += `剧情大纲：${props.chapter.events}\n`
+    if (props.chapter.emotionalArc)
+      goals += `情感/心理弧光流向：${props.chapter.emotionalArc}\n`
+    if (props.chapter.conflicts)
+      goals += `本章冲突点：${props.chapter.conflicts}\n`
     if (props.chapter.endingHook)
       goals += `结尾悬念：${props.chapter.endingHook}\n`
     parts.push(goals)
   }
 
-  // 3. Present Characters Detailed
+  // 3. Present Characters Deep Psychology
   if (presentCharacters.value.length > 0) {
-    let chars = '### 登场人物详述\n'
+    let chars = '### 登场人物深度设定（驱动内核）\n'
     presentCharacters.value.forEach((c) => {
       chars += `- **${c.name}** (${getCharacterRoleLabel(c.role)})\n`
       if (c.personality)
-        chars += `  性格：${c.personality}\n`
+        chars += `  性格外显：${c.personality}\n`
       if (c.goal)
-        chars += `  核心目标：${c.goal}\n`
+        chars += `  当前动机：${c.goal}\n`
+      if (c.arc)
+        chars += `  人物弧光（成长/转变轨迹）：${c.arc}\n`
+      if (c.desire)
+        chars += `  内在欲望：${c.desire}\n`
+      if (c.fear)
+        chars += `  深层恐惧：${c.fear}\n`
+      if (c.weakness)
+        chars += `  性格弱点：${c.weakness}\n`
       if (c.secret)
-        chars += `  隐秘（AI创作参考）：${c.secret}\n`
+        chars += `  隐秘（创作参考）：${c.secret}\n`
     })
     parts.push(chars)
   }

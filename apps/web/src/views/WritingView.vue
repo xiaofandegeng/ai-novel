@@ -43,6 +43,28 @@ const currentChapter = computed(() =>
   chapterStore.chapters.find(c => c.id === currentChapterId.value),
 )
 
+const projectSummary = computed(() => {
+  const p = projectStore.currentProject
+  if (!p)
+    return ''
+  return `书名：《${p.title}》\n类型：${p.genre || '未设定'}\n主题：${p.theme || '未设定'}\n简介：${p.description || '未设定'}`
+})
+
+const storyPath = computed(() => {
+  if (!currentChapter.value || chapterStore.chapters.length === 0)
+    return ''
+
+  const sortedChapters = [...chapterStore.chapters].sort((a, b) => a.chapterNumber - b.chapterNumber)
+  const previousChapters = sortedChapters.filter(c => c.chapterNumber < (currentChapter.value?.chapterNumber || 0))
+
+  if (previousChapters.length === 0)
+    return ''
+
+  return previousChapters
+    .map(c => `第 ${c.chapterNumber} 章《${c.title}》：${c.summary || '（尚未总结）'}`)
+    .join('\n')
+})
+
 const currentSceneId = computed(() => sceneStore.selectedSceneId)
 
 // --- Draft management (chapter mode) ---
@@ -433,6 +455,8 @@ async function handleUpdateMemory() {
         :chapter-elements="chapterElementStore.elements"
         :project-id="projectId"
         :scene-id="sceneMode ? currentSceneId : null"
+        :project-summary="projectSummary"
+        :story-path="storyPath"
         @apply-a-i="applyAIResult"
         @insert-a-i="handleInsertAI"
         @consistency-check="updateConsistency($event.report, $event.loading)"
