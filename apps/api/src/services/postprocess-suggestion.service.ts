@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../db'
 import { chapterElements, chapterPostprocessSuggestions, characterArcEvents, characterRelationships, characters, conflicts, conflictTimelineEvents, foreshadowingItems, storyFactTriples } from '../db/schema'
 import { generateId, now } from '../utils'
@@ -80,39 +80,69 @@ export async function acceptSuggestion(projectId: string, id: string) {
 }
 
 export async function applySuggestion(projectId: string, id: string) {
-  const [suggestion] = await db.select().from(chapterPostprocessSuggestions).where(and(
-    eq(chapterPostprocessSuggestions.id, id),
-    eq(chapterPostprocessSuggestions.projectId, projectId),
-  ))
-
-  if (!suggestion)
-    throw new Error('建议不存在')
-
-  if (suggestion.status !== 'pending' && suggestion.status !== 'accepted')
-    throw new Error('建议已处理，不能重复应用')
-
-  let payload: Record<string, any>
   try {
-    payload = JSON.parse(suggestion.payload)
+    return await db.transaction(async (tx) => {
+      const [suggestion] = await tx.update(chapterPostprocessSuggestions)
+        .set({
+          status: 'applied',
+          updatedAt: now(),
+        })
+        .where(and(
+          eq(chapterPostprocessSuggestions.id, id),
+          eq(chapterPostprocessSuggestions.projectId, projectId),
+          inArray(chapterPostprocessSuggestions.status, ['pending', 'accepted']),
+        ))
+        .returning()
+
+      if (!suggestion) {
+        const [existing] = await tx.select().from(chapterPostprocessSuggestions).where(and(
+          eq(chapterPostprocessSuggestions.id, id),
+          eq(chapterPostprocessSuggestions.projectId, projectId),
+        ))
+        if (existing)
+          throw new Error('建议已处理，不能重复应用')
+        throw new Error('建议不存在')
+      }
+
+      let payload: Record<string, any>
+      try {
+        payload = JSON.parse(suggestion.payload)
+      }
+      catch {
+        throw new Error('建议数据格式错误')
+      }
+
+      const resultStatus = await applyOneSuggestion(
+        suggestion.suggestionType,
+        payload,
+        projectId,
+        suggestion.chapterId,
+        suggestion.confidence,
+        tx as any,
+      )
+
+      if (resultStatus !== 'applied') {
+        await tx.update(chapterPostprocessSuggestions)
+          .set({ status: resultStatus, updatedAt: now() })
+          .where(eq(chapterPostprocessSuggestions.id, id))
+      }
+
+      const [updated] = await tx.select().from(chapterPostprocessSuggestions).where(eq(chapterPostprocessSuggestions.id, id))
+      return updated
+    })
   }
-  catch {
-    throw new Error('建议数据格式错误')
+  catch (error: any) {
+    if (error.message !== '建议不存在' && error.message !== '建议已处理，不能重复应用') {
+      await db.update(chapterPostprocessSuggestions)
+        .set({ status: 'apply_failed', updatedAt: now() })
+        .where(and(
+          eq(chapterPostprocessSuggestions.id, id),
+          eq(chapterPostprocessSuggestions.projectId, projectId),
+          inArray(chapterPostprocessSuggestions.status, ['pending', 'accepted']),
+        ))
+    }
+    throw error
   }
-
-  const resultStatus = await applyOneSuggestion(
-    suggestion.suggestionType,
-    payload,
-    projectId,
-    suggestion.chapterId,
-    suggestion.confidence,
-  )
-
-  const [updated] = await db.update(chapterPostprocessSuggestions).set({
-    status: resultStatus,
-    updatedAt: new Date().toISOString(),
-  }).where(eq(chapterPostprocessSuggestions.id, id)).returning()
-
-  return updated
 }
 
 export async function rejectSuggestion(projectId: string, id: string) {
@@ -142,40 +172,18 @@ export async function applyAcceptedSuggestions(projectId: string, chapterId: str
   let skipped = 0
 
   for (const suggestion of accepted) {
-    let payload: Record<string, any>
     try {
-      payload = JSON.parse(suggestion.payload)
-    }
-    catch {
-      skipped++
-      await db.update(chapterPostprocessSuggestions).set({
-        status: 'apply_failed',
-        updatedAt: now(),
-      }).where(eq(chapterPostprocessSuggestions.id, suggestion.id))
-      continue
-    }
-
-    try {
-      const resultStatus = await applyOneSuggestion(suggestion.suggestionType, payload, projectId, chapterId, suggestion.confidence)
-
-      await db.update(chapterPostprocessSuggestions).set({
-        status: resultStatus,
-        updatedAt: now(),
-      }).where(eq(chapterPostprocessSuggestions.id, suggestion.id))
-
-      if (resultStatus === 'applied')
+      const updated = await applySuggestion(projectId, suggestion.id)
+      if (updated.status === 'applied')
         applied++
-      else if (resultStatus === 'acknowledged')
+      else if (updated.status === 'acknowledged')
         acknowledged++
       else
         skipped++
     }
-    catch {
+    catch (error: any) {
+      console.error(`Failed to apply suggestion ${suggestion.id}:`, error)
       failed++
-      await db.update(chapterPostprocessSuggestions).set({
-        status: 'apply_failed',
-        updatedAt: now(),
-      }).where(eq(chapterPostprocessSuggestions.id, suggestion.id))
     }
   }
 
@@ -188,12 +196,13 @@ async function applyOneSuggestion(
   projectId: string,
   chapterId: string,
   confidence: number,
+  tx: any = db, // 使用事务或默认数据库
 ): Promise<'applied' | 'acknowledged'> {
   switch (suggestionType) {
     case 'fact_triple': {
       if (!payload.subjectName || !payload.predicate || !payload.objectName)
         throw new Error('事实三元组缺少必要字段')
-      const [insertedFact] = await db.insert(storyFactTriples).values({
+      const [insertedFact] = await tx.insert(storyFactTriples).values({
         id: generateId(),
         projectId,
         subjectType: payload.subjectType || 'unknown',
@@ -233,7 +242,7 @@ async function applyOneSuggestion(
     case 'foreshadowing_add': {
       if (!payload.title)
         throw new Error('伏笔标题为空')
-      await db.insert(foreshadowingItems).values({
+      await tx.insert(foreshadowingItems).values({
         id: generateId(),
         projectId,
         title: payload.title,
@@ -249,7 +258,7 @@ async function applyOneSuggestion(
       if (!payload.foreshadowingId)
         return 'acknowledged'
 
-      const [updated] = await db.update(foreshadowingItems).set({
+      const [updated] = await tx.update(foreshadowingItems).set({
         status: 'paid_off',
         payoffChapterId: chapterId,
         updatedAt: now(),
@@ -267,11 +276,12 @@ async function applyOneSuggestion(
     case 'chapter_element': {
       if (!payload.elementName)
         throw new Error('元素名称为空')
-      await db.insert(chapterElements).values({
+      await tx.insert(chapterElements).values({
         id: generateId(),
         projectId,
         chapterId,
         elementType: payload.elementType || 'event',
+        elementId: payload.elementId || null,
         elementName: payload.elementName,
         relationType: payload.relationType || 'appears',
         importance: payload.importance || 'normal',
@@ -283,7 +293,7 @@ async function applyOneSuggestion(
       if (!payload.name)
         throw new Error('角色名称为空')
 
-      const [existing] = await db.select().from(characters).where(and(
+      const [existing] = await tx.select().from(characters).where(and(
         eq(characters.projectId, projectId),
         eq(characters.name, payload.name),
       ))
@@ -294,7 +304,7 @@ async function applyOneSuggestion(
 
       let characterId = existing?.id
       if (existing) {
-        await db.update(characters).set({
+        await tx.update(characters).set({
           role: existing.role || role,
           goal: existing.goal || payload.goal || undefined,
           fear: existing.fear || payload.fear || undefined,
@@ -307,7 +317,7 @@ async function applyOneSuggestion(
         }).where(eq(characters.id, existing.id))
       }
       else {
-        const [inserted] = await db.insert(characters).values({
+        const [inserted] = await tx.insert(characters).values({
           id: generateId(),
           projectId,
           name: payload.name,
@@ -324,7 +334,7 @@ async function applyOneSuggestion(
       }
 
       if (characterId) {
-        await db.insert(chapterElements).values({
+        await tx.insert(chapterElements).values({
           id: generateId(),
           projectId,
           chapterId,
@@ -362,7 +372,7 @@ async function applyOneSuggestion(
       if (!payload.characterName || !payload.change)
         return 'acknowledged'
 
-      const [char] = await db.select().from(characters).where(and(
+      const [char] = await tx.select().from(characters).where(and(
         eq(characters.name, payload.characterName),
         eq(characters.projectId, projectId),
       ))
@@ -373,14 +383,14 @@ async function applyOneSuggestion(
           ? `${char.arc}\n- 章节 ${chapterId} 变化：${payload.change}`
           : `- 章节 ${chapterId} 变化：${payload.change}`
 
-        await db.update(characters).set({
+        await tx.update(characters).set({
           arc: updatedArc,
           updatedAt: now(),
         }).where(eq(characters.id, char.id))
 
         // Also create a character arc event for structured tracking
         const timestamp = now()
-        const [insertedArc] = await db.insert(characterArcEvents).values({
+        const [insertedArc] = await tx.insert(characterArcEvents).values({
           id: generateId(),
           projectId,
           characterId: char.id,
@@ -420,12 +430,12 @@ async function applyOneSuggestion(
         updateData.intensity = payload.newIntensity
 
       // Fetch the conflict before update to capture before-state
-      const [beforeConflict] = await db.select().from(conflicts).where(and(
+      const [beforeConflict] = await tx.select().from(conflicts).where(and(
         eq(conflicts.id, conflictId),
         eq(conflicts.projectId, projectId),
       ))
 
-      const [updated] = await db.update(conflicts).set(updateData).where(and(
+      const [updated] = await tx.update(conflicts).set(updateData).where(and(
         eq(conflicts.id, conflictId),
         eq(conflicts.projectId, projectId),
       )).returning()
@@ -441,12 +451,12 @@ async function applyOneSuggestion(
         const statusAfter = updateData.status || statusBefore
 
         if (intensityBefore !== intensityAfter || statusBefore !== statusAfter) {
-          await db.insert(conflictTimelineEvents).values({
+          await tx.insert(conflictTimelineEvents).values({
             id: generateId(),
             projectId,
             conflictId,
             chapterId,
-            sceneId: null,
+            sceneId: payload.sceneId || null,
             intensityBefore,
             intensityAfter,
             statusBefore,
@@ -471,7 +481,7 @@ async function applyOneSuggestion(
     case 'conflict_add': {
       if (!payload.title)
         throw new Error('冲突标题为空')
-      const [insertedConflict] = await db.insert(conflicts).values({
+      const [insertedConflict] = await tx.insert(conflicts).values({
         id: generateId(),
         projectId,
         title: payload.title,
@@ -499,24 +509,24 @@ async function applyOneSuggestion(
       if (!characterAName || !characterBName)
         throw new Error('角色名称缺失')
 
-      const [charA] = await db.select().from(characters).where(and(eq(characters.name, characterAName), eq(characters.projectId, projectId)))
-      const [charB] = await db.select().from(characters).where(and(eq(characters.name, characterBName), eq(characters.projectId, projectId)))
+      const [charA] = await tx.select().from(characters).where(and(eq(characters.name, characterAName), eq(characters.projectId, projectId)))
+      const [charB] = await tx.select().from(characters).where(and(eq(characters.name, characterBName), eq(characters.projectId, projectId)))
 
       if (!charA || !charB) {
         throw new Error(`匹配不到角色：${!charA ? characterAName : ''} ${!charB ? characterBName : ''}`)
       }
 
-      // 规范化 ID 顺序，确保数据库中 A < B，符合唯一索引要求
+      // 规范化 ID 顺序，确保数据库中 A < B，符合 uniqueIndex 要求
       const [charAId, charBId] = normalizeCharacterPair(charA.id, charB.id)
 
-      const [existing] = await db.select().from(characterRelationships).where(and(
+      const [existing] = await tx.select().from(characterRelationships).where(and(
         eq(characterRelationships.projectId, projectId),
         eq(characterRelationships.characterAId, charAId),
         eq(characterRelationships.characterBId, charBId),
       ))
 
       if (existing) {
-        await db.update(characterRelationships).set({
+        await tx.update(characterRelationships).set({
           type: type || existing.type,
           strength: strength !== undefined ? strength : existing.strength,
           status: status || existing.status,
@@ -525,7 +535,7 @@ async function applyOneSuggestion(
         }).where(eq(characterRelationships.id, existing.id))
       }
       else {
-        await db.insert(characterRelationships).values({
+        await tx.insert(characterRelationships).values({
           id: generateId(),
           projectId,
           characterAId: charAId,

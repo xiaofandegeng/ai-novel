@@ -615,6 +615,8 @@ ${truncatedContent}
       id: crypto.randomUUID(),
       projectId,
       chapterId,
+      sceneId: null,
+      scope: 'chapter',
       sentenceLengthAvg: styleFingerprint.sentenceLengthAvg,
       dialogueRatio: styleFingerprint.dialogueRatio,
       emotionDensity: styleFingerprint.emotionDensity,
@@ -716,6 +718,9 @@ ${truncatedContent}
   ],
   "events": [
     { "title": "string", "description": "string", "importance": "major" }
+  ],
+  "styleNotes": [
+    { "title": "string", "description": "string", "confidence": 70 }
   ]
 }
 
@@ -736,6 +741,7 @@ ${truncatedContent}
     conflictUpdates: Array<{ title: string, newStatus?: string, newIntensity?: number, reason: string }>
     newConflicts: Array<{ title: string, type: 'internal' | 'external', intensity: number, participants: string, description: string }>
     events: StructuredEvent[]
+    styleNotes: StructuredStyleNote[]
   }>([{ role: 'user', content: prompt }], { temperature: 30 })
 
   let count = 0
@@ -808,10 +814,12 @@ ${truncatedContent}
 
   if (parsed.presentCharacters?.length) {
     const allCharacters = await db.select().from(characters).where(eq(characters.projectId, projectId))
+
     for (const name of parsed.presentCharacters) {
       const found = allCharacters.find(c => c.name === name || name.includes(c.name) || c.name.includes(name))
       if (!found)
         continue
+
       await createSuggestion(projectId, chapterId, null, 'chapter_element', {
         elementType: 'character',
         elementId: found.id,
@@ -928,6 +936,48 @@ ${truncatedContent}
       }, 60)
       count++
     }
+  }
+
+  if (parsed.styleNotes?.length) {
+    for (const sn of parsed.styleNotes) {
+      if (!sn.title)
+        continue
+      await createSuggestion(projectId, chapterId, null, 'style_note', {
+        title: sn.title,
+        description: sn.description || '',
+        scope: 'scene',
+        sceneId,
+      }, sn.confidence || 60)
+      count++
+    }
+  }
+
+  // 生成场景风格指纹
+  const styleNotesStr = parsed.styleNotes?.length
+    ? parsed.styleNotes.map(s => `${s.title}：${s.description}`).join('；')
+    : null
+  const styleFingerprint = buildStyleFingerprint(content, styleNotesStr)
+  const [fingerprint] = await db.insert(chapterStyleFingerprints).values({
+    id: crypto.randomUUID(),
+    projectId,
+    chapterId,
+    sceneId,
+    scope: 'scene',
+    sentenceLengthAvg: styleFingerprint.sentenceLengthAvg,
+    dialogueRatio: styleFingerprint.dialogueRatio,
+    emotionDensity: styleFingerprint.emotionDensity,
+    conflictDensity: styleFingerprint.conflictDensity,
+    hookDensity: styleFingerprint.hookDensity,
+    styleSummary: styleFingerprint.styleSummary,
+  }).returning()
+
+  if (fingerprint) {
+    await getOrCreateEmbedding({
+      projectId,
+      text: `场景文风 [${scene.title || `场景 ${scene.sceneNumber}`}]：${fingerprint.styleSummary}`,
+      contentType: 'style_fingerprint',
+      sourceId: fingerprint.id,
+    }).catch(err => console.error('Failed to embed scene style fingerprint:', err))
   }
 
   return { suggestionCount: count }

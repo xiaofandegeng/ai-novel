@@ -81,7 +81,7 @@ const CONFLICT_TIMELINE_EVENT_FIELDS = ['intensityBefore', 'intensityAfter', 'st
 const WRITING_GOAL_FIELDS = ['goalType', 'targetWords', 'targetChapters', 'startDate', 'endDate', 'status']
 const DAILY_WRITING_STATS_FIELDS = ['date', 'wordsAdded', 'chaptersCompleted', 'aiWordsAccepted', 'manualWordsAdded']
 const AI_GENERATION_CANDIDATE_FIELDS = ['provider', 'model', 'taskType', 'content', 'qualityScore', 'userSelected', 'userRating']
-const CHAPTER_STYLE_FINGERPRINT_FIELDS = ['sentenceLengthAvg', 'dialogueRatio', 'emotionDensity', 'conflictDensity', 'hookDensity', 'styleSummary']
+const CHAPTER_STYLE_FINGERPRINT_FIELDS = ['scope', 'sentenceLengthAvg', 'dialogueRatio', 'emotionDensity', 'conflictDensity', 'hookDensity', 'styleSummary']
 const PROJECT_HEALTH_REPORT_FIELDS = ['scope', 'score', 'riskLevel', 'metricsJson', 'generatedAt']
 const WRITING_PERSONA_FIELDS = [
   'name',
@@ -344,6 +344,7 @@ export async function importProjectData(data: Record<string, unknown>) {
         id: remapId(fingerprint.id as string),
         projectId,
         chapterId: remapId(fingerprint.chapterId as string),
+        sceneId: fingerprint.sceneId ? remapId(fingerprint.sceneId as string) : null,
         embeddingId: fingerprint.embeddingId ? remapId(fingerprint.embeddingId as string) : null,
         ...pick(fingerprint, CHAPTER_STYLE_FINGERPRINT_FIELDS),
       })

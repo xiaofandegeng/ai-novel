@@ -144,7 +144,7 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
   risks.push(...computeConflictStagnation(projectId, conflictIntensityTrend))
 
   // 5. 风格漂移风险
-  const fingerprints = await db.select().from(chapterStyleFingerprints).where(eq(chapterStyleFingerprints.projectId, projectId)).orderBy(asc(chapterStyleFingerprints.createdAt))
+  const fingerprints = await db.select().from(chapterStyleFingerprints).where(and(eq(chapterStyleFingerprints.projectId, projectId), eq(chapterStyleFingerprints.scope, 'chapter'))).orderBy(asc(chapterStyleFingerprints.createdAt))
   const orderedFingerprints = [...fingerprints].sort((a, b) => {
     const chapterA = chapterNumMap.get(a.chapterId) || 0
     const chapterB = chapterNumMap.get(b.chapterId) || 0
