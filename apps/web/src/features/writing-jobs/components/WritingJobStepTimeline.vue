@@ -114,9 +114,14 @@ function getStepOutput(step: WritingJobStep): any | null {
             </span>
           </div>
         </div>
-        <NTag :variant="JOB_STATUS_VARIANT[job.status]">
-          {{ JOB_STATUS_LABEL[job.status] }}
-        </NTag>
+        <div class="flex items-center gap-2">
+          <NTag v-if="job.executionMode === 'auto'" variant="success" size="sm">
+            全自动 (已自动确认 {{ job.autoApprovedSteps || 0 }} 步)
+          </NTag>
+          <NTag :variant="JOB_STATUS_VARIANT[job.status]">
+            {{ JOB_STATUS_LABEL[job.status] }}
+          </NTag>
+        </div>
       </div>
 
       <div v-if="job.lastError" class="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
@@ -210,6 +215,13 @@ function getStepOutput(step: WritingJobStep): any | null {
               <NTag v-if="step.status === 'running'" variant="info" size="sm">
                 {{ STEP_STATUS_CONFIG[step.status].label }}
               </NTag>
+            </div>
+
+            <div v-if="step.autoDecision === 'approved'" class="mt-1 flex items-center gap-1 text-[10px] text-green-600">
+              <CheckCircle2 :size="10" /> 引擎自动通过：{{ step.autoDecisionReason }}
+            </div>
+            <div v-else-if="step.autoDecision === 'paused'" class="mt-1 flex items-center gap-1 text-[10px] text-amber-600">
+              <Pause :size="10" /> 引擎自动暂停：{{ step.autoDecisionReason }}
             </div>
 
             <div v-if="step.error" class="mt-1 text-xs text-red-600">

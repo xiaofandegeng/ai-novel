@@ -45,6 +45,14 @@ export function registerWritingJobRoutes(app: Hono) {
         return c.json(fail('Scene not found or does not belong to this chapter'), 400)
     }
 
+    if (body.executionMode && !['manual', 'auto'].includes(body.executionMode))
+      return c.json(fail('Invalid executionMode'), 400)
+    if (body.autoApprovalLevel && !['conservative', 'balanced', 'aggressive'].includes(body.autoApprovalLevel))
+      return c.json(fail('Invalid autoApprovalLevel'), 400)
+
+    if (body.executionMode === 'auto' && mode !== 'outline_only' && !body.currentChapterId)
+      return c.json(fail('全自动模式下必须选择目标章节，以便自动写入正文'), 400)
+
     const id = generateId()
     const [row] = await db.insert(writingJobs).values({
       id,
@@ -52,6 +60,8 @@ export function registerWritingJobRoutes(app: Hono) {
       mode,
       currentChapterId: body.currentChapterId,
       sceneId: body.sceneId,
+      executionMode: body.executionMode || 'manual',
+      autoApprovalLevel: body.autoApprovalLevel || 'conservative',
       status: 'idle',
     }).returning()
 

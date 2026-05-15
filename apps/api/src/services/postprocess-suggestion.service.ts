@@ -1,6 +1,17 @@
+import type { AutoApprovalLevel } from '@ai-novel/shared'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../db'
-import { chapterElements, chapterPostprocessSuggestions, characterArcEvents, characterRelationships, characters, conflicts, conflictTimelineEvents, foreshadowingItems, storyFactTriples } from '../db/schema'
+import {
+  chapterElements,
+  chapterPostprocessSuggestions,
+  characterArcEvents,
+  characterRelationships,
+  characters,
+  conflicts,
+  conflictTimelineEvents,
+  foreshadowingItems,
+  storyFactTriples,
+} from '../db/schema'
 import { generateId, now } from '../utils'
 import { normalizeCharacterPair } from './character-utils.service'
 import { getOrCreateEmbedding } from './embedding.service'
@@ -188,6 +199,59 @@ export async function applyAcceptedSuggestions(projectId: string, chapterId: str
   }
 
   return { applied, acknowledged, failed, skipped }
+}
+
+/**
+ * 自动根据风险等级筛选并应用建议 (全自动模式使用)
+ */
+export async function applyAutoSuggestions(projectId: string, chapterId: string, level: AutoApprovalLevel): Promise<ApplyResult> {
+  const pending = await getSuggestions(projectId, chapterId)
+  const autoAcceptableIds: string[] = []
+
+  for (const suggestion of pending) {
+    if (suggestion.status !== 'pending')
+      continue
+
+    const confidence = suggestion.confidence || 0
+    const type = suggestion.suggestionType
+
+    let isAcceptable = false
+
+    if (level === 'conservative') {
+      // 保守模式：置信度 > 90 且非核心实体变更
+      if (confidence >= 90 && !['character_add', 'conflict_add', 'foreshadowing_add'].includes(type)) {
+        isAcceptable = true
+      }
+    }
+    else if (level === 'balanced') {
+      // 平衡模式：置信度 > 80
+      if (confidence >= 80) {
+        isAcceptable = true
+      }
+    }
+    else if (level === 'aggressive') {
+      // 进取模式：置信度 > 60
+      if (confidence >= 60) {
+        isAcceptable = true
+      }
+    }
+
+    if (isAcceptable) {
+      autoAcceptableIds.push(suggestion.id)
+    }
+  }
+
+  if (autoAcceptableIds.length > 0) {
+    await db.update(chapterPostprocessSuggestions).set({
+      status: 'accepted',
+      updatedAt: now(),
+    }).where(and(
+      eq(chapterPostprocessSuggestions.projectId, projectId),
+      inArray(chapterPostprocessSuggestions.id, autoAcceptableIds),
+    ))
+  }
+
+  return applyAcceptedSuggestions(projectId, chapterId)
 }
 
 async function applyOneSuggestion(

@@ -19,6 +19,8 @@ const emit = defineEmits<{
 const form = defineModel<WritingJobMode>({ required: true })
 const formChapterId = defineModel<string | null>('chapterId', { required: true })
 const formSceneId = defineModel<string | null>('sceneId', { required: true })
+const formExecutionMode = defineModel<'manual' | 'auto'>('executionMode', { default: 'manual' })
+const formAutoApprovalLevel = defineModel<'conservative' | 'balanced' | 'aggressive'>('autoApprovalLevel', { default: 'conservative' })
 
 const chapterStore = useChapterStore()
 const sceneStore = useSceneStore()
@@ -89,6 +91,39 @@ const createDisabled = computed(() => {
       </div>
     </div>
 
+    <div>
+      <label class="mb-2 block text-xs text-text-muted">执行策略</label>
+      <div class="flex gap-3">
+        <button
+          v-for="mode in ['manual', 'auto'] as const"
+          :key="mode"
+          class="flex-1 border rounded-lg p-3 text-center text-sm transition-colors"
+          :class="formExecutionMode === mode ? 'border-primary bg-primary-soft text-primary' : 'border-border-light text-text-secondary hover:bg-bg-subtle'"
+          @click="formExecutionMode = mode"
+        >
+          {{ mode === 'manual' ? '半自动' : '全自动' }}
+        </button>
+      </div>
+      <p v-if="formExecutionMode === 'auto'" class="mt-2 text-xs text-text-muted leading-relaxed">
+        全自动会在低风险条件下自动通过确认点、写入正文、保存快照并运行分析。若发现人物跑偏或逻辑冲突，任务会暂停。
+      </p>
+    </div>
+
+    <div v-if="formExecutionMode === 'auto'">
+      <label class="mb-2 block text-xs text-text-muted">自动确认等级</label>
+      <div class="flex gap-3">
+        <button
+          v-for="level in ['conservative', 'balanced'] as const"
+          :key="level"
+          class="flex-1 border rounded-lg p-3 text-center text-sm transition-colors"
+          :class="formAutoApprovalLevel === level ? 'border-primary bg-primary-soft text-primary' : 'border-border-light text-text-secondary hover:bg-bg-subtle'"
+          @click="formAutoApprovalLevel = level"
+        >
+          {{ level === 'conservative' ? '保守' : '平衡' }}
+        </button>
+      </div>
+    </div>
+
     <div v-if="form !== 'outline_only'" class="space-y-3">
       <div>
         <label class="mb-1 block text-xs text-text-muted">正文写入章节</label>
@@ -120,7 +155,7 @@ const createDisabled = computed(() => {
       </div>
     </div>
 
-    <div class="flex justify-end">
+    <div class="flex justify-end pt-2">
       <NButton
         :loading="creating"
         :disabled="createDisabled"

@@ -82,6 +82,8 @@ export function useWritingJobController(projectId: string) {
   const form = ref<WritingJobMode>('outline_then_draft')
   const formChapterId = ref<string | null>(null)
   const formSceneId = ref<string | null>(null)
+  const formExecutionMode = ref<'manual' | 'auto'>('manual')
+  const formAutoApprovalLevel = ref<'conservative' | 'balanced' | 'aggressive'>('conservative')
 
   function getReviewOutput(step: WritingJobStep): any | null {
     if (!CONFIRM_STEP_TYPES.has(step.stepType))
@@ -141,7 +143,11 @@ export function useWritingJobController(projectId: string) {
   async function handleCreate() {
     creating.value = true
     try {
-      const data: CreateWritingJobInput = { mode: form.value }
+      const data: CreateWritingJobInput = {
+        mode: form.value,
+        executionMode: formExecutionMode.value,
+        autoApprovalLevel: formAutoApprovalLevel.value,
+      }
       if (form.value === 'draft_only' || form.value === 'outline_then_draft' || form.value === 'scene_draft') {
         if (!formChapterId.value) {
           toast.add('请先选择正文写入章节', 'warning')
@@ -260,6 +266,8 @@ export function useWritingJobController(projectId: string) {
     form,
     formChapterId,
     formSceneId,
+    formExecutionMode,
+    formAutoApprovalLevel,
     currentReviewStepId,
     projectStore,
     getReviewOutput,

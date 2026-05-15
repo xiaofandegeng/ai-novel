@@ -1,4 +1,4 @@
-import type { WritingJobStepType } from '@ai-novel/shared'
+import type { WritingJob, WritingJobStepType } from '@ai-novel/shared'
 import { and, asc, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { chapters, chapterScenes, projectHealthReports, writingJobs, writingJobSteps } from '../db/schema'
@@ -11,9 +11,10 @@ import { AuthoringEventService } from './authoring-event.service'
 import { runChapterPostprocess, runScenePostprocess } from './chapter-postprocess.service'
 import { runConsistencyGuard } from './consistency-guard.service'
 import { getProjectHealthMetrics } from './health-metrics.service'
-import { applyAcceptedSuggestions } from './postprocess-suggestion.service'
+import { applyAcceptedSuggestions, applyAutoSuggestions } from './postprocess-suggestion.service'
 import { runGraphInference } from './story-graph-inference.service'
 import { createSnapshot } from './version.service'
+import { evaluateAutoApproval } from './writing-job-auto-approval.service'
 
 type JobMode = 'outline_only' | 'draft_only' | 'outline_then_draft' | 'scene_draft'
 
@@ -377,12 +378,12 @@ async function executeConsistencyCheck(
   await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
   return output
 }
-
 async function executeApplyDraft(
   projectId: string,
   chapterId: string | null,
   draftOutput: string,
   stepId: string,
+  isAutoMode = false,
 ): Promise<string> {
   if (!chapterId)
     throw new Error('没有可写入的章节')
@@ -391,6 +392,11 @@ async function executeApplyDraft(
   const content = typeof draft.draft === 'string' ? draft.draft.trim() : ''
   if (!content)
     throw new Error('生成正文为空，无法写入章节')
+
+  if (isAutoMode) {
+    const currentContent = (await db.select({ draft: chapters.draft }).from(chapters).where(eq(chapters.id, chapterId)))[0]?.draft || ''
+    await createSnapshot(projectId, chapterId, currentContent, '全自动写作写入前备份 (Before Auto-Write)')
+  }
 
   const [row] = await db.update(chapters).set({
     draft: content,
@@ -413,6 +419,10 @@ async function executeApplyDraft(
     payload: { wordCount: content.length, jobId: stepId },
   }).catch(err => console.error('Failed to log authoring event:', err))
 
+  if (isAutoMode) {
+    await createSnapshot(projectId, chapterId, content, '全自动写作写入后备份 (After Auto-Write)')
+  }
+
   const output = JSON.stringify({
     chapterId,
     wordCount: content.length,
@@ -428,6 +438,7 @@ async function executeApplySceneDraft(
   sceneId: string | null,
   draftOutput: string,
   stepId: string,
+  isAutoMode = false,
 ): Promise<string> {
   if (!sceneId)
     throw new Error('没有可写入的场景')
@@ -449,6 +460,11 @@ async function executeApplySceneDraft(
   if (!row)
     throw new Error('场景不存在或不属于当前项目')
 
+  if (isAutoMode) {
+    const currentContent = (await db.select({ content: chapterScenes.content }).from(chapterScenes).where(eq(chapterScenes.id, sceneId)))[0]?.content || ''
+    await createSnapshot(projectId, row.chapterId, currentContent, '全自动写作写入前备份 (Before Auto-Write)')
+  }
+
   // Log event
   await AuthoringEventService.logEvent({
     projectId,
@@ -458,6 +474,10 @@ async function executeApplySceneDraft(
     source: 'ai',
     payload: { wordCount: content.length, jobId: stepId },
   }).catch(err => console.error('Failed to log authoring event:', err))
+
+  if (isAutoMode) {
+    await createSnapshot(projectId, row.chapterId, content, '全自动写作写入后备份 (After Auto-Write)')
+  }
 
   const output = JSON.stringify({
     sceneId,
@@ -545,13 +565,16 @@ async function executeApplySuggestions(
   projectId: string,
   chapterId: string | null,
   stepId: string,
+  job: WritingJob,
 ): Promise<string> {
   if (!chapterId) {
     await updateStep(stepId, { output: JSON.stringify({ skipped: true, reason: 'no_chapter' }), status: 'completed', finishedAt: now() })
     return JSON.stringify({ skipped: true })
   }
 
-  const result = await applyAcceptedSuggestions(projectId, chapterId)
+  const result = job.executionMode === 'auto'
+    ? await applyAutoSuggestions(projectId, chapterId, job.autoApprovalLevel)
+    : await applyAcceptedSuggestions(projectId, chapterId)
   const output = JSON.stringify(result)
   await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
   return output
@@ -642,7 +665,7 @@ async function executeStep(
   projectId: string,
   chapterId: string | null,
   sceneId: string | null,
-  jobMode: string,
+  job: WritingJob,
   previousStepOutputs: Map<string, string>,
 ): Promise<boolean> {
   // Returns true if execution should continue, false if we hit a confirm/pause point
@@ -703,11 +726,11 @@ async function executeStep(
 
       case 'apply_draft': {
         const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
-        if (jobMode === 'scene_draft') {
-          await executeApplySceneDraft(projectId, sceneId, draftOutput, step.id)
+        if (job.mode === 'scene_draft') {
+          await executeApplySceneDraft(projectId, sceneId, draftOutput, step.id, job.executionMode === 'auto')
         }
         else {
-          await executeApplyDraft(projectId, chapterId, draftOutput, step.id)
+          await executeApplyDraft(projectId, chapterId, draftOutput, step.id, job.executionMode === 'auto')
         }
         break
       }
@@ -729,7 +752,7 @@ async function executeStep(
         return false
 
       case 'apply_suggestions':
-        await executeApplySuggestions(projectId, chapterId, step.id)
+        await executeApplySuggestions(projectId, chapterId, step.id, job)
         break
 
       case 'update_health':
@@ -799,18 +822,53 @@ async function runNextSteps(projectId: string, jobId: string, fromStepIndex?: nu
         continue
     }
 
-    const shouldContinue = await executeStep(step, projectId, chapter?.id || null, scene?.id || null, job.mode, previousOutputs)
+    const shouldContinue = await executeStep(
+      step,
+      projectId,
+      chapter?.id || null,
+      scene?.id || null,
+      job as any,
+      previousOutputs,
+    )
 
-    // Update output cache after execution
+    if (!shouldContinue) {
+      // 获取最新 step 状态（包含 output）
+      const [updatedStep] = await db.select().from(writingJobSteps).where(eq(writingJobSteps.id, step.id))
+      const decision = evaluateAutoApproval({ job: job as any, step: updatedStep as any, previousOutputs })
+
+      if (job.executionMode === 'auto' && decision.approved) {
+        await db.update(writingJobSteps).set({
+          autoDecision: 'approved',
+          autoDecisionReason: decision.reason,
+          reviewRequired: false,
+          status: 'completed',
+          finishedAt: now(),
+          updatedAt: now(),
+        }).where(eq(writingJobSteps.id, step.id))
+
+        await db.update(writingJobs).set({
+          autoApprovedSteps: (job.autoApprovedSteps || 0) + 1,
+          updatedAt: now(),
+        }).where(eq(writingJobs.id, job.id))
+
+        // 继续执行后续步骤
+        continue
+      }
+
+      await db.update(writingJobSteps).set({
+        autoDecision: 'paused',
+        autoDecisionReason: decision.reason,
+        reviewRequired: true,
+        updatedAt: now(),
+      }).where(eq(writingJobSteps.id, step.id))
+
+      await updateJobStatus(jobId, 'waiting_review', decision.reason)
+      return
+    }
+
     const [updatedStep] = await db.select().from(writingJobSteps).where(eq(writingJobSteps.id, step.id))
     if (updatedStep?.output) {
       previousOutputs.set(updatedStep.stepType, updatedStep.output)
-    }
-
-    if (!shouldContinue) {
-      // Hit a confirm step — pause for user review
-      await updateJobStatus(jobId, 'waiting_review', null)
-      return
     }
   }
 

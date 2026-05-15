@@ -21,6 +21,8 @@ const {
   form,
   formChapterId,
   formSceneId,
+  formExecutionMode,
+  formAutoApprovalLevel,
   currentReviewStepId,
   projectStore,
   handleCreate,
@@ -45,10 +47,10 @@ const {
     <div class="h-full overflow-y-auto p-6">
       <div class="mb-6">
         <h1 class="text-lg text-text-primary font-bold">
-          半自动写作
+          自动写作
         </h1>
         <p class="text-sm text-text-muted">
-          系统生成、作者确认的可控长篇写作流程
+          由 AI 驱动的创作引擎，支持半自动与全自动执行策略
         </p>
       </div>
 
@@ -59,6 +61,8 @@ const {
           v-model="form"
           v-model:chapter-id="formChapterId"
           v-model:scene-id="formSceneId"
+          v-model:execution-mode="formExecutionMode"
+          v-model:auto-approval-level="formAutoApprovalLevel"
           :project-id="projectId"
           :creating="creating"
           @create="handleCreate"
