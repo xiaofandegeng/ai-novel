@@ -324,10 +324,15 @@ async function executeGenerateDraft(
   contextOutput: string,
   planOutput: string,
   stepId: string,
+  targetWords?: number | null,
 ): Promise<string> {
   const parsedContext = JSON.parse(contextOutput)
   const contextPrompt = parsedContext.rendered || ''
   const plan = JSON.parse(planOutput)
+
+  const wordsRange = targetWords
+    ? `${Math.floor(targetWords * 0.8)}-${Math.floor(targetWords * 1.2)}`
+    : '2000-4000'
 
   const messages = [
     {
@@ -355,7 +360,7 @@ ${contextPrompt}
 2. 角色对话生动自然，符合角色性格
 3. 场景描写细腻，有画面感
 4. 节奏张弛有度，注意留白
-5. 字数控制在 2000-4000 字
+5. 字数控制在 ${wordsRange} 字
 6. 结尾要有悬念或钩子
 
 返回 JSON 格式：
@@ -787,7 +792,7 @@ async function executeStep(
         const planOutput = job.mode === 'scene_draft'
           ? previousStepOutputs.get('generate_scene_draft') || '{}'
           : previousStepOutputs.get('generate_plan') || '{}'
-        await executeGenerateDraft(contextOutput, planOutput, step.id)
+        await executeGenerateDraft(contextOutput, planOutput, step.id, job.targetWords)
         break
       }
 

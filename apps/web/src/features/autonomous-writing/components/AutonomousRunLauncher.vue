@@ -148,6 +148,9 @@ function getStatusColor(status: string): TagVariant {
               label="推进范围"
               :options="scopeOptions"
             />
+            <p v-if="form.scopeType === 'project'" class="mt-1 text-[10px] text-text-muted">
+              全书范围将处理所有字数不足的章节（单次上限 20 章）。
+            </p>
           </div>
         </div>
 

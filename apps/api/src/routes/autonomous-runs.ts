@@ -1,8 +1,12 @@
 import type { Hono } from 'hono'
 import {
   createAutonomousRun,
+  getAutonomousExceptions,
   getAutonomousRun,
+  getLatestActiveRun,
+  ignoreAutonomousException,
   pauseAutonomousRun,
+  resolveAutonomousException,
   resumeAutonomousRun,
   startAutonomousRun,
 } from '../services/autonomous-writing.service'
@@ -15,6 +19,12 @@ export function registerAutonomousRunRoutes(app: Hono) {
     if (!run)
       return c.json({ error: 'Run not found' }, 404)
     return c.json(run)
+  })
+
+  app.get('/api/projects/:projectId/autonomous-runs/active', async (c) => {
+    const projectId = c.req.param('projectId')
+    const run = await getLatestActiveRun(projectId)
+    return c.json(run || null)
   })
 
   app.post('/api/projects/:projectId/autonomous-runs', async (c) => {
@@ -43,6 +53,30 @@ export function registerAutonomousRunRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
     const runId = c.req.param('runId')
     await resumeAutonomousRun(projectId, runId)
+    return c.json({ success: true })
+  })
+
+  app.get('/api/projects/:projectId/autonomous-runs/:runId/exceptions', async (c) => {
+    const projectId = c.req.param('projectId')
+    const runId = c.req.param('runId')
+    const exceptions = await getAutonomousExceptions(projectId, runId)
+    return c.json(exceptions)
+  })
+
+  app.post('/api/projects/:projectId/autonomous-runs/:runId/exceptions/:exceptionId/resolve', async (c) => {
+    const projectId = c.req.param('projectId')
+    const runId = c.req.param('runId')
+    const exceptionId = c.req.param('exceptionId')
+    const { resolution } = await c.req.json()
+    await resolveAutonomousException(projectId, runId, exceptionId, resolution)
+    return c.json({ success: true })
+  })
+
+  app.post('/api/projects/:projectId/autonomous-runs/:runId/exceptions/:exceptionId/ignore', async (c) => {
+    const projectId = c.req.param('projectId')
+    const runId = c.req.param('runId')
+    const exceptionId = c.req.param('exceptionId')
+    await ignoreAutonomousException(projectId, runId, exceptionId)
     return c.json({ success: true })
   })
 }

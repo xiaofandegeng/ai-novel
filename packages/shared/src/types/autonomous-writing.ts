@@ -43,7 +43,7 @@ export interface AutonomousRunJob {
   writingJobId: string
   chapterId: string | null
   sceneId: string | null
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'waiting_review'
   orderIndex: number
   createdAt: string
   updatedAt: string

@@ -1,5 +1,5 @@
 import type { AutonomousScopeType, AutonomousWritingRun, CreateAutonomousRunInput } from '@ai-novel/shared'
-import { and, asc, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, not, or, sql } from 'drizzle-orm'
 import { db } from '../db'
 import {
   autonomousRunExceptions,
@@ -26,6 +26,15 @@ export async function createAutonomousRun(
     targetWordsPerChapter,
   } = input
 
+  // P2: 实现项目锁，同一时间只能有一个运行中的任务
+  const activeRuns = await db.select().from(autonomousWritingRuns).where(and(
+    eq(autonomousWritingRuns.projectId, projectId),
+    eq(autonomousWritingRuns.status, 'running'),
+  ))
+  if (activeRuns.length > 0) {
+    throw new Error('该项目已有正在进行的自动驾驶任务，请先暂停或完成后再开启新任务。')
+  }
+
   const id = generateId()
 
   const [run] = await db.insert(autonomousWritingRuns).values({
@@ -44,7 +53,13 @@ export async function createAutonomousRun(
   }).returning()
 
   // Prepare initial chapter jobs based on scope
-  await prepareRunJobs(projectId, run.id, scopeType, { volumeId, startChapterId, endChapterId, targetChapterCount })
+  await prepareRunJobs(projectId, run.id, scopeType, {
+    volumeId,
+    startChapterId,
+    endChapterId,
+    targetChapterCount,
+    targetWordsPerChapter: run.targetWordsPerChapter,
+  })
 
   return run as any
 }
@@ -58,21 +73,28 @@ async function prepareRunJobs(
     startChapterId?: string
     endChapterId?: string
     targetChapterCount?: number
+    targetWordsPerChapter?: number
   },
 ) {
-  // Logic to identify chapters in scope and create pending autonomousRunJobs
   let targetChapters: any[] = []
 
   if (scopeType === 'chapter_range' && params.startChapterId) {
-    // Basic range logic — in a real app this might need to follow novel order
-    // For now, let's just pick those specific chapters if they exist
-    const q = db.select().from(chapters).where(and(
-      eq(chapters.projectId, projectId),
-      sql`${chapters.id} >= ${params.startChapterId}`,
-      params.endChapterId ? sql`${chapters.id} <= ${params.endChapterId}` : sql`TRUE`,
-    )).orderBy(asc(chapters.chapterNumber))
+    const startChapter = await db.select({ chapterNumber: chapters.chapterNumber }).from(chapters).where(and(eq(chapters.id, params.startChapterId), eq(chapters.projectId, projectId))).limit(1)
+    if (!startChapter[0])
+      throw new Error('开始章节不存在')
 
-    targetChapters = await q
+    let endNumber = 999999
+    if (params.endChapterId) {
+      const endChapter = await db.select({ chapterNumber: chapters.chapterNumber }).from(chapters).where(and(eq(chapters.id, params.endChapterId), eq(chapters.projectId, projectId))).limit(1)
+      if (endChapter[0])
+        endNumber = endChapter[0].chapterNumber
+    }
+
+    targetChapters = await db.select().from(chapters).where(and(
+      eq(chapters.projectId, projectId),
+      sql`${chapters.chapterNumber} >= ${startChapter[0].chapterNumber}`,
+      sql`${chapters.chapterNumber} <= ${endNumber}`,
+    )).orderBy(asc(chapters.chapterNumber))
   }
   else if (scopeType === 'volume' && params.volumeId) {
     targetChapters = await db.select().from(chapters).where(and(
@@ -81,14 +103,28 @@ async function prepareRunJobs(
     )).orderBy(asc(chapters.chapterNumber))
   }
   else if (scopeType === 'next_n_chapters' && params.targetChapterCount) {
-    // Find last completed chapter and take next N
-    const lastChapter = await db.select().from(chapters).where(eq(chapters.projectId, projectId)).orderBy(desc(chapters.chapterNumber)).limit(1)
-
-    const lastOrder = lastChapter[0]?.chapterNumber || 0
+    const minWords = 100
     targetChapters = await db.select().from(chapters).where(and(
       eq(chapters.projectId, projectId),
-      sql`${chapters.chapterNumber} > ${lastOrder}`,
+      or(
+        isNull(chapters.draft),
+        sql`char_length(coalesce(${chapters.draft}, '')) < ${minWords}`,
+      ),
     )).orderBy(asc(chapters.chapterNumber)).limit(params.targetChapterCount)
+  }
+  else if (scopeType === 'project') {
+    const minWords = 100
+    targetChapters = await db.select().from(chapters).where(and(
+      eq(chapters.projectId, projectId),
+      or(
+        isNull(chapters.draft),
+        sql`char_length(coalesce(${chapters.draft}, '')) < ${minWords}`,
+      ),
+    )).orderBy(asc(chapters.chapterNumber)).limit(20)
+  }
+
+  if (targetChapters.length === 0) {
+    throw new Error('没有找到符合条件的待编写章节，请先创建大纲或检查推进范围。')
   }
 
   // Create jobs for these chapters
@@ -104,6 +140,7 @@ async function prepareRunJobs(
       mode: 'draft_only',
       status: 'idle',
       executionMode: 'auto',
+      targetWords: params.targetWordsPerChapter,
       autonomousRunId: runId,
       createdAt: now(),
       updatedAt: now(),
@@ -160,6 +197,24 @@ export async function getAutonomousRun(projectId: string, runId: string): Promis
   return { ...run, jobs }
 }
 
+export async function getLatestActiveRun(projectId: string): Promise<any> {
+  const [run] = await db.select().from(autonomousWritingRuns).where(and(
+    eq(autonomousWritingRuns.projectId, projectId),
+    or(
+      eq(autonomousWritingRuns.status, 'running'),
+      eq(autonomousWritingRuns.status, 'needs_attention'),
+      eq(autonomousWritingRuns.status, 'paused'),
+    ),
+  )).orderBy(desc(autonomousWritingRuns.updatedAt)).limit(1)
+
+  if (!run)
+    return null
+
+  const jobs = await db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.runId, run.id)).orderBy(asc(autonomousRunJobs.orderIndex))
+
+  return { ...run, jobs }
+}
+
 export async function startAutonomousRun(projectId: string, runId: string): Promise<void> {
   const [run] = await db.select().from(autonomousWritingRuns).where(and(
     eq(autonomousWritingRuns.id, runId),
@@ -171,21 +226,32 @@ export async function startAutonomousRun(projectId: string, runId: string): Prom
   if (run.status === 'running')
     return
 
+  // 检查是否有其他正在运行的任务
+  const otherRunning = await db.select().from(autonomousWritingRuns).where(and(
+    eq(autonomousWritingRuns.projectId, projectId),
+    eq(autonomousWritingRuns.status, 'running'),
+    not(eq(autonomousWritingRuns.id, runId)),
+  ))
+  if (otherRunning.length > 0)
+    throw new Error('该项目已有其他正在进行的自动驾驶任务')
+
   await db.update(autonomousWritingRuns).set({
     status: 'running',
     startedAt: now(),
     updatedAt: now(),
   }).where(eq(autonomousWritingRuns.id, runId))
 
-  // Kick off the first job
-  await runNextAutonomousStep(projectId, runId)
+  // P2: 异步启动，防止 API 超时
+  runNextAutonomousStep(projectId, runId).catch((err) => {
+    console.error(`[AutonomousRun ${runId}] execution failed:`, err)
+  })
 }
 
 export async function runNextAutonomousStep(projectId: string, runId: string): Promise<void> {
-  // Find the first pending or running job
+  // Find the first pending job
   const nextJob = await db.select().from(autonomousRunJobs).where(and(
     eq(autonomousRunJobs.runId, runId),
-    sql`${autonomousRunJobs.status} IN ('pending', 'running')`,
+    eq(autonomousRunJobs.status, 'pending'),
   )).orderBy(asc(autonomousRunJobs.orderIndex)).limit(1)
 
   if (nextJob.length === 0) {
@@ -304,24 +370,33 @@ export async function handleAutonomousJobCompletion(
     }
   }
   else if (status === 'waiting_review') {
-    // This happens when high risk or blocked
+    // Record exception first
     await recordAutonomousException(projectId, runId, {
       exceptionType: 'high_risk_change_set',
       severity: run.strategy === 'fast' ? 'medium' : 'high',
-      title: 'Review Required',
-      description: reason || 'Manual confirmation needed due to risk level',
+      title: '需要人工审查',
+      description: reason || '检测到高风险变更，需要作者确认。',
       chapterId: job.currentChapterId,
     })
 
     if (run.strategy === 'fast') {
-      // Skip this chapter and continue? Or wait?
-      // Usually "fast" means we continue next ones if possible
+      // Fast strategy: skip this chapter and continue to next
+      await db.update(autonomousRunJobs).set({
+        status: 'skipped',
+        updatedAt: now(),
+      }).where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, jobId)))
+
       await runNextAutonomousStep(projectId, runId)
     }
     else {
+      // Safe/Balanced: Mark job as waiting review and pause the run
+      await db.update(autonomousRunJobs).set({
+        status: 'waiting_review',
+        updatedAt: now(),
+      }).where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, jobId)))
+
       await db.update(autonomousWritingRuns).set({
-        status: 'paused',
-        pausedReason: 'Waiting for manual review',
+        status: 'needs_attention',
         updatedAt: now(),
       }).where(eq(autonomousWritingRuns.id, runId))
     }
@@ -354,4 +429,73 @@ export async function recordAutonomousException(
     createdAt: now(),
     updatedAt: now(),
   })
+}
+
+export async function getAutonomousExceptions(projectId: string, runId: string) {
+  return db.select().from(autonomousRunExceptions).where(and(
+    eq(autonomousRunExceptions.runId, runId),
+    eq(autonomousRunExceptions.projectId, projectId),
+  )).orderBy(desc(autonomousRunExceptions.createdAt))
+}
+
+export async function resolveAutonomousException(projectId: string, runId: string, exceptionId: string, resolution: string) {
+  const [ex] = await db.update(autonomousRunExceptions).set({
+    status: 'resolved',
+    resolution,
+    updatedAt: now(),
+  }).where(and(
+    eq(autonomousRunExceptions.id, exceptionId),
+    eq(autonomousRunExceptions.runId, runId),
+    eq(autonomousRunExceptions.projectId, projectId),
+  )).returning()
+
+  if (!ex)
+    throw new Error('未找到该异常记录')
+
+  // 如果该异常对应某个章节任务且该任务处于等待审查状态，将其标记为完成（表示已人工处理/批准）
+  if (ex.chapterId) {
+    await db.update(autonomousRunJobs).set({
+      status: 'completed',
+      updatedAt: now(),
+    }).where(and(
+      eq(autonomousRunJobs.runId, runId),
+      eq(autonomousRunJobs.chapterId, ex.chapterId),
+      eq(autonomousRunJobs.status, 'waiting_review'),
+    ))
+  }
+
+  // 尝试恢复运行
+  await resumeAutonomousRun(projectId, runId)
+}
+
+export async function ignoreAutonomousException(projectId: string, runId: string, exceptionId: string) {
+  const [ex] = await db.select().from(autonomousRunExceptions).where(and(
+    eq(autonomousRunExceptions.id, exceptionId),
+    eq(autonomousRunExceptions.runId, runId),
+    eq(autonomousRunExceptions.projectId, projectId),
+  )).limit(1)
+
+  if (!ex)
+    throw new Error('未找到该异常记录')
+  if (ex.severity === 'critical')
+    throw new Error('致命级异常无法直接忽略，请进行处理。')
+
+  await db.update(autonomousRunExceptions).set({
+    status: 'ignored',
+    updatedAt: now(),
+  }).where(eq(autonomousRunExceptions.id, exceptionId))
+
+  // 将对应章节任务标记为跳过
+  if (ex.chapterId) {
+    await db.update(autonomousRunJobs).set({
+      status: 'skipped',
+      updatedAt: now(),
+    }).where(and(
+      eq(autonomousRunJobs.runId, runId),
+      eq(autonomousRunJobs.chapterId, ex.chapterId),
+      eq(autonomousRunJobs.status, 'waiting_review'),
+    ))
+  }
+
+  await resumeAutonomousRun(projectId, runId)
 }

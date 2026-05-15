@@ -1,0 +1,1 @@
+ALTER TABLE "writing_jobs" ADD COLUMN "target_words" integer;

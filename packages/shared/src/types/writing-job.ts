@@ -14,7 +14,9 @@ export interface WritingJob {
   autoApprovalLevel: AutoApprovalLevel
   autoStopReason: string | null
   autoApprovedSteps: number
+  targetWords: number | null
   lastError: string | null
+  autonomousRunId: string | null
   createdAt: string
   updatedAt: string
 }
