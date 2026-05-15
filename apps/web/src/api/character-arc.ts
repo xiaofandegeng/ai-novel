@@ -5,7 +5,7 @@ export function fetchCharacterTimeline(projectId: string, characterId: string) {
   return apiGet<CharacterArcEvent[]>(`/api/projects/${projectId}/character-arc/${characterId}`)
 }
 
-export function fetchProjectTimeline(projectId: string) {
+export function fetchCharacterArcProjectTimeline(projectId: string) {
   return apiGet<CharacterArcEvent[]>(`/api/projects/${projectId}/character-arc`)
 }
 

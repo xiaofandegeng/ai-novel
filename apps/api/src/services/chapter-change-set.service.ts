@@ -99,8 +99,8 @@ export async function createChapterChangeSet(input: {
     draftContent,
     consistencyReportJson: consistencyReport,
     extractedChangesJson: extractedChanges,
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    createdAt: now(),
+    updatedAt: now(),
   } as any).returning()
 
   // Create individual items
@@ -278,14 +278,14 @@ export async function getChangeSetById(projectId: string, id: string): Promise<a
 
 export async function approveChangeSet(projectId: string, changeSetId: string): Promise<void> {
   await db.update(chapterChangeSets)
-    .set({ status: 'approved' as any, updatedAt: new Date() })
+    .set({ status: 'approved' as any, updatedAt: now() })
     .where(and(
       eq(chapterChangeSets.id, changeSetId),
       eq(chapterChangeSets.projectId, projectId),
     ))
 
   await db.update(chapterChangeSetItems)
-    .set({ status: 'approved' as any, updatedAt: new Date() })
+    .set({ status: 'approved' as any, updatedAt: now() })
     .where(and(
       eq(chapterChangeSetItems.changeSetId, changeSetId),
       eq(chapterChangeSetItems.projectId, projectId),
@@ -294,7 +294,7 @@ export async function approveChangeSet(projectId: string, changeSetId: string): 
 
 export async function approveChangeSetItem(projectId: string, changeSetId: string, itemId: string): Promise<void> {
   await db.update(chapterChangeSetItems)
-    .set({ status: 'approved' as any, updatedAt: new Date() })
+    .set({ status: 'approved' as any, updatedAt: now() })
     .where(and(
       eq(chapterChangeSetItems.id, itemId),
       eq(chapterChangeSetItems.changeSetId, changeSetId),
@@ -304,7 +304,7 @@ export async function approveChangeSetItem(projectId: string, changeSetId: strin
 
 export async function rejectChangeSetItem(projectId: string, changeSetId: string, itemId: string): Promise<void> {
   await db.update(chapterChangeSetItems)
-    .set({ status: 'rejected' as any, updatedAt: new Date() })
+    .set({ status: 'rejected' as any, updatedAt: now() })
     .where(and(
       eq(chapterChangeSetItems.id, itemId),
       eq(chapterChangeSetItems.changeSetId, changeSetId),
@@ -389,8 +389,8 @@ export async function applyChangeSet(projectId: string, changeSetId: string): Pr
               weakness,
               personality,
               arc,
-              createdAt: new Date(),
-              updatedAt: new Date(),
+              createdAt: now(),
+              updatedAt: now(),
             } as any)
             break
           }
@@ -409,8 +409,8 @@ export async function applyChangeSet(projectId: string, changeSetId: string): Pr
               sourceChapterId: fullChangeSet.chapterId,
               status: 'confirmed' as any,
               notes,
-              createdAt: new Date(),
-              updatedAt: new Date(),
+              createdAt: now(),
+              updatedAt: now(),
             } as any)
             break
           }
@@ -425,8 +425,8 @@ export async function applyChangeSet(projectId: string, changeSetId: string): Pr
               setupChapterId: fullChangeSet.chapterId,
               status: 'open' as any,
               notes,
-              createdAt: new Date(),
-              updatedAt: new Date(),
+              createdAt: now(),
+              updatedAt: now(),
             } as any)
             break
           }
@@ -437,7 +437,7 @@ export async function applyChangeSet(projectId: string, changeSetId: string): Pr
             ))
             if (existing.length > 0) {
               await tx.update(chapterMemories)
-                .set({ ...item.payloadJson, updatedAt: new Date() })
+                .set({ ...item.payloadJson, updatedAt: now() })
                 .where(eq(chapterMemories.id, existing[0].id))
             }
             else {
@@ -446,8 +446,8 @@ export async function applyChangeSet(projectId: string, changeSetId: string): Pr
                 projectId,
                 chapterId: fullChangeSet.chapterId,
                 ...item.payloadJson,
-                createdAt: new Date(),
-                updatedAt: new Date(),
+                createdAt: now(),
+                updatedAt: now(),
               } as any)
             }
             break
@@ -456,7 +456,7 @@ export async function applyChangeSet(projectId: string, changeSetId: string): Pr
 
         // Mark item as applied
         await tx.update(chapterChangeSetItems)
-          .set({ status: 'applied' as any, updatedAt: new Date() })
+          .set({ status: 'applied' as any, updatedAt: now() })
           .where(eq(chapterChangeSetItems.id, item.id))
       }
 
@@ -468,8 +468,8 @@ export async function applyChangeSet(projectId: string, changeSetId: string): Pr
       await tx.update(chapterChangeSets)
         .set({
           status: 'applied' as any,
-          appliedAt: new Date(),
-          updatedAt: new Date(),
+          appliedAt: now(),
+          updatedAt: now(),
           beforeSnapshotId: beforeSnapshot.id,
           afterSnapshotId: afterSnapshot.id,
         })
@@ -487,9 +487,9 @@ export async function applyChangeSet(projectId: string, changeSetId: string): Pr
         status: 'apply_failed' as any,
         applyReportJson: {
           error: error.message || 'Unknown error during transaction',
-          failedAt: new Date().toISOString(),
+          failedAt: now(),
         },
-        updatedAt: new Date(),
+        updatedAt: now(),
       })
       .where(and(
         eq(chapterChangeSets.id, changeSetId),
@@ -502,14 +502,14 @@ export async function applyChangeSet(projectId: string, changeSetId: string): Pr
 
 export async function rejectChangeSet(projectId: string, changeSetId: string): Promise<void> {
   await db.update(chapterChangeSets)
-    .set({ status: 'rejected' as any, updatedAt: new Date() })
+    .set({ status: 'rejected' as any, updatedAt: now() })
     .where(and(
       eq(chapterChangeSets.id, changeSetId),
       eq(chapterChangeSets.projectId, projectId),
     ))
 
   await db.update(chapterChangeSetItems)
-    .set({ status: 'rejected' as any, updatedAt: new Date() })
+    .set({ status: 'rejected' as any, updatedAt: now() })
     .where(and(
       eq(chapterChangeSetItems.changeSetId, changeSetId),
       eq(chapterChangeSetItems.projectId, projectId),

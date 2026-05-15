@@ -5,7 +5,7 @@ export function fetchConflictTimeline(projectId: string, conflictId: string) {
   return apiGet<ConflictTimelineEvent[]>(`/api/projects/${projectId}/conflicts/${conflictId}/timeline`)
 }
 
-export function fetchProjectTimeline(projectId: string) {
+export function fetchConflictProjectTimeline(projectId: string) {
   return apiGet<ConflictTimelineEvent[]>(`/api/projects/${projectId}/conflict-timeline`)
 }
 

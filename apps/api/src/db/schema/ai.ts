@@ -15,6 +15,7 @@ export const writingJobs = pgTable('writing_jobs', {
   autoStopReason: text('auto_stop_reason'),
   autoApprovedSteps: integer('auto_approved_steps').notNull().default(0),
   lastError: text('last_error'),
+  autonomousRunId: text('autonomous_run_id'),
   ...timestamps,
 })
 
@@ -63,4 +64,46 @@ export const qualityReports = pgTable('quality_reports', {
   issues: text('issues'),
   suggestions: text('suggestions'),
   createdAt: timestamps.createdAt,
+})
+
+export const autonomousWritingRuns = pgTable('autonomous_writing_runs', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  status: text('status').$type<
+    'idle'
+    | 'running'
+    | 'paused'
+    | 'completed'
+    | 'failed'
+    | 'needs_attention'
+  >().notNull().default('idle'),
+  strategy: text('strategy').$type<'safe' | 'balanced' | 'fast'>().notNull().default('balanced'),
+  scopeType: text('scope_type').$type<'project' | 'volume' | 'chapter_range' | 'next_n_chapters'>().notNull(),
+  volumeId: text('volume_id'),
+  startChapterId: text('start_chapter_id'),
+  endChapterId: text('end_chapter_id'),
+  targetChapterCount: integer('target_chapter_count'),
+  targetWordsPerChapter: integer('target_words_per_chapter').notNull().default(3000),
+  currentChapterId: text('current_chapter_id'),
+  completedChapterCount: integer('completed_chapter_count').notNull().default(0),
+  failedChapterCount: integer('failed_chapter_count').notNull().default(0),
+  pausedReason: text('paused_reason'),
+  lastError: text('last_error'),
+  startedAt: timestamp('started_at', { mode: 'string' }),
+  finishedAt: timestamp('finished_at', { mode: 'string' }),
+  createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { mode: 'string' }).notNull().defaultNow(),
+})
+
+export const autonomousRunJobs = pgTable('autonomous_run_jobs', {
+  id: text('id').primaryKey(),
+  runId: text('run_id').notNull().references(() => autonomousWritingRuns.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  writingJobId: text('writing_job_id').notNull().references(() => writingJobs.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
+  sceneId: text('scene_id').references(() => chapterScenes.id, { onDelete: 'set null' }),
+  status: text('status').$type<'pending' | 'running' | 'completed' | 'failed' | 'skipped'>().notNull().default('pending'),
+  orderIndex: integer('order_index').notNull(),
+  createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { mode: 'string' }).notNull().defaultNow(),
 })

@@ -11,7 +11,7 @@ export const useCharacterArcStore = defineStore('character-arc', () => {
   }
 
   async function fetchProjectTimeline(projectId: string) {
-    events.value = await characterArcApi.fetchProjectTimeline(projectId)
+    events.value = await characterArcApi.fetchCharacterArcProjectTimeline(projectId)
   }
 
   async function createEvent(projectId: string, data: CreateCharacterArcEventInput) {

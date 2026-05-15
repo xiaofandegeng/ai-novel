@@ -7,7 +7,7 @@ export const useConflictTimelineStore = defineStore('conflict-timeline', () => {
   const events = ref<ConflictTimelineEvent[]>([])
 
   async function fetchProjectTimeline(projectId: string) {
-    events.value = await api.fetchProjectTimeline(projectId)
+    events.value = await api.fetchConflictProjectTimeline(projectId)
   }
 
   async function fetchConflictTimeline(projectId: string, conflictId: string) {

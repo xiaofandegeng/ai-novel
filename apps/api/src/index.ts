@@ -11,6 +11,7 @@ import { registerAIQualityFeedbackRoutes } from './routes/ai-quality-feedback'
 import { registerAIUsageRoutes } from './routes/ai-usage'
 import { registerAuthoringEventRoutes } from './routes/authoring-events'
 import { registerAuthoringReportRoutes } from './routes/authoring-reports'
+import { registerAutonomousRunRoutes } from './routes/autonomous-runs'
 import { registerChapterChangeSetRoutes } from './routes/chapter-change-sets'
 import { registerChapterElementRoutes } from './routes/chapter-elements'
 import { registerChapterRoutes } from './routes/chapters'
@@ -90,6 +91,7 @@ registerForeshadowingAnalysisRoutes(app)
 registerWritingGoalRoutes(app)
 registerAICandidateRoutes(app)
 registerRetrievalRoutes(app)
+registerAutonomousRunRoutes(app)
 
 app.notFound((c) => {
   return c.json({ error: 'Not Found' }, 404)

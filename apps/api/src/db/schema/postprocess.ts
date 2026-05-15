@@ -1,6 +1,6 @@
 import { integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
-import { writingJobs, writingJobSteps } from './ai'
+import { autonomousWritingRuns, writingJobs, writingJobSteps } from './ai'
 import { chapterPostprocessRuns, chapters, chapterScenes } from './chapter'
 
 import { characters } from './character'
@@ -110,9 +110,9 @@ export const chapterChangeSets = pgTable('chapter_change_sets', {
   applyReportJson: jsonb('apply_report_json'),
   beforeSnapshotId: text('before_snapshot_id'),
   afterSnapshotId: text('after_snapshot_id'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  appliedAt: timestamp('applied_at'),
+  createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { mode: 'string' }).notNull().defaultNow(),
+  appliedAt: timestamp('applied_at', { mode: 'string' }),
 })
 
 export const chapterChangeSetItems = pgTable('chapter_change_set_items', {
@@ -140,6 +140,29 @@ export const chapterChangeSetItems = pgTable('chapter_change_set_items', {
   payloadJson: jsonb('payload_json').notNull(),
   status: text('status').$type<'pending' | 'approved' | 'applied' | 'blocked' | 'rejected' | 'apply_failed'>().notNull().default('pending'),
   applyError: text('apply_error'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { mode: 'string' }).notNull().defaultNow(),
+})
+
+export const autonomousRunExceptions = pgTable('autonomous_run_exceptions', {
+  id: text('id').primaryKey(),
+  runId: text('run_id').notNull().references(() => autonomousWritingRuns.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
+  changeSetId: text('change_set_id').references(() => chapterChangeSets.id, { onDelete: 'set null' }),
+  exceptionType: text('exception_type').$type<
+    'consistency_blocked'
+    | 'high_risk_change_set'
+    | 'apply_failed'
+    | 'ai_failed'
+    | 'health_regression'
+    | 'manual_required'
+  >().notNull(),
+  severity: text('severity').$type<'medium' | 'high' | 'critical'>().notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  status: text('status').$type<'open' | 'resolved' | 'ignored'>().notNull().default('open'),
+  resolution: text('resolution'),
+  createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { mode: 'string' }).notNull().defaultNow(),
 })

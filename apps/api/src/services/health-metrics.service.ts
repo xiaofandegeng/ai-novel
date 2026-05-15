@@ -263,7 +263,7 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
   }
 
   const recentChangeSets = [...allChangeSets]
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5)
     .map(cs => ({
       id: cs.id,

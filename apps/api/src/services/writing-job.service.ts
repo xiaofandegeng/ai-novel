@@ -147,6 +147,21 @@ async function updateJobStatus(jobId: string, status: string, lastError?: string
     fields.lastError = lastError
   }
   await db.update(writingJobs).set(fields).where(eq(writingJobs.id, jobId))
+
+  // P1-3: 如果是自动驾驶任务，通知 Run 进度
+  if (['completed', 'failed', 'waiting_review'].includes(status)) {
+    const [job] = await db.select({ projectId: writingJobs.projectId }).from(writingJobs).where(eq(writingJobs.id, jobId))
+    if (job) {
+      // 动态导入避免循环依赖
+      const { handleAutonomousJobCompletion } = await import('./autonomous-writing.service')
+      await handleAutonomousJobCompletion(
+        job.projectId,
+        jobId,
+        status as any,
+        lastError || undefined,
+      )
+    }
+  }
 }
 
 async function updateStep(stepId: string, fields: Record<string, any>) {

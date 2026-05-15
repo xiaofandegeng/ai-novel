@@ -8,7 +8,7 @@ export const createForeshadowingItem = crud.create
 export const updateForeshadowingItem = crud.update
 export const deleteForeshadowingItem = crud.delete
 
-export async function fetchCharacters(projectId: string, id: string) {
+export async function fetchForeshadowingCharacters(projectId: string, id: string) {
   return apiGet(`/api/projects/${projectId}/foreshadowing/${id}/characters`)
 }
 
