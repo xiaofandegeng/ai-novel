@@ -162,13 +162,19 @@ async function getJobAndChapter(jobId: string, projectId: string) {
 
   let chapter = null
   if (job.currentChapterId) {
-    const [ch] = await db.select().from(chapters).where(eq(chapters.id, job.currentChapterId))
+    const [ch] = await db.select().from(chapters).where(and(
+      eq(chapters.id, job.currentChapterId),
+      eq(chapters.projectId, projectId),
+    ))
     chapter = ch || null
   }
 
   let scene = null
   if (job.sceneId) {
-    const [sc] = await db.select().from(chapterScenes).where(eq(chapterScenes.id, job.sceneId))
+    const [sc] = await db.select().from(chapterScenes).where(and(
+      eq(chapterScenes.id, job.sceneId),
+      eq(chapterScenes.projectId, projectId),
+    ))
     scene = sc || null
   }
 
@@ -763,7 +769,9 @@ async function executeStep(
 
       case 'generate_draft': {
         const contextOutput = previousStepOutputs.get('prepare_context') || '{}'
-        const planOutput = previousStepOutputs.get('generate_plan') || '{}'
+        const planOutput = job.mode === 'scene_draft'
+          ? previousStepOutputs.get('generate_scene_draft') || '{}'
+          : previousStepOutputs.get('generate_plan') || '{}'
         await executeGenerateDraft(contextOutput, planOutput, step.id)
         break
       }
@@ -912,6 +920,11 @@ async function runNextSteps(projectId: string, jobId: string, fromStepIndex?: nu
       const decision = evaluateAutoApproval({ job: job as any, step: updatedStep as any, previousOutputs })
 
       if (job.executionMode === 'auto' && decision.approved) {
+        // P1-1: 自动通过变更集后必须批准变更项，否则应用时会跳过结构化变更
+        if (step.stepType === 'review_change_set' && updatedStep.changeSetId) {
+          await approveChangeSetSvc(projectId, updatedStep.changeSetId)
+        }
+
         await db.update(writingJobSteps).set({
           autoDecision: 'approved',
           autoDecisionReason: decision.reason,
@@ -930,10 +943,13 @@ async function runNextSteps(projectId: string, jobId: string, fromStepIndex?: nu
         continue
       }
 
+      // P1-2: 暂停审查时，统一把 step 设置为 completed，否则 approveStep 接口会因为 status !== 'completed' 而报错
       await db.update(writingJobSteps).set({
+        status: 'completed',
         autoDecision: 'paused',
         autoDecisionReason: decision.reason,
         reviewRequired: true,
+        finishedAt: now(),
         updatedAt: now(),
       }).where(eq(writingJobSteps.id, step.id))
 

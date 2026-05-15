@@ -111,9 +111,9 @@ function getItemIcon(type: string) {
           <div
             v-for="item in changeSet.items"
             :key="item.id"
-            class="bg-bg-surface border border-border-light overflow-hidden rounded-md"
+            class="overflow-hidden border border-border-light rounded-md bg-bg-surface"
           >
-            <div class="flex items-center gap-2 px-3 py-2 bg-bg-subtle border-b border-border-light">
+            <div class="flex items-center gap-2 border-b border-border-light bg-bg-subtle px-3 py-2">
               <component :is="getItemIcon(item.itemType)" :size="14" class="text-text-secondary" />
               <span class="text-sm font-medium">{{ item.title }}</span>
               <NTag
@@ -128,13 +128,13 @@ function getItemIcon(type: string) {
 
             <div class="p-3">
               <!-- Draft content preview -->
-              <div v-if="item.itemType === 'draft'" class="max-h-40 overflow-y-auto whitespace-pre-wrap rounded bg-bg-subtle p-2 text-xs leading-relaxed text-text-secondary">
+              <div v-if="item.itemType === 'draft'" class="max-h-40 overflow-y-auto whitespace-pre-wrap rounded bg-bg-subtle p-2 text-xs text-text-secondary leading-relaxed">
                 {{ item.payloadJson.content }}
               </div>
 
               <!-- Memory summary -->
               <div v-else-if="item.itemType === 'chapter_memory'" class="text-xs space-y-2">
-                <div v-if="item.payloadJson.summary" class="rounded bg-bg-subtle p-2 italic text-text-secondary">
+                <div v-if="item.payloadJson.summary" class="rounded bg-bg-subtle p-2 text-text-secondary italic">
                   {{ item.payloadJson.summary }}
                 </div>
                 <div v-if="item.payloadJson.keyEvents" class="grid grid-cols-1 gap-1">

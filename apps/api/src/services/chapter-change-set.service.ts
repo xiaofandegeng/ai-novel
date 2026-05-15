@@ -9,6 +9,7 @@ import {
   chapterChangeSets,
   chapterMemories,
   chapters,
+  chapterScenes,
   characters,
   foreshadowingItems,
   storyFactTriples,
@@ -61,6 +62,24 @@ export async function createChapterChangeSet(input: {
   } = input
 
   const id = generateId()
+
+  // P1-5: 增加归属校验
+  const [chapter] = await db.select({ id: chapters.id }).from(chapters).where(and(
+    eq(chapters.id, chapterId),
+    eq(chapters.projectId, projectId),
+  ))
+  if (!chapter)
+    throw new Error('Chapter not found or project mismatch')
+
+  if (sceneId) {
+    const [scene] = await db.select({ id: chapterScenes.id }).from(chapterScenes).where(and(
+      eq(chapterScenes.id, sceneId),
+      eq(chapterScenes.projectId, projectId),
+      eq(chapterScenes.chapterId, chapterId),
+    ))
+    if (!scene)
+      throw new Error('Scene not found or project mismatch')
+  }
 
   // Calculate risk level based on consistency report and extracted changes
   const riskLevel = calculateRiskLevel(consistencyReport, extractedChanges)
@@ -297,31 +316,64 @@ export async function applyChangeSet(projectId: string, changeSetId: string): Pr
   const fullChangeSet = await getChangeSetById(projectId, changeSetId)
   if (!fullChangeSet)
     throw new Error('Change set not found')
+
+  // P1-5: 增加项目归属硬校验
+  if (fullChangeSet.projectId !== projectId) {
+    throw new Error('Project mismatch: Unauthorized change set access')
+  }
+
   if (fullChangeSet.status === 'applied')
     return { alreadyApplied: true }
 
-  return await db.transaction(async (tx) => {
-    // 1. Get current content for before snapshot
-    const [chapter] = await tx.select({ draft: chapters.draft }).from(chapters).where(eq(chapters.id, fullChangeSet.chapterId))
-    const beforeContent = chapter?.draft || ''
-    const beforeSnapshot = await createSnapshot(projectId, fullChangeSet.chapterId, beforeContent || ' ', `Unified Change Set Apply Before: ${changeSetId}`)
-    if ('error' in beforeSnapshot)
-      throw new Error(beforeSnapshot.error)
+  try {
+    return await db.transaction(async (tx) => {
+      // 1. Get current content for before snapshot
+      // P1-5: 章节查询增加 projectId 限制
+      const [chapter] = await tx.select({ draft: chapters.draft })
+        .from(chapters)
+        .where(and(
+          eq(chapters.id, fullChangeSet.chapterId),
+          eq(chapters.projectId, projectId),
+        ))
 
-    // 2. Apply draft
-    if (fullChangeSet.draftContent) {
-      await tx.update(chapters)
-        .set({ draft: fullChangeSet.draftContent, updatedAt: now() })
-        .where(eq(chapters.id, fullChangeSet.chapterId))
-    }
+      if (!chapter) {
+        throw new Error('Chapter not found or project mismatch')
+      }
 
-    // 3. Apply approved items
-    const approvedItems = fullChangeSet.items.filter((item: any) => item.status === 'approved')
-    for (const item of approvedItems) {
-      try {
+      const beforeContent = chapter.draft || ''
+      const beforeSnapshot = await createSnapshot(projectId, fullChangeSet.chapterId, beforeContent || ' ', `Unified Change Set Apply Before: ${changeSetId}`)
+      if ('error' in beforeSnapshot)
+        throw new Error(beforeSnapshot.error)
+
+      // 2. Apply draft
+      if (fullChangeSet.draftContent) {
+        // P1-4: 场景自动写作区分写入目标
+        if (fullChangeSet.sceneId) {
+          await tx.update(chapterScenes)
+            .set({ content: fullChangeSet.draftContent, status: 'reviewed', updatedAt: now() })
+            .where(and(
+              eq(chapterScenes.id, fullChangeSet.sceneId),
+              eq(chapterScenes.projectId, projectId),
+              eq(chapterScenes.chapterId, fullChangeSet.chapterId),
+            ))
+        }
+        else {
+          await tx.update(chapters)
+            .set({ draft: fullChangeSet.draftContent, updatedAt: now() })
+            .where(and(
+              eq(chapters.id, fullChangeSet.chapterId),
+              eq(chapters.projectId, projectId),
+            ))
+        }
+      }
+
+      // 3. Apply approved items
+      const approvedItems = fullChangeSet.items.filter((item: any) => item.status === 'approved')
+      for (const item of approvedItems) {
+        // P1-3: 关键项目失败应抛错回滚
         switch (item.itemType) {
           case 'draft':
-            // Already applied above if draftContent was present in change set
+            // Already applied above
             break
           case 'character_create': {
             const { name, role, goal, fear, secret, desire, weakness, personality, arc } = item.payloadJson
@@ -379,7 +431,6 @@ export async function applyChangeSet(projectId: string, changeSetId: string): Pr
             break
           }
           case 'chapter_memory': {
-            // Update or insert memory for this chapter
             const existing = await tx.select().from(chapterMemories).where(and(
               eq(chapterMemories.projectId, projectId),
               eq(chapterMemories.chapterId, fullChangeSet.chapterId),
@@ -408,31 +459,45 @@ export async function applyChangeSet(projectId: string, changeSetId: string): Pr
           .set({ status: 'applied' as any, updatedAt: new Date() })
           .where(eq(chapterChangeSetItems.id, item.id))
       }
-      catch (err: any) {
-        console.error(`Failed to apply item ${item.id}:`, err)
-        await tx.update(chapterChangeSetItems)
-          .set({ status: 'apply_failed' as any, applyError: err.message, updatedAt: new Date() })
-          .where(eq(chapterChangeSetItems.id, item.id))
-      }
-    }
 
-    // 4. Mark change set as applied
-    const afterSnapshot = await createSnapshot(projectId, fullChangeSet.chapterId, fullChangeSet.draftContent || beforeContent || ' ', `Unified Change Set Apply After: ${changeSetId}`)
-    if ('error' in afterSnapshot)
-      throw new Error(afterSnapshot.error)
+      // 4. Mark change set as applied
+      const afterSnapshot = await createSnapshot(projectId, fullChangeSet.chapterId, fullChangeSet.draftContent || beforeContent || ' ', `Unified Change Set Apply After: ${changeSetId}`)
+      if ('error' in afterSnapshot)
+        throw new Error(afterSnapshot.error)
 
-    await tx.update(chapterChangeSets)
+      await tx.update(chapterChangeSets)
+        .set({
+          status: 'applied' as any,
+          appliedAt: new Date(),
+          updatedAt: new Date(),
+          beforeSnapshotId: beforeSnapshot.id,
+          afterSnapshotId: afterSnapshot.id,
+        })
+        .where(eq(chapterChangeSets.id, changeSetId))
+
+      return { success: true }
+    })
+  }
+  catch (error: any) {
+    console.error(`Failed to apply change set ${changeSetId}:`, error)
+
+    // P1-3: 失败时记录在 applyReportJson 并标记失败
+    await db.update(chapterChangeSets)
       .set({
-        status: 'applied' as any,
-        appliedAt: new Date(),
+        status: 'apply_failed' as any,
+        applyReportJson: {
+          error: error.message || 'Unknown error during transaction',
+          failedAt: new Date().toISOString(),
+        },
         updatedAt: new Date(),
-        beforeSnapshotId: beforeSnapshot.id,
-        afterSnapshotId: afterSnapshot.id,
       })
-      .where(eq(chapterChangeSets.id, changeSetId))
+      .where(and(
+        eq(chapterChangeSets.id, changeSetId),
+        eq(chapterChangeSets.projectId, projectId),
+      ))
 
-    return { success: true }
-  })
+    throw error
+  }
 }
 
 export async function rejectChangeSet(projectId: string, changeSetId: string): Promise<void> {
