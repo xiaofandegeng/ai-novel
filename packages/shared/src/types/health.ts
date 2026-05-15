@@ -6,6 +6,7 @@ export interface HealthMetrics {
   activeConflicts: number
   conflictIntensityAvg: number
   conflictIntensityTrend: { chapter: number, avgIntensity: number }[]
+  tensionTrend: { chapter: number, tension: number }[]
   openForeshadowingCount: number
   foreshadowingByStatus: Record<string, number>
   confirmedTriples: number

@@ -1,14 +1,14 @@
 import type { WritingJobStepType } from '@ai-novel/shared'
 import { and, asc, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { chapters, chapterScenes, writingJobs, writingJobSteps } from '../db/schema'
+import { chapters, chapterScenes, projectHealthReports, writingJobs, writingJobSteps } from '../db/schema'
 import { generateId, now } from '../utils'
 import { renderAIContext } from './ai-context-renderer'
 import { createAIContextSnapshot } from './ai-context-snapshot.service'
 import { buildProjectAIContext } from './ai-context.service'
 import { callAIJSON, getEffectiveAISettings } from './ai.service'
 import { AuthoringEventService } from './authoring-event.service'
-import { runChapterPostprocess } from './chapter-postprocess.service'
+import { runChapterPostprocess, runScenePostprocess } from './chapter-postprocess.service'
 import { runConsistencyGuard } from './consistency-guard.service'
 import { getProjectHealthMetrics } from './health-metrics.service'
 import { applyAcceptedSuggestions } from './postprocess-suggestion.service'
@@ -494,6 +494,7 @@ async function executeSaveVersion(
 async function executePostprocess(
   projectId: string,
   chapterId: string | null,
+  sceneId: string | null,
   draftOutput: string,
   stepId: string,
 ): Promise<string> {
@@ -504,12 +505,19 @@ async function executePostprocess(
     return JSON.stringify({ skipped: true })
   }
 
-  const result = await runChapterPostprocess({
-    projectId,
-    chapterId,
-    content: draft.draft || '',
-    trigger: 'auto_drive',
-  })
+  const result = sceneId
+    ? await runScenePostprocess({
+        projectId,
+        chapterId,
+        sceneId,
+        content: draft.draft || '',
+      })
+    : await runChapterPostprocess({
+        projectId,
+        chapterId,
+        content: draft.draft || '',
+        trigger: 'auto_drive',
+      })
 
   // Also trigger graph inference after postprocess to identify more candidates
   const inferenceCount = await runGraphInference(projectId).catch(() => 0)
@@ -540,7 +548,40 @@ async function executeUpdateHealth(
   stepId: string,
 ): Promise<void> {
   const metrics = await getProjectHealthMetrics(projectId)
+  const topRisks = metrics.risks.slice(0, 5).map(risk => ({
+    severity: risk.severity,
+    type: risk.type,
+    title: risk.title,
+    actionLabel: risk.actionLabel,
+    targetRoute: risk.targetRoute,
+  }))
+  const { riskLevel, score } = calculateHealthScore(metrics)
+  const reportId = generateId()
+
+  await db.insert(projectHealthReports).values({
+    id: reportId,
+    projectId,
+    scope: 'overall',
+    score,
+    riskLevel,
+    metricsJson: {
+      completedChapters: metrics.completedChapters,
+      totalChapters: metrics.totalChapters,
+      openForeshadowingCount: metrics.openForeshadowingCount,
+      pendingTriples: metrics.pendingTriples,
+      scenesWithoutContent: metrics.scenesWithoutContent,
+      scenesWithoutPurpose: metrics.scenesWithoutPurpose,
+      scenesWithoutConflict: metrics.scenesWithoutConflict,
+      tensionTrend: metrics.tensionTrend,
+      riskCount: metrics.risks.length,
+      topRisks,
+    },
+  })
+
   const output = {
+    reportId,
+    score,
+    riskLevel,
     completedChapters: metrics.completedChapters,
     totalChapters: metrics.totalChapters,
     openForeshadowingCount: metrics.openForeshadowingCount,
@@ -549,15 +590,35 @@ async function executeUpdateHealth(
     scenesWithoutPurpose: metrics.scenesWithoutPurpose,
     scenesWithoutConflict: metrics.scenesWithoutConflict,
     riskCount: metrics.risks.length,
-    topRisks: metrics.risks.slice(0, 5).map(risk => ({
-      severity: risk.severity,
-      type: risk.type,
-      title: risk.title,
-      actionLabel: risk.actionLabel,
-      targetRoute: risk.targetRoute,
-    })),
+    topRisks,
   }
   await updateStep(stepId, { output: JSON.stringify(output), status: 'completed', finishedAt: now() })
+}
+
+function calculateHealthScore(metrics: Awaited<ReturnType<typeof getProjectHealthMetrics>>): {
+  riskLevel: 'low' | 'medium' | 'high'
+  score: number
+} {
+  const radarValues = Object.values(metrics.radarMetrics)
+  const baseScore = radarValues.length > 0
+    ? Math.round(radarValues.reduce((sum, value) => sum + value, 0) / radarValues.length)
+    : 100
+  const penalty = metrics.risks.reduce((sum, risk) => {
+    if (risk.severity === 'high')
+      return sum + 15
+    if (risk.severity === 'medium')
+      return sum + 8
+    return sum + 3
+  }, 0)
+  const score = Math.max(0, Math.min(100, baseScore - penalty))
+  const hasHighRisk = metrics.risks.some(risk => risk.severity === 'high')
+  const hasMediumRisk = metrics.risks.some(risk => risk.severity === 'medium')
+
+  if (hasHighRisk || score < 60)
+    return { riskLevel: 'high', score }
+  if (hasMediumRisk || score < 80)
+    return { riskLevel: 'medium', score }
+  return { riskLevel: 'low', score }
 }
 
 // ---- Core engine: auto-execute steps until hitting a confirm step or completion ----
@@ -644,7 +705,7 @@ async function executeStep(
 
       case 'postprocess': {
         const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
-        await executePostprocess(projectId, chapterId, draftOutput, step.id)
+        await executePostprocess(projectId, chapterId, sceneId, draftOutput, step.id)
         break
       }
 

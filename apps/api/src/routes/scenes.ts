@@ -2,6 +2,7 @@ import type { Hono } from 'hono'
 import { and, asc, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { chapterScenes } from '../db/schema'
+import { runScenePostprocess } from '../services/chapter-postprocess.service'
 import { assertChapterBelongsToProject } from '../services/ownership.service'
 import { fail, generateId, now, success, updatedFields } from '../utils'
 
@@ -191,6 +192,29 @@ export function registerSceneRoutes(app: Hono) {
     if (!row)
       return c.json(fail('Scene not found'), 404)
     return c.json(success(row))
+  })
+
+  app.post('/api/projects/:projectId/chapters/:chapterId/scenes/:id/postprocess', async (c) => {
+    const projectId = c.req.param('projectId')
+    const chapterId = c.req.param('chapterId')
+    const id = c.req.param('id')
+    await assertChapterBelongsToProject(projectId, chapterId)
+    const body = await c.req.json()
+    if (!body.content)
+      return c.json(fail('场景正文不能为空'), 400)
+
+    try {
+      const result = await runScenePostprocess({
+        projectId,
+        chapterId,
+        sceneId: id,
+        content: body.content,
+      })
+      return c.json(success(result))
+    }
+    catch (e: any) {
+      return c.json(fail(e.message), 500)
+    }
   })
 
   app.delete('/api/projects/:projectId/chapters/:chapterId/scenes/:id', async (c) => {

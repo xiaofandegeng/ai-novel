@@ -5,6 +5,8 @@ import { generateId, now } from '../utils'
 import { normalizeCharacterPair } from './character-utils.service'
 import { getOrCreateEmbedding } from './embedding.service'
 
+const characterRoles = new Set(['protagonist', 'antagonist', 'mentor', 'ally', 'supporting', 'extra'])
+
 export interface ApplyResult {
   applied: number
   acknowledged: number
@@ -21,13 +23,24 @@ export async function createSuggestion(
   confidence = 70,
   reason?: string,
 ) {
+  const payloadText = JSON.stringify(payload)
+  const [existing] = await db.select().from(chapterPostprocessSuggestions).where(and(
+    eq(chapterPostprocessSuggestions.projectId, projectId),
+    eq(chapterPostprocessSuggestions.chapterId, chapterId),
+    eq(chapterPostprocessSuggestions.suggestionType, suggestionType as any),
+    eq(chapterPostprocessSuggestions.payload, payloadText),
+    eq(chapterPostprocessSuggestions.status, 'pending'),
+  ))
+  if (existing)
+    return existing
+
   const [row] = await db.insert(chapterPostprocessSuggestions).values({
     id: generateId(),
     projectId,
     chapterId,
     runId,
     suggestionType: suggestionType as any,
-    payload: JSON.stringify(payload),
+    payload: payloadText,
     confidence,
     reason,
   }).returning()
@@ -260,6 +273,85 @@ async function applyOneSuggestion(
         relationType: payload.relationType || 'appears',
         importance: payload.importance || 'normal',
       }).onConflictDoNothing()
+      return 'applied'
+    }
+
+    case 'character_add': {
+      if (!payload.name)
+        throw new Error('角色名称为空')
+
+      const [existing] = await db.select().from(characters).where(and(
+        eq(characters.projectId, projectId),
+        eq(characters.name, payload.name),
+      ))
+
+      const role = typeof payload.role === 'string' && characterRoles.has(payload.role)
+        ? payload.role
+        : 'extra'
+
+      let characterId = existing?.id
+      if (existing) {
+        await db.update(characters).set({
+          role: existing.role || role,
+          goal: existing.goal || payload.goal || undefined,
+          fear: existing.fear || payload.fear || undefined,
+          secret: existing.secret || payload.secret || undefined,
+          desire: existing.desire || payload.desire || undefined,
+          weakness: existing.weakness || payload.weakness || undefined,
+          personality: existing.personality || payload.personality || undefined,
+          arc: existing.arc || payload.arc || undefined,
+          updatedAt: now(),
+        }).where(eq(characters.id, existing.id))
+      }
+      else {
+        const [inserted] = await db.insert(characters).values({
+          id: generateId(),
+          projectId,
+          name: payload.name,
+          role,
+          goal: payload.goal || null,
+          fear: payload.fear || null,
+          secret: payload.secret || null,
+          desire: payload.desire || null,
+          weakness: payload.weakness || null,
+          personality: payload.personality || null,
+          arc: payload.arc || null,
+        }).returning()
+        characterId = inserted.id
+      }
+
+      if (characterId) {
+        await db.insert(chapterElements).values({
+          id: generateId(),
+          projectId,
+          chapterId,
+          elementType: 'character',
+          elementId: characterId,
+          elementName: payload.name,
+          relationType: 'appears',
+          importance: role === 'extra' ? 'minor' : 'normal',
+        }).onConflictDoNothing()
+      }
+
+      const relations = Array.isArray(payload.relations) ? payload.relations : []
+      for (const relation of relations) {
+        if (!relation || typeof relation !== 'object')
+          continue
+        const targetName = typeof relation.targetName === 'string' ? relation.targetName : ''
+        if (!targetName)
+          continue
+        await createSuggestion(projectId, chapterId, null, 'relationship_update', {
+          characterAName: payload.name,
+          characterBName: targetName,
+          type: typeof relation.type === 'string' ? relation.type : 'acquaintance',
+          strength: typeof relation.strength === 'number' ? relation.strength : 2,
+          status: typeof relation.status === 'string' ? relation.status : '新角色与既有角色产生交集，等待确认。',
+          description: typeof relation.description === 'string' ? relation.description : '由新增角色建议自动生成的关系候选。',
+          sourceType: 'auto_inferred',
+          inferenceRule: 'character_add_relation',
+        }, 55, `新增角色 ${payload.name} 的关系候选`)
+      }
+
       return 'applied'
     }
 

@@ -1,7 +1,7 @@
 import type { ChapterMemory, ChapterPostprocessResult } from '@ai-novel/shared'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, characters, conflicts, foreshadowingItems, novelProjects, storyBibles } from '../db/schema'
+import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, chapterStyleFingerprints, characters, conflicts, foreshadowingItems, novelProjects, storyBibles } from '../db/schema'
 import { callAIJSON } from './ai.service'
 import { getOrCreateEmbedding } from './embedding.service'
 import { createSuggestion } from './postprocess-suggestion.service'
@@ -47,6 +47,27 @@ interface StructuredCharacterChange {
   confidence?: number
 }
 
+interface StructuredNewCharacter {
+  name: string
+  role?: string
+  personality?: string
+  goal?: string
+  desire?: string
+  fear?: string
+  secret?: string
+  weakness?: string
+  arc?: string
+  confidence?: number
+  reason?: string
+  relations?: Array<{
+    targetName: string
+    type?: string
+    strength?: number
+    status?: string
+    description?: string
+  }>
+}
+
 interface StructuredStyleNote {
   title: string
   description: string
@@ -83,10 +104,45 @@ interface StructuredAnalysis {
   conflictUpdates: Array<{ title: string, newStatus?: string, newIntensity?: number, reason: string }>
   newConflicts: Array<{ title: string, type: 'internal' | 'external', intensity: number, participants: string, description: string }>
   relationshipUpdates: StructuredRelationshipUpdate[]
+  newCharacters?: StructuredNewCharacter[]
   presentCharacters?: string[]
   // Legacy string fields for backward compatibility
   newFacts?: string
   foreshadowingResolved?: string
+}
+
+function countMatches(content: string, words: string[]) {
+  return words.reduce((sum, word) => sum + content.split(word).length - 1, 0)
+}
+
+function buildStyleFingerprint(content: string, styleNotes?: string | null) {
+  const normalized = content.trim()
+  const sentences = normalized
+    .split(/[。！？!?；;\n]+/)
+    .map(s => s.trim())
+    .filter(Boolean)
+  const sentenceLengthAvg = sentences.length > 0
+    ? Math.round(sentences.reduce((sum, s) => sum + s.length, 0) / sentences.length)
+    : 0
+
+  const dialogueMarks = countMatches(normalized, ['“', '”', '"'])
+  const dialogueRatio = normalized.length > 0
+    ? Math.min(100, Math.round((dialogueMarks / Math.max(1, normalized.length / 80)) * 10))
+    : 0
+
+  const emotionHits = countMatches(normalized, ['恐惧', '愤怒', '痛苦', '悲伤', '惊讶', '犹豫', '渴望', '绝望', '兴奋', '冷静'])
+  const conflictHits = countMatches(normalized, ['冲突', '对峙', '争执', '威胁', '背叛', '追击', '阻止', '反击', '代价', '危险'])
+  const hookHits = countMatches(normalized, ['秘密', '真相', '线索', '异常', '消失', '名单', '钥匙', '门', '影子', '却'])
+  const densityBase = Math.max(1, normalized.length / 1000)
+
+  return {
+    sentenceLengthAvg,
+    dialogueRatio,
+    emotionDensity: Math.min(100, Math.round((emotionHits / densityBase) * 20)),
+    conflictDensity: Math.min(100, Math.round((conflictHits / densityBase) * 20)),
+    hookDensity: Math.min(100, Math.round((hookHits / densityBase) * 20)),
+    styleSummary: styleNotes || `平均句长 ${sentenceLengthAvg}，对话比例 ${dialogueRatio}%，情绪密度 ${emotionHits}，冲突密度 ${conflictHits}，钩子密度 ${hookHits}`,
+  }
 }
 
 export async function runChapterPostprocess(input: {
@@ -207,6 +263,24 @@ ${truncatedContent}
       "confidence": 80
     }
   ],
+  "newCharacters": [
+    {
+      "name": "新出现但角色库中尚未记录的人物名",
+      "role": "supporting/extra/ally/antagonist/mentor",
+      "personality": "性格概括",
+      "goal": "当前剧情功能或目标",
+      "desire": "内在欲望",
+      "fear": "恐惧",
+      "secret": "秘密",
+      "weakness": "弱点",
+      "arc": "可能的人物弧光",
+      "confidence": 70,
+      "reason": "正文依据",
+      "relations": [
+        { "targetName": "已有角色名", "type": "ally/enemy/acquaintance", "strength": 1-10, "status": "当前关系", "description": "关系依据" }
+      ]
+    }
+  ],
   "presentCharacters": ["在本章节正文中实际出场或被提及的已知关键角色姓名（必须是具体的人物名）"],
   "newConflicts": [
     {
@@ -227,6 +301,7 @@ ${truncatedContent}
 - styleNotes 提取叙事风格特征
 - conflictUpdates 提取本章节中涉及的已有矛盾的进展情况
 - relationshipUpdates 提取本章节中体现的人物关系变化或新增关系
+- newCharacters 只提取正文中实际出现、且不属于普通称谓的新增角色；路人、小贩、守卫等功能性人物可标记为 extra
 - newConflicts 提取本章节中由于剧情走向新产生的、尚未记录在案的矛盾/冲突
 - 如果某类没有相关内容，返回空数组 []
 - confidence 范围 0-100`
@@ -374,6 +449,35 @@ ${truncatedContent}
       }
     }
 
+    if (parsed.newCharacters?.length) {
+      const existingCharacters = await db.select().from(characters).where(eq(characters.projectId, projectId))
+
+      for (const character of parsed.newCharacters) {
+        if (!character.name)
+          continue
+        const exists = existingCharacters.some(c =>
+          c.name === character.name
+          || character.name.includes(c.name)
+          || c.name.includes(character.name),
+        )
+        if (exists)
+          continue
+
+        await createSuggestion(projectId, chapterId, runId, 'character_add', {
+          name: character.name,
+          role: character.role || 'extra',
+          personality: character.personality || '',
+          goal: character.goal || '',
+          desire: character.desire || '',
+          fear: character.fear || '',
+          secret: character.secret || '',
+          weakness: character.weakness || '',
+          arc: character.arc || '',
+          relations: character.relations || [],
+        }, character.confidence || 65, character.reason || '正文中出现了角色库未记录的人物')
+      }
+    }
+
     if (parsed.newConflicts?.length) {
       for (const conflict of parsed.newConflicts) {
         if (!conflict.title)
@@ -502,6 +606,32 @@ ${truncatedContent}
       }).catch(err => console.error('Failed to embed chapter memory:', err))
     }
 
+    const styleFingerprint = buildStyleFingerprint(content, styleNotesStr)
+    await db.delete(chapterStyleFingerprints).where(and(
+      eq(chapterStyleFingerprints.projectId, projectId),
+      eq(chapterStyleFingerprints.chapterId, chapterId),
+    ))
+    const [fingerprint] = await db.insert(chapterStyleFingerprints).values({
+      id: crypto.randomUUID(),
+      projectId,
+      chapterId,
+      sentenceLengthAvg: styleFingerprint.sentenceLengthAvg,
+      dialogueRatio: styleFingerprint.dialogueRatio,
+      emotionDensity: styleFingerprint.emotionDensity,
+      conflictDensity: styleFingerprint.conflictDensity,
+      hookDensity: styleFingerprint.hookDensity,
+      styleSummary: styleFingerprint.styleSummary,
+    }).returning()
+
+    if (fingerprint) {
+      await getOrCreateEmbedding({
+        projectId,
+        text: fingerprint.styleSummary || '',
+        contentType: 'style_fingerprint',
+        sourceId: fingerprint.id,
+      }).catch(err => console.error('Failed to embed style fingerprint:', err))
+    }
+
     await db.update(chapterPostprocessRuns).set({
       status: 'completed',
       finishedAt: new Date().toISOString(),
@@ -568,6 +698,22 @@ ${truncatedContent}
   "characterStateChanges": [
     { "characterName": "string", "change": "string", "confidence": 80 }
   ],
+  "relationshipUpdates": [
+    { "characterAName": "string", "characterBName": "string", "type": "ally/enemy/acquaintance", "strength": 1-10, "status": "string", "description": "string", "confidence": 80 }
+  ],
+  "newCharacters": [
+    { "name": "string", "role": "supporting/extra/ally/antagonist/mentor", "personality": "string", "goal": "string", "desire": "string", "fear": "string", "secret": "string", "weakness": "string", "arc": "string", "confidence": 70, "reason": "string", "relations": [{ "targetName": "string", "type": "acquaintance", "strength": 2, "status": "string", "description": "string" }] }
+  ],
+  "presentCharacters": ["string"],
+  "foreshadowingPayoffs": [
+    { "title": "string", "description": "string", "confidence": 70 }
+  ],
+  "conflictUpdates": [
+    { "title": "string", "newStatus": "active/escalated/stalemate/resolved/abandoned", "newIntensity": 1-10, "reason": "string" }
+  ],
+  "newConflicts": [
+    { "title": "string", "type": "internal/external", "intensity": 1-10, "participants": "string", "description": "string" }
+  ],
   "events": [
     { "title": "string", "description": "string", "importance": "major" }
   ]
@@ -575,13 +721,20 @@ ${truncatedContent}
 
 要求：
 - 只提取明确出现在正文中的内容
+- 新角色、关系、伏笔回收、矛盾变化都只生成待确认建议
 - 如果某类没有相关内容，返回空数组 []
 - confidence 范围 0-100`
 
   const parsed = await callAIJSON<{
     facts: StructuredFact[]
     foreshadowingAdded: StructuredForeshadowing[]
+    foreshadowingPayoffs: StructuredForeshadowing[]
     characterStateChanges: StructuredCharacterChange[]
+    relationshipUpdates: StructuredRelationshipUpdate[]
+    newCharacters: StructuredNewCharacter[]
+    presentCharacters: string[]
+    conflictUpdates: Array<{ title: string, newStatus?: string, newIntensity?: number, reason: string }>
+    newConflicts: Array<{ title: string, type: 'internal' | 'external', intensity: number, participants: string, description: string }>
     events: StructuredEvent[]
   }>([{ role: 'user', content: prompt }], { temperature: 30 })
 
@@ -613,6 +766,33 @@ ${truncatedContent}
     }
   }
 
+  if (parsed.foreshadowingPayoffs?.length) {
+    const openForeshadowing = await db.select().from(foreshadowingItems).where(and(
+      eq(foreshadowingItems.projectId, projectId),
+      eq(foreshadowingItems.status, 'open'),
+    ))
+
+    for (const fp of parsed.foreshadowingPayoffs) {
+      if (!fp.title)
+        continue
+      const normalizedTitle = fp.title.trim()
+      const matched = openForeshadowing.find(item =>
+        item.title === normalizedTitle
+        || normalizedTitle.includes(item.title)
+        || item.title.includes(normalizedTitle),
+      )
+      await createSuggestion(projectId, chapterId, null, 'foreshadowing_payoff', {
+        foreshadowingId: matched?.id || null,
+        title: fp.title,
+        description: fp.description || '',
+        matchedTitle: matched?.title || null,
+        scope: 'scene',
+        sceneId,
+      }, fp.confidence || 70)
+      count++
+    }
+  }
+
   if (parsed.characterStateChanges?.length) {
     for (const cs of parsed.characterStateChanges) {
       if (!cs.characterName || !cs.change)
@@ -622,6 +802,113 @@ ${truncatedContent}
         scope: 'scene',
         sceneId,
       }, cs.confidence || 70)
+      count++
+    }
+  }
+
+  if (parsed.presentCharacters?.length) {
+    const allCharacters = await db.select().from(characters).where(eq(characters.projectId, projectId))
+    for (const name of parsed.presentCharacters) {
+      const found = allCharacters.find(c => c.name === name || name.includes(c.name) || c.name.includes(name))
+      if (!found)
+        continue
+      await createSuggestion(projectId, chapterId, null, 'chapter_element', {
+        elementType: 'character',
+        elementId: found.id,
+        elementName: found.name,
+        relationType: 'appears',
+        importance: found.role === 'extra' ? 'minor' : 'normal',
+        scope: 'scene',
+        sceneId,
+      }, 60)
+      count++
+    }
+  }
+
+  if (parsed.newCharacters?.length) {
+    const existingCharacters = await db.select().from(characters).where(eq(characters.projectId, projectId))
+    for (const character of parsed.newCharacters) {
+      if (!character.name)
+        continue
+      const exists = existingCharacters.some(c =>
+        c.name === character.name
+        || character.name.includes(c.name)
+        || c.name.includes(character.name),
+      )
+      if (exists)
+        continue
+      await createSuggestion(projectId, chapterId, null, 'character_add', {
+        name: character.name,
+        role: character.role || 'extra',
+        personality: character.personality || '',
+        goal: character.goal || '',
+        desire: character.desire || '',
+        fear: character.fear || '',
+        secret: character.secret || '',
+        weakness: character.weakness || '',
+        arc: character.arc || '',
+        relations: character.relations || [],
+        scope: 'scene',
+        sceneId,
+      }, character.confidence || 65, character.reason || '场景正文中出现了角色库未记录的人物')
+      count++
+    }
+  }
+
+  if (parsed.relationshipUpdates?.length) {
+    for (const rel of parsed.relationshipUpdates) {
+      if (!rel.characterAName || !rel.characterBName)
+        continue
+      await createSuggestion(projectId, chapterId, null, 'relationship_update', {
+        characterAName: rel.characterAName,
+        characterBName: rel.characterBName,
+        type: rel.type,
+        strength: rel.strength,
+        status: rel.status,
+        description: rel.description,
+        scope: 'scene',
+        sceneId,
+      }, rel.confidence || 70)
+      count++
+    }
+  }
+
+  if (parsed.conflictUpdates?.length) {
+    const projectConflicts = await db.select().from(conflicts).where(eq(conflicts.projectId, projectId))
+    for (const update of parsed.conflictUpdates) {
+      if (!update.title)
+        continue
+      const matched = projectConflicts.find(c =>
+        c.title === update.title
+        || update.title.includes(c.title)
+        || c.title.includes(update.title),
+      )
+      await createSuggestion(projectId, chapterId, null, 'conflict_update', {
+        conflictId: matched?.id || null,
+        title: update.title,
+        newStatus: update.newStatus,
+        newIntensity: update.newIntensity,
+        reason: update.reason,
+        scope: 'scene',
+        sceneId,
+      }, matched ? 80 : 50)
+      count++
+    }
+  }
+
+  if (parsed.newConflicts?.length) {
+    for (const conflict of parsed.newConflicts) {
+      if (!conflict.title)
+        continue
+      await createSuggestion(projectId, chapterId, null, 'conflict_add', {
+        title: conflict.title,
+        type: conflict.type,
+        intensity: conflict.intensity,
+        participants: conflict.participants,
+        description: conflict.description,
+        scope: 'scene',
+        sceneId,
+      }, 75, `场景推进：${conflict.title}`)
       count++
     }
   }

@@ -9,6 +9,7 @@ import {
   chapterPostprocessSuggestions,
   chapters,
   chapterScenes,
+  chapterStyleFingerprints,
   characterArcEvents,
   characterRelationships,
   characters,
@@ -24,6 +25,7 @@ import {
   knowledgeSources,
   novelProjects,
   personaMemoryCards,
+  projectHealthReports,
   projectPersonaConfigs,
   qualityReports,
   storyBibles,
@@ -79,6 +81,8 @@ const CONFLICT_TIMELINE_EVENT_FIELDS = ['intensityBefore', 'intensityAfter', 'st
 const WRITING_GOAL_FIELDS = ['goalType', 'targetWords', 'targetChapters', 'startDate', 'endDate', 'status']
 const DAILY_WRITING_STATS_FIELDS = ['date', 'wordsAdded', 'chaptersCompleted', 'aiWordsAccepted', 'manualWordsAdded']
 const AI_GENERATION_CANDIDATE_FIELDS = ['provider', 'model', 'taskType', 'content', 'qualityScore', 'userSelected', 'userRating']
+const CHAPTER_STYLE_FINGERPRINT_FIELDS = ['sentenceLengthAvg', 'dialogueRatio', 'emotionDensity', 'conflictDensity', 'hookDensity', 'styleSummary']
+const PROJECT_HEALTH_REPORT_FIELDS = ['scope', 'score', 'riskLevel', 'metricsJson', 'generatedAt']
 const WRITING_PERSONA_FIELDS = [
   'name',
   'description',
@@ -132,6 +136,8 @@ export async function exportProjectData(projectId: string) {
   const goals = await db.select().from(writingGoals).where(eq(writingGoals.projectId, projectId))
   const dailyStats = await db.select().from(dailyWritingStats).where(eq(dailyWritingStats.projectId, projectId))
   const aiCandidates = await db.select().from(aiGenerationCandidates).where(eq(aiGenerationCandidates.projectId, projectId))
+  const styleFingerprints = await db.select().from(chapterStyleFingerprints).where(eq(chapterStyleFingerprints.projectId, projectId))
+  const healthReports = await db.select().from(projectHealthReports).where(eq(projectHealthReports.projectId, projectId))
 
   const personaIds = personaConfigs.map(c => c.personaId)
   const personas = personaIds.length > 0
@@ -173,6 +179,8 @@ export async function exportProjectData(projectId: string) {
     writingGoals: goals,
     dailyWritingStats: dailyStats,
     aiGenerationCandidates: aiCandidates,
+    chapterStyleFingerprints: styleFingerprints,
+    projectHealthReports: healthReports,
   }
 }
 
@@ -326,6 +334,26 @@ export async function importProjectData(data: Record<string, unknown>) {
         chapterId: candidate.chapterId ? remapId(candidate.chapterId as string) : null,
         contextSnapshotId: candidate.contextSnapshotId ? remapId(candidate.contextSnapshotId as string) : null,
         ...pick(candidate, AI_GENERATION_CANDIDATE_FIELDS),
+      })
+    }
+
+    for (const fingerprint of ((data.chapterStyleFingerprints as Record<string, unknown>[] | undefined) || [])) {
+      if (!fingerprint.chapterId)
+        continue
+      await safeInsert(chapterStyleFingerprints, {
+        id: remapId(fingerprint.id as string),
+        projectId,
+        chapterId: remapId(fingerprint.chapterId as string),
+        embeddingId: fingerprint.embeddingId ? remapId(fingerprint.embeddingId as string) : null,
+        ...pick(fingerprint, CHAPTER_STYLE_FINGERPRINT_FIELDS),
+      })
+    }
+
+    for (const report of ((data.projectHealthReports as Record<string, unknown>[] | undefined) || [])) {
+      await safeInsert(projectHealthReports, {
+        id: remapId(report.id as string),
+        projectId,
+        ...pick(report, PROJECT_HEALTH_REPORT_FIELDS),
       })
     }
 

@@ -1,12 +1,15 @@
 import type { HealthMetrics, HealthRisk } from '@ai-novel/shared'
-import { and, eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import { db } from '../db'
 import {
   chapterElements,
   chapterMemories,
+  chapterPostprocessSuggestions,
   chapters,
   chapterScenes,
   chapterStyleFingerprints,
+  characterRelationships,
+  characters,
   conflicts,
   foreshadowingItems,
   knowledgeSources,
@@ -141,8 +144,28 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
   risks.push(...computeConflictStagnation(projectId, conflictIntensityTrend))
 
   // 5. 风格漂移风险
-  const fingerprints = await db.select().from(chapterStyleFingerprints).where(eq(chapterStyleFingerprints.projectId, projectId))
-  risks.push(...computeStyleDrift(projectId, fingerprints))
+  const fingerprints = await db.select().from(chapterStyleFingerprints).where(eq(chapterStyleFingerprints.projectId, projectId)).orderBy(asc(chapterStyleFingerprints.createdAt))
+  const orderedFingerprints = [...fingerprints].sort((a, b) => {
+    const chapterA = chapterNumMap.get(a.chapterId) || 0
+    const chapterB = chapterNumMap.get(b.chapterId) || 0
+    if (chapterA !== chapterB)
+      return chapterA - chapterB
+    return a.createdAt.localeCompare(b.createdAt)
+  })
+  const tensionTrend = orderedFingerprints
+    .map((fingerprint) => {
+      const chapterNumber = chapterNumMap.get(fingerprint.chapterId) || 0
+      const tension = Math.min(100, Math.round(
+        ((fingerprint.conflictDensity || 0) * 0.5)
+        + ((fingerprint.hookDensity || 0) * 0.3)
+        + ((fingerprint.emotionDensity || 0) * 0.2),
+      ))
+      return { chapter: chapterNumber, tension }
+    })
+    .filter(item => item.chapter > 0)
+    .sort((a, b) => a.chapter - b.chapter)
+  risks.push(...computeStyleDrift(projectId, orderedFingerprints))
+  risks.push(...computeTensionRisk(projectId, tensionTrend))
 
   // 6. 知识库完整性
   const pendingSources = await db.select().from(knowledgeSources).where(and(eq(knowledgeSources.projectId, projectId), eq(knowledgeSources.status, 'pending')))
@@ -158,6 +181,57 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
     })
   }
 
+  // 7. 结构化候选待确认
+  const pendingSuggestions = await db.select().from(chapterPostprocessSuggestions).where(and(
+    eq(chapterPostprocessSuggestions.projectId, projectId),
+    eq(chapterPostprocessSuggestions.status, 'pending'),
+  ))
+  if (pendingSuggestions.length > 0) {
+    risks.push({
+      id: 'pending-postprocess-suggestions',
+      severity: pendingSuggestions.length > 10 ? 'high' : 'medium',
+      type: 'structure',
+      title: '结构化更新待确认',
+      message: `有 ${pendingSuggestions.length} 条 AI 抽取结果尚未确认，角色、关系、伏笔、事实图谱可能没有同步到上下文。`,
+      actionLabel: '去确认建议',
+      targetRoute: `/project/${projectId}/suggestions`,
+      suggestions: ['优先确认事实、人物关系和伏笔类建议', '拒绝无效建议，避免待确认队列堆积'],
+    })
+  }
+
+  // 8. 人物关系断裂
+  const allCharacters = await db.select().from(characters).where(eq(characters.projectId, projectId))
+  const allRelationships = await db.select().from(characterRelationships).where(eq(characterRelationships.projectId, projectId))
+  const connectedCharacterIds = new Set<string>()
+  for (const relationship of allRelationships) {
+    connectedCharacterIds.add(relationship.characterAId)
+    connectedCharacterIds.add(relationship.characterBId)
+  }
+  const isolatedCharacters = allCharacters.filter(c =>
+    c.role !== 'extra'
+    && !connectedCharacterIds.has(c.id)
+    && allCharacters.length > 1,
+  )
+  if (isolatedCharacters.length > 0) {
+    risks.push({
+      id: 'isolated-characters',
+      severity: 'medium',
+      type: 'consistency',
+      title: '人物关系网断裂',
+      message: `${isolatedCharacters.length} 个非路人角色尚未接入人物关系网，后续 AI 写作可能遗漏其剧情功能。`,
+      actionLabel: '补全关系',
+      targetRoute: `/project/${projectId}/relationships`,
+      evidence: isolatedCharacters.slice(0, 5).map(c => c.name),
+      suggestions: ['在角色页保存角色资料以自动生成关系候选', '在人物关系页运行关系推导并确认建议'],
+    })
+  }
+
+  // 9. 主题偏离风险
+  risks.push(...computeThemeDrift(projectId, reports))
+
+  // 10. 节奏风险
+  risks.push(...computePacingRisk(projectId, reports, sceneWordCountDeviation))
+
   return {
     totalChapters,
     completedChapters,
@@ -166,6 +240,7 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
     activeConflicts,
     conflictIntensityAvg,
     conflictIntensityTrend,
+    tensionTrend,
     openForeshadowingCount,
     foreshadowingByStatus,
     confirmedTriples,
@@ -262,6 +337,105 @@ export function computeCharacterOOC(
       suggestions: ['重新查阅人物设定集', '在下一章通过内心独白修正动机'],
     })
   }
+  return risks
+}
+
+export function computeThemeDrift(
+  projectId: string,
+  reports: any[],
+): HealthRisk[] {
+  const risks: HealthRisk[] = []
+  const themeReports = reports.filter((r) => {
+    const issues = `${r.issues || ''} ${r.suggestions || ''}`.toLowerCase()
+    return issues.includes('偏题')
+      || issues.includes('主题偏离')
+      || issues.includes('主线偏离')
+      || issues.includes('theme drift')
+  })
+
+  if (themeReports.length > 0) {
+    risks.push({
+      id: 'theme-drift',
+      severity: 'high',
+      type: 'theme',
+      title: '主题或主线可能偏离',
+      message: '质量评估中出现主题偏离、主线偏离或偏题提示。',
+      actionLabel: '查看质量评估',
+      targetRoute: `/project/${projectId}/quality`,
+      suggestions: ['回到故事设定集检查主题与核心矛盾', '下一章生成前先补充章节目标和关键事件'],
+    })
+  }
+
+  return risks
+}
+
+export function computePacingRisk(
+  projectId: string,
+  reports: any[],
+  sceneWordCountDeviation: Array<{ sceneId: string, sceneNumber: number, title: string | null, actual: number, target: number, deviation: number }>,
+): HealthRisk[] {
+  const risks: HealthRisk[] = []
+  const weakRhythmReports = reports.filter(r => typeof r.rhythmScore === 'number' && r.rhythmScore > 0 && r.rhythmScore < 60)
+  if (weakRhythmReports.length > 0) {
+    risks.push({
+      id: 'low-rhythm-score',
+      severity: weakRhythmReports.some(r => r.rhythmScore < 45) ? 'high' : 'medium',
+      type: 'pacing',
+      title: '章节节奏评分偏低',
+      message: `有 ${weakRhythmReports.length} 份质量报告提示节奏不足，可能存在拖沓、跳跃或高潮间隔过长。`,
+      actionLabel: '查看质量评估',
+      targetRoute: `/project/${projectId}/quality`,
+      suggestions: ['优先检查低分章节的场景目标与转折点', '用场景拆分确认每一场都有冲突、变化和出口钩子'],
+    })
+  }
+
+  const severeDeviations = sceneWordCountDeviation.filter((scene) => {
+    if (!scene.target)
+      return false
+    return Math.abs(scene.deviation) / scene.target >= 0.5
+  })
+  if (severeDeviations.length > 0) {
+    risks.push({
+      id: 'scene-word-count-deviation',
+      severity: severeDeviations.length > 5 ? 'high' : 'medium',
+      type: 'pacing',
+      title: '场景篇幅偏离目标',
+      message: `${severeDeviations.length} 个场景实际篇幅与目标相差超过 50%，可能影响阅读节奏。`,
+      actionLabel: '调整场景',
+      targetRoute: `/project/${projectId}/outline`,
+      evidence: severeDeviations.slice(0, 5).map(s => `场景 ${s.sceneNumber}${s.title ? `《${s.title}》` : ''}: ${s.actual}/${s.target} 字`),
+      suggestions: ['过长场景拆成行动、反应和转折三段', '过短场景补足目标、阻碍、选择和后果'],
+    })
+  }
+
+  return risks
+}
+
+export function computeTensionRisk(
+  projectId: string,
+  tensionTrend: Array<{ chapter: number, tension: number }>,
+): HealthRisk[] {
+  const risks: HealthRisk[] = []
+  if (tensionTrend.length < 3)
+    return risks
+
+  const recent = tensionTrend.slice(-3)
+  const recentAvg = recent.reduce((sum, item) => sum + item.tension, 0) / recent.length
+  const allLow = recent.every(item => item.tension < 35)
+  if (recentAvg < 40 || allLow) {
+    risks.push({
+      id: 'low-recent-tension',
+      severity: allLow ? 'high' : 'medium',
+      type: 'pacing',
+      title: '近期章节张力不足',
+      message: '最近三章的冲突、钩子和情绪密度偏低，长篇阅读推进感可能下降。',
+      actionLabel: '调整大纲节拍',
+      targetRoute: `/project/${projectId}/outline`,
+      evidence: recent.map(item => `第 ${item.chapter} 章张力 ${item.tension}/100`),
+      suggestions: ['给下一章补一个明确阻碍或反转', '检查场景节拍是否连续过渡，避免多场低冲突铺垫连在一起'],
+    })
+  }
+
   return risks
 }
 

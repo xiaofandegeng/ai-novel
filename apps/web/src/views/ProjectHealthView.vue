@@ -238,6 +238,34 @@ onMounted(() => {
         <div class="space-y-8">
           <section>
             <h2 class="mb-4 flex items-center gap-2 text-lg text-text-primary font-bold">
+              <Activity class="text-primary" :size="20" />
+              章节张力曲线
+            </h2>
+            <div class="overflow-hidden border border-border-light rounded-xl bg-bg-surface p-4 shadow-sm">
+              <div v-if="metrics.tensionTrend.length === 0" class="py-6 text-center text-sm text-text-muted italic">
+                暂无张力指纹数据，完成章后分析后会自动生成。
+              </div>
+              <div v-else class="flex items-end gap-2" style="height: 120px">
+                <div
+                  v-for="item in metrics.tensionTrend"
+                  :key="item.chapter"
+                  class="flex flex-1 flex-col items-center gap-2"
+                >
+                  <div class="w-full flex items-end rounded-t bg-bg-subtle" style="height: 96px">
+                    <div
+                      class="w-full rounded-t bg-primary/80 transition-all"
+                      :style="{ height: `${Math.max(4, item.tension)}%` }"
+                      :title="`第 ${item.chapter} 章张力 ${item.tension}/100`"
+                    />
+                  </div>
+                  <span class="text-[10px] text-text-muted">{{ item.chapter }}</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2 class="mb-4 flex items-center gap-2 text-lg text-text-primary font-bold">
               <Target class="text-primary" :size="20" />
               元素共场频率
             </h2>

@@ -36,6 +36,7 @@ const typeLabels: Record<SuggestionType, string> = {
   foreshadowing_add: '新增伏笔',
   foreshadowing_payoff: '伏笔回收',
   chapter_element: '章节元素',
+  character_add: '新增角色',
   character_state: '人物状态',
   continuity_note: '连续性提示',
   style_note: '风格记录',
@@ -49,6 +50,7 @@ const typeVariants: Record<SuggestionType, 'info' | 'warning' | 'success' | 'ai'
   foreshadowing_add: 'warning',
   foreshadowing_payoff: 'success',
   chapter_element: 'primary',
+  character_add: 'ai',
   character_state: 'ai',
   continuity_note: 'default',
   style_note: 'default',
@@ -89,6 +91,9 @@ function suggestionTitle(item: typeof suggestionStore.suggestions[0]): string {
   }
   if (item.suggestionType === 'character_state') {
     return `角色变化：${data.characterName} - ${data.change}`
+  }
+  if (item.suggestionType === 'character_add') {
+    return `新增角色：${data.name} (${data.role || 'extra'})`
   }
   return (data.title as string) || (data.subjectName as string) || (data.characterName as string) || item.payload.slice(0, 60)
 }

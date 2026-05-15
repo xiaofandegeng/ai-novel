@@ -57,6 +57,16 @@ export async function readChatStream(response: Response, onChunk?: (text: string
       onChunk(result)
   }
 
+  const errorPrefix = '[Error:'
+  const errorStart = result.indexOf(errorPrefix)
+  if (errorStart >= 0) {
+    const errorEnd = result.indexOf(']', errorStart + errorPrefix.length)
+    const errorMessage = errorEnd >= 0
+      ? result.slice(errorStart + errorPrefix.length, errorEnd).trim()
+      : ''
+    throw new Error(errorMessage || 'AI 流式生成失败')
+  }
+
   return result
 }
 
@@ -72,6 +82,10 @@ export function checkConsistency(projectId: string, input: {
 
 export function triggerChapterPostprocess(projectId: string, chapterId: string, content: string) {
   return apiPost(`/api/projects/${projectId}/chapters/${chapterId}/postprocess`, { content, trigger: 'manual_save' })
+}
+
+export function triggerScenePostprocess(projectId: string, chapterId: string, sceneId: string, content: string) {
+  return apiPost(`/api/projects/${projectId}/chapters/${chapterId}/scenes/${sceneId}/postprocess`, { content })
 }
 
 export function getChapterMemory(projectId: string, chapterId: string) {

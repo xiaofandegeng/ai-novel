@@ -2,7 +2,7 @@
 import { NAppLayout, useToast } from '@ai-novel/ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { triggerChapterPostprocess } from '../api/ai'
+import { triggerChapterPostprocess, triggerScenePostprocess } from '../api/ai'
 import { recordWritingActivity } from '../api/writing-goals'
 import AIQualityFeedbackPanel from '../features/operations/components/AIQualityFeedbackPanel.vue'
 import AIMultiCandidatePanel from '../features/writing/components/AIMultiCandidatePanel.vue'
@@ -293,6 +293,7 @@ async function confirmAssemble(mode: 'replace' | 'append') {
     draft.value = content
   }
   await handleSave()
+  await runPostApplyExtraction(draft.value, 'chapter')
   toast.add(`已${mode === 'replace' ? '替换' : '追加'} ${assemblePreview.value.sceneCount} 个场景到章节草稿`, 'success')
   assemblePreview.value = null
   sceneMode.value = false
@@ -356,6 +357,7 @@ async function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discar
   const acceptedAiWords = (action === 'insert' || action === 'replace')
     ? pendingAIResult.value?.content.length ?? 0
     : 0
+  const resultBeforeConfirm = pendingAIResult.value
   confirmAIResult(action, {
     projectId,
     currentChapterId: currentChapterId.value,
@@ -373,6 +375,9 @@ async function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discar
   else {
     await handleSave()
   }
+  if (!sceneMode.value && (action === 'insert' || action === 'replace'))
+    await runPostApplyExtraction(activeContent.value)
+
   if (acceptedAiWords > 0) {
     await recordWritingActivity(projectId, {
       date: new Date().toISOString().slice(0, 10),
@@ -380,7 +385,7 @@ async function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discar
     })
 
     // Open feedback panel
-    const res = pendingAIResult.value
+    const res = resultBeforeConfirm
     if (res && (action === 'insert' || action === 'replace')) {
       openFeedback({
         modelProvider: res.modelProvider || 'unknown',
@@ -408,6 +413,9 @@ async function handleInsertAI(content: string) {
   else {
     await handleSave()
   }
+  if (!sceneMode.value)
+    await runPostApplyExtraction(activeContent.value)
+
   if (content.length > 0) {
     await recordWritingActivity(projectId, {
       date: new Date().toISOString().slice(0, 10),
@@ -417,6 +425,49 @@ async function handleInsertAI(content: string) {
 }
 
 const updatingMemory = ref(false)
+
+async function runPostApplyExtraction(content: string, scope: 'active' | 'chapter' = 'active') {
+  if (!currentChapterId.value || !content.trim())
+    return
+
+  updatingMemory.value = true
+  try {
+    if (scope === 'active' && sceneMode.value && currentSceneId.value) {
+      const result = await triggerScenePostprocess(
+        projectId,
+        currentChapterId.value,
+        currentSceneId.value,
+        content,
+      ) as { suggestionCount?: number }
+
+      toast.add(
+        result.suggestionCount && result.suggestionCount > 0
+          ? `已从场景抽取 ${result.suggestionCount} 条结构化候选，请在章后分析中确认`
+          : '场景已分析，未发现需要确认的结构化候选',
+        result.suggestionCount && result.suggestionCount > 0 ? 'success' : 'info',
+      )
+      return
+    }
+
+    const result = await triggerChapterPostprocess(projectId, currentChapterId.value, content) as { warnings?: string[] }
+
+    // Refresh chapter data to get newly associated characters and summaries.
+    await chapterStore.fetchChapters(projectId)
+
+    if (result.warnings && result.warnings.length > 0) {
+      toast.add(`已抽取结构化候选（${result.warnings.join('；')}）`, 'warning')
+    }
+    else {
+      toast.add('已抽取角色、关系、伏笔、事实与矛盾候选，请在章后分析中确认', 'success')
+    }
+  }
+  catch (e: unknown) {
+    toast.add(e instanceof Error ? e.message : '结构化抽取失败，请稍后手动更新章节记忆', 'error')
+  }
+  finally {
+    updatingMemory.value = false
+  }
+}
 
 async function handleUpdateMemory() {
   if (!currentChapterId.value || !draft.value)
