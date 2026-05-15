@@ -1,8 +1,9 @@
-import { integer, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core'
+import { integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
-import { chapterPostprocessRuns, chapters } from './chapter'
-import { characters } from './character'
+import { writingJobs, writingJobSteps } from './ai'
+import { chapterPostprocessRuns, chapters, chapterScenes } from './chapter'
 
+import { characters } from './character'
 import { novelProjects } from './project'
 
 export const chapterElements = pgTable('chapter_elements', {
@@ -83,3 +84,62 @@ export const foreshadowingCharacters = pgTable('foreshadowing_characters', {
   foreshadowingCharacterUnique: uniqueIndex('foreshadowing_characters_unique')
     .on(table.projectId, table.foreshadowingId, table.characterId),
 }))
+
+export const chapterChangeSets = pgTable('chapter_change_sets', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  sceneId: text('scene_id').references(() => chapterScenes.id, { onDelete: 'set null' }),
+  writingJobId: text('writing_job_id').references(() => writingJobs.id, { onDelete: 'set null' }),
+  sourceStepId: text('source_step_id').references(() => writingJobSteps.id, { onDelete: 'set null' }),
+  status: text('status').$type<
+    'drafted'
+    | 'reviewing'
+    | 'approved'
+    | 'applied'
+    | 'blocked'
+    | 'rejected'
+    | 'apply_failed'
+  >().notNull().default('drafted'),
+  riskLevel: text('risk_level').$type<'low' | 'medium' | 'high'>().notNull().default('medium'),
+  riskSummary: text('risk_summary'),
+  draftTitle: text('draft_title'),
+  draftContent: text('draft_content'),
+  consistencyReportJson: jsonb('consistency_report_json'),
+  extractedChangesJson: jsonb('extracted_changes_json').notNull().default({}),
+  applyReportJson: jsonb('apply_report_json'),
+  beforeSnapshotId: text('before_snapshot_id'),
+  afterSnapshotId: text('after_snapshot_id'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  appliedAt: timestamp('applied_at'),
+})
+
+export const chapterChangeSetItems = pgTable('chapter_change_set_items', {
+  id: text('id').primaryKey(),
+  changeSetId: text('change_set_id').notNull().references(() => chapterChangeSets.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  itemType: text('item_type').$type<
+    'draft'
+    | 'character_create'
+    | 'character_update'
+    | 'relationship_create'
+    | 'relationship_update'
+    | 'conflict_create'
+    | 'conflict_update'
+    | 'foreshadowing_create'
+    | 'foreshadowing_payoff'
+    | 'fact_create'
+    | 'chapter_memory'
+    | 'style_note'
+    | 'continuity_note'
+  >().notNull(),
+  riskLevel: text('risk_level').$type<'low' | 'medium' | 'high'>().notNull().default('medium'),
+  title: text('title').notNull(),
+  payloadJson: jsonb('payload_json').notNull(),
+  status: text('status').$type<'pending' | 'approved' | 'applied' | 'blocked' | 'rejected' | 'apply_failed'>().notNull().default('pending'),
+  applyError: text('apply_error'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})

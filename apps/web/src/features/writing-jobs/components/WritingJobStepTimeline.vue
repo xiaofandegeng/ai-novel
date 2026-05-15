@@ -6,6 +6,7 @@ import {
 } from '@ai-novel/ui'
 import {
   AlertCircle,
+  BookOpen,
   Bot,
   CheckCircle2,
   Clapperboard,
@@ -18,6 +19,7 @@ import {
   XCircle,
 } from 'lucide-vue-next'
 import { computed } from 'vue'
+import { useChapterStore } from '../../../stores/chapter.store'
 import {
   CONFIRM_STEP_TYPES,
   JOB_STATUS_LABEL,
@@ -26,6 +28,7 @@ import {
   STEP_LABEL,
   STEP_STATUS_CONFIG,
 } from '../composables/useWritingJobController'
+import ChapterChangeSetReviewPanel from './ChapterChangeSetReviewPanel.vue'
 
 const props = defineProps<{
   job: WritingJob
@@ -42,6 +45,14 @@ const emit = defineEmits<{
   reject: [stepId: string]
   retry: [stepId: string]
 }>()
+
+const chapterStore = useChapterStore()
+
+const targetChapter = computed(() => {
+  if (!props.job.currentChapterId)
+    return null
+  return chapterStore.chapters.find(ch => ch.id === props.job.currentChapterId)
+})
 
 const sceneDraftLabel = computed(() => {
   if (props.job.mode !== 'scene_draft' || !props.job.sceneId)
@@ -109,7 +120,11 @@ function getStepOutput(step: WritingJobStep): any | null {
               写作任务
             </h3>
             <span class="text-xs text-text-muted">{{ MODE_LABEL[job.mode] }}</span>
-            <span v-if="sceneDraftLabel" class="flex items-center gap-1 text-xs text-primary">
+            <div v-if="targetChapter" class="mt-1 flex items-center gap-1 text-xs text-text-secondary">
+              <BookOpen :size="10" />
+              第 {{ targetChapter.chapterNumber }} 章: {{ targetChapter.title }}
+            </div>
+            <span v-if="sceneDraftLabel" class="mt-1 flex items-center gap-1 text-xs text-primary">
               <Clapperboard :size="10" /> {{ sceneDraftLabel }}
             </span>
           </div>
@@ -192,13 +207,15 @@ function getStepOutput(step: WritingJobStep): any | null {
             <span
               class="h-6 w-6 flex items-center justify-center rounded-full text-[10px] font-bold"
               :class="{
-                'bg-primary-soft text-primary': step.status === 'pending' || step.status === 'running',
+                'bg-primary-soft text-primary': step.status === 'pending' || (step.status === 'running' && step.autoDecision !== 'paused'),
+                'bg-amber-100 text-amber-700': step.autoDecision === 'paused',
                 'bg-green-100 text-green-700': step.status === 'completed',
                 'bg-red-100 text-red-700': step.status === 'failed',
                 'bg-gray-100 text-gray-500': step.status === 'skipped',
               }"
             >
-              <Loader2 v-if="step.status === 'running'" :size="12" class="animate-spin" />
+              <Pause v-if="step.autoDecision === 'paused'" :size="12" />
+              <Loader2 v-else-if="step.status === 'running'" :size="12" class="animate-spin" />
               <CheckCircle2 v-else-if="step.status === 'completed'" :size="12" />
               <XCircle v-else-if="step.status === 'failed'" :size="12" />
               <SkipForward v-else-if="step.status === 'skipped'" :size="12" />
@@ -212,8 +229,8 @@ function getStepOutput(step: WritingJobStep): any | null {
               <span class="text-sm text-text-primary font-medium">
                 {{ STEP_LABEL[step.stepType] || step.stepType }}
               </span>
-              <NTag v-if="step.status === 'running'" variant="info" size="sm">
-                {{ STEP_STATUS_CONFIG[step.status].label }}
+              <NTag v-if="step.status === 'running' || step.autoDecision === 'paused'" :variant="step.autoDecision === 'paused' ? 'warning' : 'info'" size="sm">
+                {{ step.autoDecision === 'paused' ? '等待审查' : STEP_STATUS_CONFIG[step.status].label }}
               </NTag>
             </div>
 
@@ -305,6 +322,17 @@ function getStepOutput(step: WritingJobStep): any | null {
                   </div>
                   <div v-else class="text-xs text-text-muted">
                     暂无预览内容
+                  </div>
+                </template>
+
+                <template v-else-if="step.stepType === 'review_change_set'">
+                  <ChapterChangeSetReviewPanel
+                    v-if="step.changeSetId"
+                    :project-id="job.projectId"
+                    :change-set-id="step.changeSetId"
+                  />
+                  <div v-else class="text-xs text-text-muted">
+                    未关联变更集
                   </div>
                 </template>
 

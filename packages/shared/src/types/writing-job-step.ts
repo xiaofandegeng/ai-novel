@@ -1,4 +1,21 @@
-export type WritingJobStepType = 'prepare_context' | 'generate_plan' | 'confirm_plan' | 'generate_draft' | 'generate_scene_draft' | 'consistency_check' | 'confirm_apply' | 'apply_draft' | 'save_version' | 'postprocess' | 'confirm_suggestions' | 'apply_suggestions' | 'update_health' | 'done'
+export type WritingJobStepType
+  = | 'prepare_context'
+    | 'generate_plan'
+    | 'confirm_plan'
+    | 'generate_draft'
+    | 'generate_scene_draft'
+    | 'consistency_check'
+    | 'confirm_apply'
+    | 'apply_draft'
+    | 'save_version'
+    | 'postprocess'
+    | 'confirm_suggestions'
+    | 'apply_suggestions'
+    | 'update_health'
+    | 'build_change_set'
+    | 'review_change_set'
+    | 'apply_change_set'
+    | 'done'
 export type WritingJobStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
 export type AutoDecision = 'approved' | 'paused' | 'rejected' | 'not_applicable'
 
@@ -13,6 +30,7 @@ export interface WritingJobStep {
   input: string | null
   output: string | null
   error: string | null
+  changeSetId: string | null
   startedAt: string | null
   finishedAt: string | null
   createdAt: string

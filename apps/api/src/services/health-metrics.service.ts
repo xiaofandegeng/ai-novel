@@ -2,6 +2,7 @@ import type { HealthMetrics, HealthRisk } from '@ai-novel/shared'
 import { and, asc, eq } from 'drizzle-orm'
 import { db } from '../db'
 import {
+  chapterChangeSets,
   chapterElements,
   chapterMemories,
   chapterPostprocessSuggestions,
@@ -232,6 +233,44 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
   // 10. 节奏风险
   risks.push(...computePacingRisk(projectId, reports, sceneWordCountDeviation))
 
+  // 11. 章节变更集风险
+  const allChangeSets = await db.select().from(chapterChangeSets).where(eq(chapterChangeSets.projectId, projectId))
+  const pendingChangeSets = allChangeSets.filter(cs => cs.status === 'drafted' || cs.status === 'reviewing')
+  const failedChangeSets = allChangeSets.filter(cs => cs.status === 'apply_failed' || cs.status === 'blocked')
+
+  if (pendingChangeSets.length > 0) {
+    risks.push({
+      id: 'pending-change-sets',
+      severity: pendingChangeSets.length > 3 ? 'high' : 'medium',
+      type: 'structure',
+      title: '待审查变更集',
+      message: `有 ${pendingChangeSets.length} 个章节变更集正在等待您的审查和应用。`,
+      actionLabel: '查看变更集',
+      targetRoute: `/project/${projectId}/writing`,
+    })
+  }
+
+  if (failedChangeSets.length > 0) {
+    risks.push({
+      id: 'failed-change-sets',
+      severity: 'high',
+      type: 'consistency',
+      title: '变更集应用失败',
+      message: `有 ${failedChangeSets.length} 个变更集在应用时遇到错误或被系统阻断。`,
+      actionLabel: '处理异常',
+      targetRoute: `/project/${projectId}/writing`,
+    })
+  }
+
+  const recentChangeSets = [...allChangeSets]
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .slice(0, 5)
+    .map(cs => ({
+      id: cs.id,
+      riskLevel: cs.riskLevel,
+      chapterNumber: allChapters.find(c => c.id === cs.chapterId)?.chapterNumber || 0,
+    }))
+
   return {
     totalChapters,
     completedChapters,
@@ -261,6 +300,11 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
       conflict: 100 - (risks.filter(r => r.type === 'conflict').length * 15),
       pacing: 100 - (risks.filter(r => r.type === 'pacing').length * 20),
       style: 100 - (risks.filter(r => r.type === 'style').length * 15),
+    },
+    changeSetMetrics: {
+      recentRiskTrend: recentChangeSets,
+      pendingCount: pendingChangeSets.length,
+      failedCount: failedChangeSets.length,
     },
   }
 }

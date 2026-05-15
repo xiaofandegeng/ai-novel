@@ -28,6 +28,11 @@ export interface HealthMetrics {
     pacing: number
     style: number
   }
+  changeSetMetrics?: {
+    recentRiskTrend: { id: string, riskLevel: string, chapterNumber: number }[]
+    pendingCount: number
+    failedCount: number
+  }
 }
 
 export interface HealthRisk {

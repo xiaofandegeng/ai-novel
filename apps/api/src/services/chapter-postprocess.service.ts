@@ -1,7 +1,7 @@
 import type { ChapterMemory, ChapterPostprocessResult } from '@ai-novel/shared'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
-import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, chapterStyleFingerprints, characters, conflicts, foreshadowingItems, novelProjects, storyBibles } from '../db/schema'
+import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, chapterStyleFingerprints, characters, conflicts, foreshadowingItems, novelProjects } from '../db/schema'
 import { callAIJSON } from './ai.service'
 import { getOrCreateEmbedding } from './embedding.service'
 import { createSuggestion } from './postprocess-suggestion.service'
@@ -90,27 +90,6 @@ interface StructuredEvent {
   importance?: string
 }
 
-interface StructuredAnalysis {
-  summary: string
-  keyEvents: string | StructuredEvent[]
-  facts: StructuredFact[]
-  foreshadowingAdded: StructuredForeshadowing[]
-  foreshadowingPayoffs: StructuredForeshadowing[]
-  characterStateChanges: StructuredCharacterChange[]
-  relationshipChanges: string
-  conflictProgress: string
-  themeProgress: string
-  styleNotes: StructuredStyleNote[] | string
-  conflictUpdates: Array<{ title: string, newStatus?: string, newIntensity?: number, reason: string }>
-  newConflicts: Array<{ title: string, type: 'internal' | 'external', intensity: number, participants: string, description: string }>
-  relationshipUpdates: StructuredRelationshipUpdate[]
-  newCharacters?: StructuredNewCharacter[]
-  presentCharacters?: string[]
-  // Legacy string fields for backward compatibility
-  newFacts?: string
-  foreshadowingResolved?: string
-}
-
 function countMatches(content: string, words: string[]) {
   return words.reduce((sum, word) => sum + content.split(word).length - 1, 0)
 }
@@ -141,8 +120,61 @@ function buildStyleFingerprint(content: string, styleNotes?: string | null) {
     emotionDensity: Math.min(100, Math.round((emotionHits / densityBase) * 20)),
     conflictDensity: Math.min(100, Math.round((conflictHits / densityBase) * 20)),
     hookDensity: Math.min(100, Math.round((hookHits / densityBase) * 20)),
-    styleSummary: styleNotes || `平均句长 ${sentenceLengthAvg}，对话比例 ${dialogueRatio}%，情绪密度 ${emotionHits}，冲突密度 ${conflictHits}，钩子密度 ${hookHits}`,
+    styleSummary: `平均句长 ${sentenceLengthAvg}，对话比例 ${dialogueRatio}%，情绪密度 ${emotionHits}，冲突密度 ${conflictHits}，钩子密度 ${hookHits}${styleNotes ? `；风格备注：${styleNotes}` : ''}`,
   }
+}
+export async function extractChapterChanges(input: {
+  projectId: string
+  chapterId: string
+  content: string
+  trigger: 'manual_save' | 'mark_completed' | 'auto_drive'
+}): Promise<any> {
+  const { projectId, chapterId, content, trigger } = input
+
+  const [chapter] = await db.select().from(chapters).where(and(
+    eq(chapters.id, chapterId),
+    eq(chapters.projectId, projectId),
+  ))
+  if (!chapter)
+    throw new Error('章节不存在')
+
+  const [project] = await db.select().from(novelProjects).where(eq(novelProjects.id, projectId))
+
+  const truncatedContent = content.length > 6000
+    ? `${content.substring(0, 6000)}...(内容过长已截断)`
+    : content
+
+  const prompt = `你是一位专业的长篇小说编辑。请分析以下章节正文，提取结构化记忆和待确认建议。
+返回严格 JSON，不要 markdown。
+
+作品：${project?.title}
+当前章节：${chapter.title}
+触发方式：${trigger}
+
+章节正文：
+${truncatedContent}
+
+请返回以下 JSON 格式：
+{
+  "summary": "章节摘要",
+  "keyEvents": [{ "title": "事件名", "description": "事件说明", "importance": "major" }],
+  "facts": [{ "subjectType": "角色/地点/等", "subjectName": "主体名", "predicate": "关系谓词", "objectType": "角色/地点/等", "objectName": "客体名", "confidence": 80, "reason": "正文依据" }],
+  "foreshadowingAdded": [{ "title": "伏笔标题", "description": "说明", "importance": "major", "confidence": 75 }],
+  "foreshadowingPayoffs": [{ "title": "已回收伏笔标题", "description": "回收说明", "confidence": 70 }],
+  "characterStateChanges": [{ "characterName": "角色名", "change": "变化描述", "confidence": 80 }],
+  "relationshipChanges": "人物关系变化描述",
+  "conflictProgress": "冲突推进情况",
+  "themeProgress": "主题推进情况",
+  "styleNotes": [{ "title": "风格特征", "description": "描述", "confidence": 70 }],
+  "newCharacters": [{ "name": "新角色名", "role": "supporting/extra", "personality": "性格", "confidence": 70, "reason": "依据" }],
+  "newConflicts": [{ "title": "新冲突标题", "type": "internal/external", "intensity": 5, "description": "描述" }],
+  "presentCharacters": ["实际出场角色姓名"]
+}`
+
+  return await callAIJSON<any>(
+    [{ role: 'user', content: prompt }],
+    { temperature: 30 },
+  )
 }
 
 export async function runChapterPostprocess(input: {
@@ -153,12 +185,9 @@ export async function runChapterPostprocess(input: {
 }): Promise<ChapterPostprocessResult> {
   const { projectId, chapterId, content, trigger } = input
 
-  const [chapter] = await db.select().from(chapters).where(and(
-    eq(chapters.id, chapterId),
-    eq(chapters.projectId, projectId),
-  ))
+  const [chapter] = await db.select().from(chapters).where(eq(chapters.id, chapterId))
   if (!chapter)
-    throw new Error('章节不存在或不属于当前项目')
+    throw new Error('章节不存在')
 
   const runId = crypto.randomUUID()
   const now = new Date().toISOString()
@@ -172,144 +201,9 @@ export async function runChapterPostprocess(input: {
   })
 
   try {
-    const [project] = await db.select().from(novelProjects).where(eq(novelProjects.id, projectId))
-    if (!project)
-      throw new Error('项目不存在')
+    const parsed = await extractChapterChanges({ projectId, chapterId, content, trigger })
 
-    const [bible] = await db.select().from(storyBibles).where(eq(storyBibles.projectId, projectId))
-
-    const truncatedContent = content.length > 6000
-      ? `${content.substring(0, 6000)}...(内容过长已截断)`
-      : content
-
-    const prompt = `你是一位专业的长篇小说编辑。请分析以下章节正文，提取结构化记忆和待确认建议。
-返回严格 JSON，不要 markdown。
-
-作品：${project.title}
-类型：${project.genre || '未定义'}
-主题：${project.theme || '未定义'}
-世界观规则：${bible?.rules || '未定义'}
-当前章节：${chapter.title}
-触发方式：${trigger === 'mark_completed' ? '章节完成' : trigger === 'auto_drive' ? '自动驾驶' : '手动保存'}
-
-章节正文：
-${truncatedContent}
-
-请返回以下 JSON 格式：
-{
-  "summary": "章节摘要（100-200字）",
-  "keyEvents": [
-    { "title": "事件名", "description": "事件说明", "importance": "major" }
-  ],
-  "facts": [
-    {
-      "subjectType": "角色/地点/物品/组织/事件",
-      "subjectName": "主体名",
-      "predicate": "关系谓词",
-      "objectType": "角色/地点/物品/组织/事件",
-      "objectName": "客体名",
-      "confidence": 80,
-      "reason": "正文依据"
-    }
-  ],
-  "foreshadowingAdded": [
-    {
-      "title": "伏笔标题",
-      "description": "伏笔说明",
-      "importance": "major",
-      "confidence": 75
-    }
-  ],
-  "foreshadowingPayoffs": [
-    {
-      "title": "已回收伏笔标题",
-      "description": "回收说明",
-      "confidence": 70
-    }
-  ],
-  "characterStateChanges": [
-    {
-      "characterName": "角色名",
-      "change": "状态变化描述",
-      "confidence": 80
-    }
-  ],
-  "relationshipChanges": "人物关系变化描述",
-  "conflictProgress": "冲突推进情况",
-  "themeProgress": "主题推进情况",
-  "styleNotes": [
-    {
-      "title": "风格特征名",
-      "description": "风格描述",
-      "confidence": 70
-    }
-  ],
-  "conflictUpdates": [
-    {
-      "title": "矛盾标题",
-      "newStatus": "active/escalated/stalemate/resolved/abandoned",
-      "newIntensity": 1-10,
-      "reason": "更新理由"
-    }
-  ],
-  "relationshipUpdates": [
-    {
-      "characterAName": "角色A名",
-      "characterBName": "角色B名",
-      "type": "ally/enemy/mentor/etc",
-      "strength": 1-10,
-      "status": "当前关系状态",
-      "description": "关系变化描述",
-      "confidence": 80
-    }
-  ],
-  "newCharacters": [
-    {
-      "name": "新出现但角色库中尚未记录的人物名",
-      "role": "supporting/extra/ally/antagonist/mentor",
-      "personality": "性格概括",
-      "goal": "当前剧情功能或目标",
-      "desire": "内在欲望",
-      "fear": "恐惧",
-      "secret": "秘密",
-      "weakness": "弱点",
-      "arc": "可能的人物弧光",
-      "confidence": 70,
-      "reason": "正文依据",
-      "relations": [
-        { "targetName": "已有角色名", "type": "ally/enemy/acquaintance", "strength": 1-10, "status": "当前关系", "description": "关系依据" }
-      ]
-    }
-  ],
-  "presentCharacters": ["在本章节正文中实际出场或被提及的已知关键角色姓名（必须是具体的人物名）"],
-  "newConflicts": [
-    {
-      "title": "新冲突标题",
-      "type": "internal/external",
-      "intensity": 1-10,
-      "participants": "涉及角色名，逗号分隔",
-      "description": "冲突起因和表现"
-    }
-  ]
-}
-
-要求：
-- facts 中提取明确出现在正文中的事实三元组
-- foreshadowingAdded 提取可能的新增伏笔
-- foreshadowingPayoffs 提取本章节回收的伏笔
-- characterStateChanges 提取角色的情感、立场或能力变化
-- styleNotes 提取叙事风格特征
-- conflictUpdates 提取本章节中涉及的已有矛盾的进展情况
-- relationshipUpdates 提取本章节中体现的人物关系变化或新增关系
-- newCharacters 只提取正文中实际出现、且不属于普通称谓的新增角色；路人、小贩、守卫等功能性人物可标记为 extra
-- newConflicts 提取本章节中由于剧情走向新产生的、尚未记录在案的矛盾/冲突
-- 如果某类没有相关内容，返回空数组 []
-- confidence 范围 0-100`
-
-    const parsed = await callAIJSON<StructuredAnalysis>(
-      [{ role: 'user', content: prompt }],
-      { temperature: 30 },
-    )
+    // Handle character associations
 
     // Handle character associations
     if (parsed.presentCharacters && Array.isArray(parsed.presentCharacters) && parsed.presentCharacters.length > 0) {
@@ -347,27 +241,27 @@ ${truncatedContent}
 
     // Build memory fields (backward compatible with string fields)
     const keyEventsStr = Array.isArray(parsed.keyEvents)
-      ? parsed.keyEvents.map(e => typeof e === 'string' ? e : e.title).join('；')
+      ? parsed.keyEvents.map((e: any) => typeof e === 'string' ? e : e.title).join('；')
       : parsed.keyEvents || null
 
     const factsStr = parsed.facts?.length
-      ? parsed.facts.map(f => `${f.subjectName} ${f.predicate} ${f.objectName}`).join('；')
+      ? parsed.facts.map((f: any) => `${f.subjectName} ${f.predicate} ${f.objectName}`).join('；')
       : (parsed.newFacts || null)
 
     const foreshadowingAddedStr = parsed.foreshadowingAdded?.length
-      ? parsed.foreshadowingAdded.map(f => f.title).join('；')
+      ? parsed.foreshadowingAdded.map((f: any) => f.title).join('；')
       : null
 
     const foreshadowingResolvedStr = parsed.foreshadowingPayoffs?.length
-      ? parsed.foreshadowingPayoffs.map(f => f.title).join('；')
+      ? parsed.foreshadowingPayoffs.map((f: any) => f.title).join('；')
       : (parsed.foreshadowingResolved || null)
 
     const charChangesStr = parsed.characterStateChanges?.length
-      ? parsed.characterStateChanges.map(c => `${c.characterName}：${c.change}`).join('；')
+      ? parsed.characterStateChanges.map((c: any) => `${c.characterName}：${c.change}`).join('；')
       : (typeof parsed.characterStateChanges === 'string' ? parsed.characterStateChanges : null)
 
     const styleNotesStr = Array.isArray(parsed.styleNotes)
-      ? parsed.styleNotes.map(s => `${s.title}：${s.description}`).join('；')
+      ? parsed.styleNotes.map((s: any) => `${s.title}：${s.description}`).join('；')
       : (typeof parsed.styleNotes === 'string' ? parsed.styleNotes : null)
 
     const fields = {

@@ -53,6 +53,9 @@ export const STEP_LABEL: Record<WritingJobStepType, string> = {
   confirm_suggestions: '审查建议',
   apply_suggestions: '应用建议',
   update_health: '更新健康指标',
+  build_change_set: '构建变更集',
+  review_change_set: '审查变更集',
+  apply_change_set: '应用变更集',
   done: '任务完成',
 }
 
@@ -117,11 +120,13 @@ export function useWritingJobController(projectId: string) {
     if (job.value?.status !== 'waiting_review')
       return null
 
-    const completedConfirmSteps = steps.value.filter(step =>
-      CONFIRM_STEP_TYPES.has(step.stepType) && step.status === 'completed',
+    // Look for the step that explicitly requires review
+    const reviewStep = steps.value.find(step =>
+      (step.reviewRequired || step.autoDecision === 'paused')
+      && (step.status === 'running' || step.status === 'completed'),
     )
 
-    return completedConfirmSteps.at(-1)?.id ?? null
+    return reviewStep?.id ?? null
   })
 
   onMounted(async () => {

@@ -25,7 +25,7 @@ const formAutoApprovalLevel = defineModel<'conservative' | 'balanced' | 'aggress
 const chapterStore = useChapterStore()
 const sceneStore = useSceneStore()
 
-const chapters = computed(() => chapterStore.chapters)
+const chapters = computed(() => [...chapterStore.chapters].sort((a, b) => a.chapterNumber - b.chapterNumber))
 const scenes = computed(() => sceneStore.scenes)
 
 watch(formChapterId, async (id) => {
@@ -135,7 +135,7 @@ const createDisabled = computed(() => {
             请选择章节
           </option>
           <option v-for="ch in chapters" :key="ch.id" :value="ch.id">
-            {{ ch.title }}
+            第 {{ ch.chapterNumber }} 章: {{ ch.title }}
           </option>
         </select>
       </div>

@@ -11,6 +11,7 @@ import { registerAIQualityFeedbackRoutes } from './routes/ai-quality-feedback'
 import { registerAIUsageRoutes } from './routes/ai-usage'
 import { registerAuthoringEventRoutes } from './routes/authoring-events'
 import { registerAuthoringReportRoutes } from './routes/authoring-reports'
+import { registerChapterChangeSetRoutes } from './routes/chapter-change-sets'
 import { registerChapterElementRoutes } from './routes/chapter-elements'
 import { registerChapterRoutes } from './routes/chapters'
 import { registerCharacterArcRoutes } from './routes/character-arc'
@@ -71,6 +72,7 @@ registerHealthMetricsRoutes(app)
 registerSettingsRoutes(app)
 registerPersonaRoutes(app)
 registerWritingJobRoutes(app)
+registerChapterChangeSetRoutes(app)
 registerPostprocessSuggestionRoutes(app)
 registerAIContextSnapshotRoutes(app)
 registerStoryStructureRoutes(app)

@@ -21,7 +21,7 @@ export const writingJobs = pgTable('writing_jobs', {
 export const writingJobSteps = pgTable('writing_job_steps', {
   id: text('id').primaryKey(),
   jobId: text('job_id').notNull().references(() => writingJobs.id, { onDelete: 'cascade' }),
-  stepType: text('step_type').$type<'prepare_context' | 'generate_plan' | 'confirm_plan' | 'generate_draft' | 'generate_scene_draft' | 'consistency_check' | 'confirm_apply' | 'apply_draft' | 'save_version' | 'postprocess' | 'confirm_suggestions' | 'apply_suggestions' | 'update_health' | 'done'>().notNull(),
+  stepType: text('step_type').$type<'prepare_context' | 'generate_plan' | 'confirm_plan' | 'generate_draft' | 'generate_scene_draft' | 'consistency_check' | 'confirm_apply' | 'apply_draft' | 'save_version' | 'postprocess' | 'confirm_suggestions' | 'apply_suggestions' | 'update_health' | 'build_change_set' | 'review_change_set' | 'apply_change_set' | 'done'>().notNull(),
   status: text('status').$type<'pending' | 'running' | 'completed' | 'failed' | 'skipped'>().notNull().default('pending'),
   reviewRequired: boolean('review_required').notNull().default(false),
   autoDecision: text('auto_decision').$type<'approved' | 'paused' | 'rejected' | 'not_applicable'>(),
@@ -29,6 +29,7 @@ export const writingJobSteps = pgTable('writing_job_steps', {
   input: text('input'),
   output: text('output'),
   error: text('error'),
+  changeSetId: text('change_set_id'),
   startedAt: timestamp('started_at', { mode: 'string' }),
   finishedAt: timestamp('finished_at', { mode: 'string' }),
   ...timestamps,

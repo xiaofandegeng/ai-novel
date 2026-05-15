@@ -8,7 +8,8 @@ import { createAIContextSnapshot } from './ai-context-snapshot.service'
 import { buildProjectAIContext } from './ai-context.service'
 import { callAIJSON, getEffectiveAISettings } from './ai.service'
 import { AuthoringEventService } from './authoring-event.service'
-import { runChapterPostprocess, runScenePostprocess } from './chapter-postprocess.service'
+import { applyChangeSet as applyChangeSetSvc, approveChangeSet as approveChangeSetSvc, createChapterChangeSet, rejectChangeSet as rejectChangeSetSvc } from './chapter-change-set.service'
+import { extractChapterChanges, runChapterPostprocess, runScenePostprocess } from './chapter-postprocess.service'
 import { runConsistencyGuard } from './consistency-guard.service'
 import { getProjectHealthMetrics } from './health-metrics.service'
 import { applyAcceptedSuggestions, applyAutoSuggestions } from './postprocess-suggestion.service'
@@ -29,13 +30,9 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
   draft_only: [
     'prepare_context',
     'generate_draft',
-    'consistency_check',
-    'confirm_apply',
-    'apply_draft',
-    'save_version',
-    'postprocess',
-    'confirm_suggestions',
-    'apply_suggestions',
+    'build_change_set',
+    'review_change_set',
+    'apply_change_set',
     'update_health',
     'done',
   ],
@@ -44,13 +41,9 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'generate_plan',
     'confirm_plan',
     'generate_draft',
-    'consistency_check',
-    'confirm_apply',
-    'apply_draft',
-    'save_version',
-    'postprocess',
-    'confirm_suggestions',
-    'apply_suggestions',
+    'build_change_set',
+    'review_change_set',
+    'apply_change_set',
     'update_health',
     'done',
   ],
@@ -59,13 +52,9 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'generate_scene_draft',
     'confirm_plan',
     'generate_draft',
-    'consistency_check',
-    'confirm_apply',
-    'apply_draft',
-    'save_version',
-    'postprocess',
-    'confirm_suggestions',
-    'apply_suggestions',
+    'build_change_set',
+    'review_change_set',
+    'apply_change_set',
     'update_health',
     'done',
   ],
@@ -76,6 +65,7 @@ const CONFIRM_STEPS = new Set<WritingJobStepType>([
   'consistency_check',
   'confirm_apply',
   'confirm_suggestions',
+  'review_change_set',
 ])
 
 const STEP_LABELS: Record<WritingJobStepType, string> = {
@@ -92,6 +82,9 @@ const STEP_LABELS: Record<WritingJobStepType, string> = {
   confirm_suggestions: '审查建议',
   apply_suggestions: '应用建议',
   update_health: '更新健康指标',
+  build_change_set: '构建变更集',
+  review_change_set: '审查变更集',
+  apply_change_set: '应用变更集',
   done: '任务完成',
 }
 
@@ -213,7 +206,7 @@ async function executePrepareContext(
   }).catch(err => console.error('Failed to create AI context snapshot:', err))
 
   const output = JSON.stringify({ context, rendered })
-  await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
+  await updateStep(stepId, { output, updatedAt: now() })
   return output
 }
 
@@ -256,7 +249,7 @@ ${contextPrompt}
 
   const plan = await callAIJSON<Record<string, any>>(messages, { temperature: 60 })
   const output = JSON.stringify(plan)
-  await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
+  await updateStep(stepId, { output, updatedAt: now() })
   return output
 }
 
@@ -302,7 +295,7 @@ ${contextPrompt}
 
   const plan = await callAIJSON<Record<string, any>>(messages, { temperature: 60 })
   const output = JSON.stringify(plan)
-  await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
+  await updateStep(stepId, { output, updatedAt: now() })
   return output
 }
 
@@ -355,7 +348,7 @@ ${contextPrompt}
 
   const draft = await callAIJSON<Record<string, any>>(messages, { temperature: 70 })
   const output = JSON.stringify(draft)
-  await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
+  await updateStep(stepId, { output, updatedAt: now() })
   return output
 }
 
@@ -375,7 +368,7 @@ async function executeConsistencyCheck(
     scene: 'draft',
   })
   const output = JSON.stringify(report)
-  await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
+  await updateStep(stepId, { output, updatedAt: now() })
   return output
 }
 async function executeApplyDraft(
@@ -429,7 +422,7 @@ async function executeApplyDraft(
     title: row.title,
   })
 
-  await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
+  await updateStep(stepId, { output })
   return output
 }
 
@@ -484,7 +477,7 @@ async function executeApplySceneDraft(
     wordCount: content.length,
     title: row.title,
   })
-  await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
+  await updateStep(stepId, { output })
   return output
 }
 
@@ -496,8 +489,7 @@ async function executeSaveVersion(
   if (!chapterId) {
     await updateStep(stepId, {
       output: JSON.stringify({ skipped: true, reason: 'no_chapter' }),
-      status: 'completed',
-      finishedAt: now(),
+      updatedAt: now(),
     })
     return JSON.stringify({ skipped: true })
   }
@@ -521,7 +513,7 @@ async function executeSaveVersion(
   )
   const snapshotId = result && 'id' in result ? result.id : null
   const output = JSON.stringify({ snapshotId, wordCount: content.length })
-  await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
+  await updateStep(stepId, { output })
   return output
 }
 
@@ -535,7 +527,7 @@ async function executePostprocess(
   const draft = JSON.parse(draftOutput)
 
   if (!chapterId) {
-    await updateStep(stepId, { output: JSON.stringify({ skipped: true, reason: 'no_chapter' }), status: 'completed', finishedAt: now() })
+    await updateStep(stepId, { output: JSON.stringify({ skipped: true, reason: 'no_chapter' }) })
     return JSON.stringify({ skipped: true })
   }
 
@@ -557,7 +549,7 @@ async function executePostprocess(
   const inferenceCount = await runGraphInference(projectId).catch(() => 0)
 
   const output = JSON.stringify({ ...result, inferenceCount })
-  await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
+  await updateStep(stepId, { output, updatedAt: now() })
   return output
 }
 
@@ -568,7 +560,7 @@ async function executeApplySuggestions(
   job: WritingJob,
 ): Promise<string> {
   if (!chapterId) {
-    await updateStep(stepId, { output: JSON.stringify({ skipped: true, reason: 'no_chapter' }), status: 'completed', finishedAt: now() })
+    await updateStep(stepId, { output: JSON.stringify({ skipped: true, reason: 'no_chapter' }) })
     return JSON.stringify({ skipped: true })
   }
 
@@ -576,7 +568,7 @@ async function executeApplySuggestions(
     ? await applyAutoSuggestions(projectId, chapterId, job.autoApprovalLevel)
     : await applyAcceptedSuggestions(projectId, chapterId)
   const output = JSON.stringify(result)
-  await updateStep(stepId, { output, status: 'completed', finishedAt: now() })
+  await updateStep(stepId, { output, updatedAt: now() })
   return output
 }
 
@@ -629,7 +621,7 @@ async function executeUpdateHealth(
     riskCount: metrics.risks.length,
     topRisks,
   }
-  await updateStep(stepId, { output: JSON.stringify(output), status: 'completed', finishedAt: now() })
+  await updateStep(stepId, { output: JSON.stringify(output), updatedAt: now() })
 }
 
 function calculateHealthScore(metrics: Awaited<ReturnType<typeof getProjectHealthMetrics>>): {
@@ -656,6 +648,74 @@ function calculateHealthScore(metrics: Awaited<ReturnType<typeof getProjectHealt
   if (hasMediumRisk || score < 80)
     return { riskLevel: 'medium', score }
   return { riskLevel: 'low', score }
+}
+
+async function executeBuildChangeSet(
+  projectId: string,
+  chapterId: string | null,
+  sceneId: string | null,
+  draftOutput: string,
+  stepId: string,
+  jobId: string,
+): Promise<string> {
+  const draft = JSON.parse(draftOutput)
+  const content = draft.draft || ''
+
+  if (!chapterId) {
+    throw new Error('Chapter ID is required for building change set')
+  }
+
+  // 1. 一致性检查
+  const report = await runConsistencyGuard(projectId, {
+    chapterId,
+    sceneId: sceneId || undefined,
+    scene: 'draft',
+    generatedText: content,
+    sourceInstruction: '自动写作一致性检查',
+  })
+
+  // 2. 抽取变更
+  const extracted = await extractChapterChanges({
+    projectId,
+    chapterId,
+    content,
+    trigger: 'auto_drive',
+  })
+
+  // 3. 创建变更集
+  const changeSet = await createChapterChangeSet({
+    projectId,
+    chapterId,
+    sceneId: sceneId || undefined,
+    writingJobId: jobId,
+    sourceStepId: stepId,
+    draftContent: content,
+    consistencyReport: report,
+    extractedChanges: extracted,
+  })
+
+  const output = JSON.stringify({
+    changeSetId: changeSet.id,
+    riskLevel: changeSet.riskLevel,
+    overallStatus: report.overallStatus,
+  })
+  await updateStep(stepId, { output, changeSetId: changeSet.id, updatedAt: now() })
+  return output
+}
+
+async function executeApplyChangeSet(
+  projectId: string,
+  changeSetId: string | null,
+  stepId: string,
+): Promise<string> {
+  if (!changeSetId) {
+    throw new Error('Change set ID is required for application')
+  }
+
+  const result = await applyChangeSetSvc(projectId, changeSetId)
+  const output = JSON.stringify(result)
+  await updateStep(stepId, { output, updatedAt: now() })
+  return output
 }
 
 // ---- Core engine: auto-execute steps until hitting a confirm step or completion ----
@@ -698,8 +758,7 @@ async function executeStep(
       }
 
       case 'confirm_plan':
-        // This is a pause point — mark completed (it's a marker) and signal pause
-        await updateStep(step.id, { status: 'completed', finishedAt: now() })
+        // This is a pause point — signal pause
         return false
 
       case 'generate_draft': {
@@ -721,7 +780,6 @@ async function executeStep(
 
       case 'confirm_apply':
         // Pause point
-        await updateStep(step.id, { status: 'completed', finishedAt: now() })
         return false
 
       case 'apply_draft': {
@@ -748,26 +806,43 @@ async function executeStep(
 
       case 'confirm_suggestions':
         // Pause point
-        await updateStep(step.id, { status: 'completed', finishedAt: now() })
         return false
 
       case 'apply_suggestions':
         await executeApplySuggestions(projectId, chapterId, step.id, job)
         break
 
+      case 'build_change_set': {
+        const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
+        await executeBuildChangeSet(projectId, chapterId, sceneId, draftOutput, step.id, job.id)
+        // 如果是高风险或自动驾驶需要确认，可以在这里 return false
+        // 但通常我们让后续的 review_change_set 来处理暂停
+        break
+      }
+
+      case 'review_change_set':
+        // Pause point for user to review the build_change_set result
+        return false
+
+      case 'apply_change_set': {
+        // Find changeSetId from previous build_change_set step
+        const buildOutput = previousStepOutputs.get('build_change_set') || '{}'
+        const { changeSetId } = JSON.parse(buildOutput)
+        await executeApplyChangeSet(projectId, changeSetId, step.id)
+        break
+      }
+
       case 'update_health':
         await executeUpdateHealth(projectId, step.id)
         break
 
-      case 'done':
-        await updateStep(step.id, { status: 'completed', finishedAt: now() })
-        break
-
       default:
         await updateStep(step.id, { status: 'skipped', finishedAt: now() })
-        break
+        return true
     }
 
+    // Mark as completed if we reached here successfully
+    await updateStep(step.id, { status: 'completed', finishedAt: now() })
     return true
   }
   catch (error: any) {
@@ -800,7 +875,7 @@ async function runNextSteps(projectId: string, jobId: string, fromStepIndex?: nu
 
   const previousOutputs = await collectStepOutputs(jobId)
 
-  const startIndex = fromStepIndex ?? allSteps.findIndex(s => s.status === 'pending')
+  const startIndex = fromStepIndex ?? allSteps.findIndex(s => s.status !== 'completed' && s.status !== 'skipped')
   if (startIndex === -1) {
     // All steps done
     await updateJobStatus(jobId, 'completed', null)
@@ -920,6 +995,14 @@ export async function approveStep(projectId: string, jobId: string, stepId: stri
   if (currentIdx === -1)
     throw new Error('Step not found in sequence')
 
+  // Mark the current confirm step as completed
+  await updateStep(stepId, { status: 'completed', finishedAt: now() })
+
+  // If this was a change set review, mark the change set as approved
+  if (step.stepType === 'review_change_set' && step.changeSetId) {
+    await approveChangeSetSvc(projectId, step.changeSetId)
+  }
+
   // Continue execution from the next step
   await runNextSteps(projectId, jobId, currentIdx + 1)
 }
@@ -945,6 +1028,11 @@ export async function rejectStep(projectId: string, jobId: string, stepId: strin
     error: reason || 'User rejected',
     finishedAt: now(),
   })
+
+  // If this was a change set review, mark the change set as rejected
+  if (step.stepType === 'review_change_set' && step.changeSetId) {
+    await rejectChangeSetSvc(projectId, step.changeSetId)
+  }
 
   // Also mark the preceding generation step as failed (so it can be retried)
   const allSteps = await getJobSteps(jobId)
