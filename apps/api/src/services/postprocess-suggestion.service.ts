@@ -88,6 +88,9 @@ export async function applySuggestion(projectId: string, id: string) {
   if (!suggestion)
     throw new Error('建议不存在')
 
+  if (suggestion.status !== 'pending' && suggestion.status !== 'accepted')
+    throw new Error('建议已处理，不能重复应用')
+
   let payload: Record<string, any>
   try {
     payload = JSON.parse(suggestion.payload)
