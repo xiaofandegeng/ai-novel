@@ -15,9 +15,10 @@ export type WritingJobStepType
     | 'build_change_set'
     | 'review_change_set'
     | 'apply_change_set'
+    | 'auto_repair'
     | 'done'
 export type WritingJobStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
-export type AutoDecision = 'approved' | 'paused' | 'rejected' | 'not_applicable'
+export type AutoDecision = 'approved' | 'paused' | 'rejected' | 'not_applicable' | 'medium_risk_repair'
 
 export interface WritingJobStep {
   id: string

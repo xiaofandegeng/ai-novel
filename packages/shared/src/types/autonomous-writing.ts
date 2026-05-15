@@ -63,6 +63,8 @@ export interface AutonomousRunException {
   projectId: string
   chapterId: string | null
   changeSetId: string | null
+  writingJobId: string | null
+  stepId: string | null
   exceptionType: AutonomousExceptionType
   severity: 'medium' | 'high' | 'critical'
   title: string

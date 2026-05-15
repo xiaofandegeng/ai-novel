@@ -1,31 +1,27 @@
 <script setup lang="ts">
 import type { AutonomousScopeType, AutonomousStrategy } from '@ai-novel/shared'
-import type { TagVariant } from '@ai-novel/ui'
 import {
   NButton,
   NInput,
-  NLoadingState,
   NPanel,
   NSelect,
-  NTag,
 } from '@ai-novel/ui'
 import {
   AlertCircle,
-  CheckCircle2,
-  ListFilter,
-  Pause,
-  Play,
   Rocket,
   Settings2,
 } from 'lucide-vue-next'
 import { ref } from 'vue'
-import { useAutonomousRun } from '../composables/useAutonomousRun'
 
-const props = defineProps<{
+defineProps<{
   projectId: string
+  loading?: boolean
+  currentRun?: any
 }>()
 
-const { currentRun, loading, createRun, start, pause, resume } = useAutonomousRun(props.projectId)
+const emit = defineEmits<{
+  (e: 'start', input: any): void
+}>()
 
 const form = ref({
   strategy: 'balanced' as AutonomousStrategy,
@@ -46,85 +42,18 @@ const scopeOptions = [
 ]
 
 async function handleCreateAndStart() {
-  try {
-    const run = await createRun({
-      ...form.value,
-      targetChapterCount: Number.parseInt(form.value.targetChapterCount),
-      targetWordsPerChapter: Number.parseInt(form.value.targetWordsPerChapter),
-    })
-    await start(run.id)
-  }
-  catch {
-    // Error handled in composable
-  }
-}
-
-function getStatusColor(status: string): TagVariant {
-  switch (status) {
-    case 'running': return 'primary'
-    case 'completed': return 'success'
-    case 'failed': return 'error'
-    case 'paused':
-    case 'needs_attention': return 'warning'
-    default: return 'default'
-  }
+  emit('start', {
+    ...form.value,
+    targetChapterCount: Number.parseInt(form.value.targetChapterCount),
+    targetWordsPerChapter: Number.parseInt(form.value.targetWordsPerChapter),
+  })
 }
 </script>
 
 <template>
   <div class="autonomous-run-launcher space-y-6">
-    <!-- Active Run Status -->
-    <NPanel v-if="currentRun" class="active-run-card" border-primary>
-      <div class="mb-4 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div class="bg-primary-subtle rounded-full p-2 text-primary">
-            <Rocket :size="20" />
-          </div>
-          <div>
-            <h3 class="text-lg font-bold">
-              正在自动驾驶
-            </h3>
-            <p class="text-xs text-text-muted">
-              策略: {{ currentRun.strategy }} | 进度: {{ currentRun.completedChapterCount }} / {{ currentRun.targetChapterCount || '?' }}
-            </p>
-          </div>
-        </div>
-        <NTag :variant="getStatusColor(currentRun.status) as any">
-          {{ currentRun.status.toUpperCase() }}
-        </NTag>
-      </div>
-
-      <div class="space-y-3">
-        <div class="h-2 w-full overflow-hidden rounded-full bg-bg-subtle">
-          <div
-            class="h-full bg-primary transition-all duration-500"
-            :style="{ width: `${(currentRun.completedChapterCount / (currentRun.targetChapterCount || 1)) * 100}%` }"
-          />
-        </div>
-
-        <div class="flex gap-2">
-          <NButton
-            v-if="currentRun.status === 'running'"
-            @click="pause(currentRun.id)"
-          >
-            <Pause :size="16" class="mr-2" /> 暂停
-          </NButton>
-          <NButton
-            v-else-if="['paused', 'needs_attention'].includes(currentRun.status)"
-            variant="primary"
-            @click="resume(currentRun.id)"
-          >
-            <Play :size="16" class="mr-2" /> 继续推进
-          </NButton>
-          <NButton variant="secondary" outline @click="currentRun = null">
-            新任务
-          </NButton>
-        </div>
-      </div>
-    </NPanel>
-
     <!-- Configuration Form -->
-    <NPanel v-else class="config-panel">
+    <NPanel class="config-panel">
       <template #header>
         <div class="flex items-center gap-2">
           <Settings2 :size="18" />
@@ -190,30 +119,6 @@ function getStatusColor(status: string): TagVariant {
         </NButton>
       </div>
     </NPanel>
-
-    <!-- Run Summary (Jobs List) -->
-    <div v-if="currentRun?.jobs?.length" class="space-y-2">
-      <div class="flex items-center gap-1 px-1 text-xs text-text-muted font-bold">
-        <ListFilter :size="12" /> 任务队列 ({{ currentRun.jobs.length }})
-      </div>
-      <div class="space-y-1">
-        <div
-          v-for="job in currentRun.jobs"
-          :key="job.id"
-          class="flex items-center justify-between border border-border-light rounded bg-bg-surface p-2 text-sm"
-        >
-          <div class="flex items-center gap-2">
-            <CheckCircle2 v-if="job.status === 'completed'" :size="14" class="text-green-500" />
-            <NLoadingState v-else-if="job.status === 'running'" size="sm" />
-            <div v-else class="h-3.5 w-3.5 border border-text-muted rounded-full border-dashed" />
-            <span>章节 ID: {{ job.chapterId?.slice(0, 8) }}...</span>
-          </div>
-          <NTag size="sm" :variant="getStatusColor(job.status) as any">
-            {{ job.status }}
-          </NTag>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 

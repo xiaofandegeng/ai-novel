@@ -4,6 +4,7 @@ import { AlertCircle, ChevronLeft, RefreshCw, Rocket } from 'lucide-vue-next'
 import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import AutonomousExceptionQueue from '@/features/autonomous-writing/components/AutonomousExceptionQueue.vue'
+import AutonomousRunControlBar from '@/features/autonomous-writing/components/AutonomousRunControlBar.vue'
 import AutonomousRunLauncher from '@/features/autonomous-writing/components/AutonomousRunLauncher.vue'
 import AutonomousRunTimeline from '@/features/autonomous-writing/components/AutonomousRunTimeline.vue'
 import { useAutonomousRun } from '@/features/autonomous-writing/composables/useAutonomousRun'
@@ -20,30 +21,62 @@ const {
   loadRun,
   loading,
   resolveException,
+  createRun,
+  start,
+  pause,
+  resume,
 } = useAutonomousRun(projectId)
 
 onMounted(async () => {
   await loadActiveRun()
 })
 
+async function handleStart(input: any) {
+  try {
+    const run = await createRun(input)
+    await start(run.id)
+    await loadRun(run.id)
+  }
+  catch (err) {
+    console.error('Failed to start run', err)
+  }
+}
+
+async function handlePause(runId: string) {
+  await pause(runId)
+  await loadRun(runId)
+}
+
+async function handleResume(runId: string) {
+  await resume(runId)
+  await loadRun(runId)
+}
+
+function handleNewRun() {
+  currentRun.value = null
+}
+
 async function handleResolve(ex: any) {
   if (!currentRun.value)
     return
-  // TODO: Use a proper modal for resolution input
   const resolution = '作者已人工确认并批准继续运行。'
   await resolveException(currentRun.value.id, ex.id, resolution)
+  await loadRun(currentRun.value.id)
 }
 
 async function handleIgnore(ex: any) {
   if (!currentRun.value)
     return
-  // TODO: Use a proper modal for confirmation
   await ignoreException(currentRun.value.id, ex.id)
+  await loadRun(currentRun.value.id)
 }
 
 function handleRefresh() {
   if (currentRun.value) {
     loadRun(currentRun.value.id)
+  }
+  else {
+    loadActiveRun()
   }
 }
 </script>
@@ -92,10 +125,24 @@ function handleRefresh() {
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
       <!-- Left Column: Controls and Timeline -->
       <div class="lg:col-span-2 space-y-6">
+        <!-- Control Bar: Show if active run exists -->
+        <AutonomousRunControlBar
+          v-if="currentRun"
+          :current-run="currentRun"
+          :loading="loading"
+          @pause="handlePause"
+          @resume="handleResume"
+          @new-run="handleNewRun"
+          @refresh="handleRefresh"
+        />
+
         <!-- Launcher: Only show if no active run or if active run is finished -->
         <AutonomousRunLauncher
           v-if="!currentRun || ['completed', 'failed'].includes(currentRun.status)"
           :project-id="projectId"
+          :loading="loading"
+          :current-run="currentRun"
+          @start="handleStart"
         />
 
         <!-- Active Run Progress -->

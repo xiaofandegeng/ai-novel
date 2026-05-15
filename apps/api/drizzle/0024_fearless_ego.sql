@@ -1,0 +1,4 @@
+ALTER TABLE "autonomous_run_exceptions" ADD COLUMN "writing_job_id" text;--> statement-breakpoint
+ALTER TABLE "autonomous_run_exceptions" ADD COLUMN "step_id" text;--> statement-breakpoint
+ALTER TABLE "autonomous_run_exceptions" ADD CONSTRAINT "autonomous_run_exceptions_writing_job_id_writing_jobs_id_fk" FOREIGN KEY ("writing_job_id") REFERENCES "public"."writing_jobs"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "autonomous_run_exceptions" ADD CONSTRAINT "autonomous_run_exceptions_step_id_writing_job_steps_id_fk" FOREIGN KEY ("step_id") REFERENCES "public"."writing_job_steps"("id") ON DELETE set null ON UPDATE no action;

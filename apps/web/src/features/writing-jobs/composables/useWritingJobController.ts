@@ -56,6 +56,7 @@ export const STEP_LABEL: Record<WritingJobStepType, string> = {
   build_change_set: '构建变更集',
   review_change_set: '审查变更集',
   apply_change_set: '应用变更集',
+  auto_repair: '自动修复',
   done: '任务完成',
 }
 

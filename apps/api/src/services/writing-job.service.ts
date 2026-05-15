@@ -1,5 +1,5 @@
 import type { WritingJob, WritingJobStepType } from '@ai-novel/shared'
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, or } from 'drizzle-orm'
 import { db } from '../db'
 import { chapters, chapterScenes, projectHealthReports, writingJobs, writingJobSteps } from '../db/schema'
 import { generateId, now } from '../utils'
@@ -8,6 +8,7 @@ import { createAIContextSnapshot } from './ai-context-snapshot.service'
 import { buildProjectAIContext } from './ai-context.service'
 import { callAIJSON, getEffectiveAISettings } from './ai.service'
 import { AuthoringEventService } from './authoring-event.service'
+import { attemptAutoRepair } from './auto-repair.service'
 import { applyChangeSet as applyChangeSetSvc, approveChangeSet as approveChangeSetSvc, createChapterChangeSet, rejectChangeSet as rejectChangeSetSvc } from './chapter-change-set.service'
 import { extractChapterChanges, runChapterPostprocess, runScenePostprocess } from './chapter-postprocess.service'
 import { runConsistencyGuard } from './consistency-guard.service'
@@ -25,6 +26,7 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'generate_plan',
     'confirm_plan',
     'update_health',
+    'auto_repair',
     'done',
   ],
   draft_only: [
@@ -33,6 +35,7 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'build_change_set',
     'review_change_set',
     'apply_change_set',
+    'auto_repair',
     'update_health',
     'done',
   ],
@@ -44,6 +47,7 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'build_change_set',
     'review_change_set',
     'apply_change_set',
+    'auto_repair',
     'update_health',
     'done',
   ],
@@ -55,6 +59,7 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'build_change_set',
     'review_change_set',
     'apply_change_set',
+    'auto_repair',
     'update_health',
     'done',
   ],
@@ -85,6 +90,7 @@ const STEP_LABELS: Record<WritingJobStepType, string> = {
   build_change_set: '构建变更集',
   review_change_set: '审查变更集',
   apply_change_set: '应用变更集',
+  auto_repair: '自动修复',
   done: '任务完成',
 }
 
@@ -724,6 +730,7 @@ async function executeBuildChangeSet(
     changeSetId: changeSet.id,
     riskLevel: changeSet.riskLevel,
     overallStatus: report.overallStatus,
+    consistencyReport: report,
   })
   await updateStep(stepId, { output, changeSetId: changeSet.id, updatedAt: now() })
   return output
@@ -860,6 +867,53 @@ async function executeStep(
         break
       }
 
+      case 'auto_repair': {
+        const draftOutputStr = previousStepOutputs.get('generate_draft') || '{}'
+        const draftOutput = JSON.parse(draftOutputStr)
+        const buildOutputStr = previousStepOutputs.get('build_change_set') || '{}'
+        const buildOutput = JSON.parse(buildOutputStr)
+
+        if (!buildOutput.consistencyReport) {
+          await updateStep(step.id, { status: 'skipped', autoDecisionReason: 'No consistency report found' })
+          return true
+        }
+
+        const repairResult = await attemptAutoRepair({
+          projectId,
+          chapterId: chapterId!,
+          draftContent: draftOutput.draft,
+          consistencyReport: buildOutput.consistencyReport,
+          strategy: (job as any).strategy || 'balanced', // Autonomous run strategy if available
+        })
+
+        if (repairResult.repaired) {
+          // Update generate_draft output with repaired content
+          const updatedDraftOutput = { ...draftOutput, draft: repairResult.draftContent }
+          const generateDraftStep = (await getJobSteps(job.id)).find(s => s.stepType === 'generate_draft')
+          if (generateDraftStep) {
+            await updateStep(generateDraftStep.id, { output: JSON.stringify(updatedDraftOutput) })
+          }
+
+          // P1-3: 将 build_change_set 和 review_change_set 重置为 pending，以便修复后重跑
+          await db.update(writingJobSteps).set({
+            status: 'pending',
+            output: null,
+            finishedAt: null,
+            updatedAt: now(),
+          }).where(and(
+            eq(writingJobSteps.jobId, job.id),
+            or(eq(writingJobSteps.stepType, 'build_change_set'), eq(writingJobSteps.stepType, 'review_change_set')),
+          ))
+
+          await updateStep(step.id, { status: 'completed', output: JSON.stringify(repairResult.repairReport) })
+        }
+        else {
+          await updateStep(step.id, { status: 'failed', error: repairResult.repairReport })
+          throw new Error(`Auto-repair failed: ${repairResult.repairReport}`)
+        }
+        break
+      }
+
       case 'update_health':
         await executeUpdateHealth(projectId, step.id)
         break
@@ -895,34 +949,26 @@ async function collectStepOutputs(jobId: string): Promise<Map<string, string>> {
   return outputs
 }
 
-async function runNextSteps(projectId: string, jobId: string, fromStepIndex?: number): Promise<void> {
+async function runNextSteps(projectId: string, jobId: string): Promise<void> {
   const { chapter, scene, job } = await getJobAndChapter(jobId, projectId)
-  const allSteps = await getJobSteps(jobId)
 
   await updateJobStatus(jobId, 'running', null)
 
-  const previousOutputs = await collectStepOutputs(jobId)
+  while (true) {
+    const allSteps = await getJobSteps(jobId)
+    const previousOutputs = await collectStepOutputs(jobId)
 
-  const startIndex = fromStepIndex ?? allSteps.findIndex(s => s.status !== 'completed' && s.status !== 'skipped')
-  if (startIndex === -1) {
-    // All steps done
-    await updateJobStatus(jobId, 'completed', null)
-    return
-  }
-
-  for (let i = startIndex; i < allSteps.length; i++) {
-    const step = allSteps[i]
-
-    // Skip already completed steps
-    if (step.status === 'completed' || step.status === 'skipped') {
-      continue
+    const step = allSteps.find(s => s.status !== 'completed' && s.status !== 'skipped')
+    if (!step) {
+      // All steps done
+      await updateJobStatus(jobId, 'completed', null)
+      return
     }
 
-    // If step was previously running (stale), reset to pending
-    if (step.status === 'running' || step.status === 'failed') {
-      // Only re-execute pending/failed steps when retrying
-      if (step.status === 'failed' && fromStepIndex === undefined)
-        continue
+    // If step was previously failed, we only continue if it's a retry (which would have reset the status)
+    // But here we might want to handle it
+    if (step.status === 'failed') {
+      return // Wait for manual retry
     }
 
     const shouldContinue = await executeStep(
@@ -939,28 +985,67 @@ async function runNextSteps(projectId: string, jobId: string, fromStepIndex?: nu
       const [updatedStep] = await db.select().from(writingJobSteps).where(eq(writingJobSteps.id, step.id))
       const decision = evaluateAutoApproval({ job: job as any, step: updatedStep as any, previousOutputs })
 
-      if (job.executionMode === 'auto' && decision.approved) {
-        // P1-1: 自动通过变更集后必须批准变更项，否则应用时会跳过结构化变更
-        if (step.stepType === 'review_change_set' && updatedStep.changeSetId) {
-          await approveChangeSetSvc(projectId, updatedStep.changeSetId)
+      if (job.executionMode === 'auto') {
+        if (decision.approved) {
+          // P1-1: 自动通过变更集后必须批准变更项，否则应用时会跳过结构化变更
+          if (step.stepType === 'review_change_set' && updatedStep.changeSetId) {
+            await approveChangeSetSvc(projectId, updatedStep.changeSetId)
+          }
+
+          await db.update(writingJobSteps).set({
+            autoDecision: 'approved',
+            autoDecisionReason: decision.reason,
+            reviewRequired: false,
+            status: 'completed',
+            finishedAt: now(),
+            updatedAt: now(),
+          }).where(eq(writingJobSteps.id, step.id))
+
+          await db.update(writingJobs).set({
+            autoApprovedSteps: (job.autoApprovedSteps || 0) + 1,
+            updatedAt: now(),
+          }).where(eq(writingJobs.id, job.id))
+
+          // 继续执行后续步骤 (while 循环会重新获取 steps)
+          continue
         }
+        else if (decision.severity === 'medium' && step.stepType === 'review_change_set') {
+          // P1-4: 自动修复链路
+          const hasTriedRepair = allSteps.some(s => s.stepType === 'auto_repair' && s.status !== 'pending')
+          if (!hasTriedRepair) {
+            // 1. 创建或找到 auto_repair 步骤并设置为 pending
+            const repairStep = allSteps.find(s => s.stepType === 'auto_repair')
+            if (!repairStep) {
+              const repairStepId = generateId()
+              await db.insert(writingJobSteps).values({
+                id: repairStepId,
+                jobId,
+                stepType: 'auto_repair',
+                status: 'pending',
+                createdAt: now(),
+                updatedAt: now(),
+              })
+            }
+            else {
+              await db.update(writingJobSteps).set({
+                status: 'pending',
+                updatedAt: now(),
+              }).where(eq(writingJobSteps.id, repairStep.id))
+            }
 
-        await db.update(writingJobSteps).set({
-          autoDecision: 'approved',
-          autoDecisionReason: decision.reason,
-          reviewRequired: false,
-          status: 'completed',
-          finishedAt: now(),
-          updatedAt: now(),
-        }).where(eq(writingJobSteps.id, step.id))
+            // 2. 将当前步骤标记为已完成（带特殊标记），以便循环能走到 auto_repair
+            await db.update(writingJobSteps).set({
+              status: 'completed',
+              autoDecision: 'medium_risk_repair',
+              autoDecisionReason: '检测到中风险，自动尝试修复',
+              finishedAt: now(),
+              updatedAt: now(),
+            }).where(eq(writingJobSteps.id, step.id))
 
-        await db.update(writingJobs).set({
-          autoApprovedSteps: (job.autoApprovedSteps || 0) + 1,
-          updatedAt: now(),
-        }).where(eq(writingJobs.id, job.id))
-
-        // 继续执行后续步骤
-        continue
+            await updateJobStatus(jobId, 'running', '正在执行自动修复...')
+            continue // 重新循环，会发现 auto_repair 是下一个待处理步骤
+          }
+        }
       }
 
       // P1-2: 暂停审查时，统一把 step 设置为 completed，否则 approveStep 接口会因为 status !== 'completed' 而报错
@@ -976,15 +1061,7 @@ async function runNextSteps(projectId: string, jobId: string, fromStepIndex?: nu
       await updateJobStatus(jobId, 'waiting_review', decision.reason)
       return
     }
-
-    const [updatedStep] = await db.select().from(writingJobSteps).where(eq(writingJobSteps.id, step.id))
-    if (updatedStep?.output) {
-      previousOutputs.set(updatedStep.stepType, updatedStep.output)
-    }
   }
-
-  // All steps completed
-  await updateJobStatus(jobId, 'completed', null)
 }
 
 // ---- Public API ----
@@ -1003,7 +1080,7 @@ export async function startJob(projectId: string, jobId: string): Promise<void> 
     await initializeJobSteps(jobId)
   }
 
-  await runNextSteps(projectId, jobId, 0)
+  await runNextSteps(projectId, jobId)
 }
 
 export async function approveStep(projectId: string, jobId: string, stepId: string): Promise<void> {
@@ -1040,7 +1117,7 @@ export async function approveStep(projectId: string, jobId: string, stepId: stri
   }
 
   // Continue execution from the next step
-  await runNextSteps(projectId, jobId, currentIdx + 1)
+  await runNextSteps(projectId, jobId)
 }
 
 export async function rejectStep(projectId: string, jobId: string, stepId: string, reason?: string): Promise<void> {
@@ -1154,5 +1231,5 @@ export async function retryStep(projectId: string, jobId: string, stepId: string
   }
 
   // Run from the retry point
-  await runNextSteps(projectId, jobId, retryFromIdx)
+  await runNextSteps(projectId, jobId)
 }

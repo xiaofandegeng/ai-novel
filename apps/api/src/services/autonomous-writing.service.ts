@@ -10,7 +10,7 @@ import {
   writingJobSteps,
 } from '../db/schema'
 import { generateId, now } from '../utils'
-import { startJob } from './writing-job.service'
+import { approveStep, startJob } from './writing-job.service'
 
 export async function createAutonomousRun(
   projectId: string,
@@ -26,45 +26,52 @@ export async function createAutonomousRun(
     targetWordsPerChapter,
   } = input
 
-  // P2: 实现项目锁，同一时间只能有一个运行中的任务
-  const activeRuns = await db.select().from(autonomousWritingRuns).where(and(
-    eq(autonomousWritingRuns.projectId, projectId),
-    eq(autonomousWritingRuns.status, 'running'),
-  ))
-  if (activeRuns.length > 0) {
-    throw new Error('该项目已有正在进行的自动驾驶任务，请先暂停或完成后再开启新任务。')
-  }
+  return await db.transaction(async (tx) => {
+    // P2: 实现项目锁，同一时间只能有一个运行中的任务
+    const activeRuns = await tx.select().from(autonomousWritingRuns).where(and(
+      eq(autonomousWritingRuns.projectId, projectId),
+      or(
+        eq(autonomousWritingRuns.status, 'running'),
+        eq(autonomousWritingRuns.status, 'paused'),
+        eq(autonomousWritingRuns.status, 'needs_attention'),
+      ),
+    ))
+    if (activeRuns.length > 0) {
+      throw new Error('该项目已有正在进行或待处理的自动驾驶任务，请先暂停或完成后再开启新任务。')
+    }
 
-  const id = generateId()
+    const id = generateId()
 
-  const [run] = await db.insert(autonomousWritingRuns).values({
-    id,
-    projectId,
-    status: 'idle',
-    strategy: strategy || 'balanced',
-    scopeType,
-    volumeId: volumeId || null,
-    startChapterId: startChapterId || null,
-    endChapterId: endChapterId || null,
-    targetChapterCount: targetChapterCount || null,
-    targetWordsPerChapter: targetWordsPerChapter || 3000,
-    createdAt: now(),
-    updatedAt: now(),
-  }).returning()
+    const [run] = await tx.insert(autonomousWritingRuns).values({
+      id,
+      projectId,
+      status: 'idle',
+      strategy: strategy || 'balanced',
+      scopeType,
+      volumeId: volumeId || null,
+      startChapterId: startChapterId || null,
+      endChapterId: endChapterId || null,
+      targetChapterCount: targetChapterCount || null,
+      targetWordsPerChapter: targetWordsPerChapter || 3000,
+      createdAt: now(),
+      updatedAt: now(),
+    }).returning()
 
-  // Prepare initial chapter jobs based on scope
-  await prepareRunJobs(projectId, run.id, scopeType, {
-    volumeId,
-    startChapterId,
-    endChapterId,
-    targetChapterCount,
-    targetWordsPerChapter: run.targetWordsPerChapter,
+    // Prepare initial chapter jobs based on scope
+    await prepareRunJobs(tx, projectId, run.id, scopeType, {
+      volumeId,
+      startChapterId,
+      endChapterId,
+      targetChapterCount,
+      targetWordsPerChapter: run.targetWordsPerChapter,
+    })
+
+    return run as any
   })
-
-  return run as any
 }
 
 async function prepareRunJobs(
+  tx: any,
   projectId: string,
   runId: string,
   scopeType: AutonomousScopeType,
@@ -79,32 +86,32 @@ async function prepareRunJobs(
   let targetChapters: any[] = []
 
   if (scopeType === 'chapter_range' && params.startChapterId) {
-    const startChapter = await db.select({ chapterNumber: chapters.chapterNumber }).from(chapters).where(and(eq(chapters.id, params.startChapterId), eq(chapters.projectId, projectId))).limit(1)
+    const startChapter = await tx.select({ chapterNumber: chapters.chapterNumber }).from(chapters).where(and(eq(chapters.id, params.startChapterId), eq(chapters.projectId, projectId))).limit(1)
     if (!startChapter[0])
       throw new Error('开始章节不存在')
 
     let endNumber = 999999
     if (params.endChapterId) {
-      const endChapter = await db.select({ chapterNumber: chapters.chapterNumber }).from(chapters).where(and(eq(chapters.id, params.endChapterId), eq(chapters.projectId, projectId))).limit(1)
+      const endChapter = await tx.select({ chapterNumber: chapters.chapterNumber }).from(chapters).where(and(eq(chapters.id, params.endChapterId), eq(chapters.projectId, projectId))).limit(1)
       if (endChapter[0])
         endNumber = endChapter[0].chapterNumber
     }
 
-    targetChapters = await db.select().from(chapters).where(and(
+    targetChapters = await tx.select().from(chapters).where(and(
       eq(chapters.projectId, projectId),
       sql`${chapters.chapterNumber} >= ${startChapter[0].chapterNumber}`,
       sql`${chapters.chapterNumber} <= ${endNumber}`,
     )).orderBy(asc(chapters.chapterNumber))
   }
   else if (scopeType === 'volume' && params.volumeId) {
-    targetChapters = await db.select().from(chapters).where(and(
+    targetChapters = await tx.select().from(chapters).where(and(
       eq(chapters.projectId, projectId),
       eq(chapters.volumeId, params.volumeId),
     )).orderBy(asc(chapters.chapterNumber))
   }
   else if (scopeType === 'next_n_chapters' && params.targetChapterCount) {
     const minWords = 100
-    targetChapters = await db.select().from(chapters).where(and(
+    targetChapters = await tx.select().from(chapters).where(and(
       eq(chapters.projectId, projectId),
       or(
         isNull(chapters.draft),
@@ -114,7 +121,7 @@ async function prepareRunJobs(
   }
   else if (scopeType === 'project') {
     const minWords = 100
-    targetChapters = await db.select().from(chapters).where(and(
+    targetChapters = await tx.select().from(chapters).where(and(
       eq(chapters.projectId, projectId),
       or(
         isNull(chapters.draft),
@@ -133,7 +140,7 @@ async function prepareRunJobs(
 
     // Create a WritingJob first
     const writingJobId = generateId()
-    await db.insert(writingJobs).values({
+    await tx.insert(writingJobs).values({
       id: writingJobId,
       projectId,
       currentChapterId: ch.id,
@@ -158,7 +165,7 @@ async function prepareRunJobs(
     ]
 
     for (let j = 0; j < steps.length; j++) {
-      await db.insert(writingJobSteps).values({
+      await tx.insert(writingJobSteps).values({
         id: generateId(),
         jobId: writingJobId,
         stepType: steps[j] as any,
@@ -169,7 +176,7 @@ async function prepareRunJobs(
     }
 
     // Link to Autonomous Run
-    await db.insert(autonomousRunJobs).values({
+    await tx.insert(autonomousRunJobs).values({
       id: generateId(),
       runId,
       projectId,
@@ -350,12 +357,20 @@ export async function handleAutonomousJobCompletion(
       updatedAt: now(),
     }).where(eq(autonomousWritingRuns.id, runId))
 
+    // Find the failed step
+    const [failedStep] = await db.select().from(writingJobSteps).where(and(
+      eq(writingJobSteps.jobId, jobId),
+      eq(writingJobSteps.status, 'failed'),
+    )).orderBy(desc(writingJobSteps.updatedAt)).limit(1)
+
     await recordAutonomousException(projectId, runId, {
       exceptionType: 'ai_failed',
       severity: 'high',
       title: 'Writing Job Failed',
       description: reason || 'Unknown error',
       chapterId: job.currentChapterId,
+      writingJobId: jobId,
+      stepId: failedStep?.id,
     })
 
     // If strategy is fast, we might continue anyway?
@@ -370,6 +385,12 @@ export async function handleAutonomousJobCompletion(
     }
   }
   else if (status === 'waiting_review') {
+    // Find the step requiring review
+    const [reviewStep] = await db.select().from(writingJobSteps).where(and(
+      eq(writingJobSteps.jobId, jobId),
+      eq(writingJobSteps.reviewRequired, true),
+    )).orderBy(desc(writingJobSteps.updatedAt)).limit(1)
+
     // Record exception first
     await recordAutonomousException(projectId, runId, {
       exceptionType: 'high_risk_change_set',
@@ -377,6 +398,9 @@ export async function handleAutonomousJobCompletion(
       title: '需要人工审查',
       description: reason || '检测到高风险变更，需要作者确认。',
       chapterId: job.currentChapterId,
+      writingJobId: jobId,
+      stepId: reviewStep?.id,
+      changeSetId: reviewStep?.changeSetId,
     })
 
     if (run.strategy === 'fast') {
@@ -413,6 +437,8 @@ export async function recordAutonomousException(
     description?: string
     chapterId?: string | null
     changeSetId?: string | null
+    writingJobId?: string | null
+    stepId?: string | null
   },
 ): Promise<void> {
   await db.insert(autonomousRunExceptions).values({
@@ -421,6 +447,8 @@ export async function recordAutonomousException(
     projectId,
     chapterId: input.chapterId || null,
     changeSetId: input.changeSetId || null,
+    writingJobId: input.writingJobId || null,
+    stepId: input.stepId || null,
     exceptionType: input.exceptionType,
     severity: input.severity,
     title: input.title,
@@ -439,33 +467,56 @@ export async function getAutonomousExceptions(projectId: string, runId: string) 
 }
 
 export async function resolveAutonomousException(projectId: string, runId: string, exceptionId: string, resolution: string) {
-  const [ex] = await db.update(autonomousRunExceptions).set({
-    status: 'resolved',
-    resolution,
-    updatedAt: now(),
-  }).where(and(
+  const [ex] = await db.select().from(autonomousRunExceptions).where(and(
     eq(autonomousRunExceptions.id, exceptionId),
     eq(autonomousRunExceptions.runId, runId),
     eq(autonomousRunExceptions.projectId, projectId),
-  )).returning()
+  )).limit(1)
 
   if (!ex)
     throw new Error('未找到该异常记录')
+  if (ex.status !== 'open')
+    throw new Error('该异常已被处理')
 
-  // 如果该异常对应某个章节任务且该任务处于等待审查状态，将其标记为完成（表示已人工处理/批准）
-  if (ex.chapterId) {
-    await db.update(autonomousRunJobs).set({
-      status: 'completed',
+  // 先把 Run 恢复为运行中，这样后续的自动推进才能在 running 状态下工作
+  await db.update(autonomousWritingRuns).set({
+    status: 'running',
+    updatedAt: now(),
+  }).where(eq(autonomousWritingRuns.id, runId))
+
+  try {
+    if (ex.writingJobId && ex.stepId) {
+      // 审批对应的章节步骤
+      await approveStep(projectId, ex.writingJobId, ex.stepId)
+    }
+    else if (ex.chapterId) {
+      // 兼容老数据：手动推进
+      await db.update(autonomousRunJobs).set({
+        status: 'completed',
+        updatedAt: now(),
+      }).where(and(
+        eq(autonomousRunJobs.runId, runId),
+        eq(autonomousRunJobs.chapterId, ex.chapterId),
+        eq(autonomousRunJobs.status, 'waiting_review'),
+      ))
+      await resumeAutonomousRun(projectId, runId)
+    }
+
+    // 只有成功推进后才标记为已解决
+    await db.update(autonomousRunExceptions).set({
+      status: 'resolved',
+      resolution,
       updatedAt: now(),
-    }).where(and(
-      eq(autonomousRunJobs.runId, runId),
-      eq(autonomousRunJobs.chapterId, ex.chapterId),
-      eq(autonomousRunJobs.status, 'waiting_review'),
-    ))
+    }).where(eq(autonomousRunExceptions.id, exceptionId))
   }
-
-  // 尝试恢复运行
-  await resumeAutonomousRun(projectId, runId)
+  catch (err: any) {
+    // 恢复失败状态，防止 Run 停留在 running 但实际上没人在跑
+    await db.update(autonomousWritingRuns).set({
+      status: 'needs_attention',
+      updatedAt: now(),
+    }).where(eq(autonomousWritingRuns.id, runId))
+    throw err
+  }
 }
 
 export async function ignoreAutonomousException(projectId: string, runId: string, exceptionId: string) {
