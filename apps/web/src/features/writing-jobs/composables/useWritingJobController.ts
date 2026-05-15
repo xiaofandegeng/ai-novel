@@ -8,6 +8,7 @@ import {
   XCircle,
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
+import { useChapterStore } from '@/stores/chapter.store'
 import { useProjectStore } from '@/stores/project.store'
 import { useWritingJobStore } from '@/stores/writing-job.store'
 import { getErrorMessage } from '@/utils/error-message'
@@ -68,6 +69,7 @@ export const CONFIRM_STEP_TYPES = new Set(['confirm_plan', 'consistency_check', 
 export function useWritingJobController(projectId: string) {
   const toast = useToast()
   const projectStore = useProjectStore()
+  const chapterStore = useChapterStore()
   const writingJobStore = useWritingJobStore()
 
   const loading = ref(true)
@@ -124,6 +126,7 @@ export function useWritingJobController(projectId: string) {
     try {
       await Promise.all([
         projectStore.fetchProject(projectId),
+        chapterStore.fetchChapters(projectId),
         writingJobStore.fetchJob(projectId),
       ])
     }
@@ -139,12 +142,18 @@ export function useWritingJobController(projectId: string) {
     creating.value = true
     try {
       const data: CreateWritingJobInput = { mode: form.value }
-      if (form.value === 'scene_draft') {
-        if (!formChapterId.value || !formSceneId.value) {
-          toast.add('场景草稿模式需要选择章节和场景', 'warning')
+      if (form.value === 'draft_only' || form.value === 'outline_then_draft' || form.value === 'scene_draft') {
+        if (!formChapterId.value) {
+          toast.add('请先选择正文写入章节', 'warning')
           return
         }
         data.currentChapterId = formChapterId.value
+      }
+      if (form.value === 'scene_draft') {
+        if (!formSceneId.value) {
+          toast.add('场景草稿模式需要选择章节和场景', 'warning')
+          return
+        }
         data.sceneId = formSceneId.value
       }
       await writingJobStore.createJob(projectId, data)

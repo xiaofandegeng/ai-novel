@@ -59,6 +59,7 @@ const {
           v-model="form"
           v-model:chapter-id="formChapterId"
           v-model:scene-id="formSceneId"
+          :project-id="projectId"
           :creating="creating"
           @create="handleCreate"
         />

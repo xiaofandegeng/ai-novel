@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../db'
 import { chapters, knowledgeEmbeddings, personaMemoryCards } from '../db/schema'
 import { generateId, now } from '../utils'
@@ -91,7 +91,7 @@ export async function buildPersonaMemoryContext(projectId: string, scene?: strin
         cards = await db.select().from(personaMemoryCards).where(
           and(
             eq(personaMemoryCards.projectId, projectId),
-            sql`${personaMemoryCards.id} IN ${cardIds}`,
+            inArray(personaMemoryCards.id, cardIds),
           ),
         )
       }
@@ -105,7 +105,7 @@ export async function buildPersonaMemoryContext(projectId: string, scene?: strin
     cards = await db.select().from(personaMemoryCards).where(
       and(
         eq(personaMemoryCards.projectId, projectId),
-        sql`${personaMemoryCards.cardType} IN ${typeFilters}`,
+        inArray(personaMemoryCards.cardType, typeFilters),
       ),
     ).limit(10)
   }

@@ -101,16 +101,25 @@ export async function getEffectiveAISettings(): Promise<EffectiveAISettings> {
   if (!saved)
     return fallback
 
+  const provider = saved.provider || fallback.provider
+  const model = saved.model || fallback.model
+  const embeddingProvider = saved.embeddingProvider || fallback.embeddingProvider
+
   return {
-    provider: saved.provider || fallback.provider,
+    provider,
     baseUrl: saved.baseUrl || fallback.baseUrl,
-    model: saved.model || fallback.model,
+    model,
     apiKey: saved.apiKey || fallback.apiKey,
     temperature: saved.temperature ?? fallback.temperature,
 
-    embeddingProvider: saved.embeddingProvider || fallback.embeddingProvider,
+    embeddingProvider,
     embeddingBaseUrl: saved.embeddingBaseUrl || fallback.embeddingBaseUrl,
-    embeddingModel: saved.embeddingModel || fallback.embeddingModel,
+    embeddingModel: normalizeEmbeddingModel({
+      provider,
+      model,
+      embeddingProvider,
+      embeddingModel: saved.embeddingModel || fallback.embeddingModel,
+    }) || fallback.embeddingModel,
     embeddingApiKey: saved.embeddingApiKey || saved.apiKey || fallback.embeddingApiKey,
     embeddingEnabled: saved.embeddingEnabled ?? fallback.embeddingEnabled,
 
@@ -126,6 +135,33 @@ export function listAIProviderPresets() {
   return AI_PROVIDER_PRESETS
 }
 
+function normalizeEmbeddingModel(input: {
+  provider: string
+  model: string
+  embeddingProvider?: string | null
+  embeddingModel?: string | null
+}) {
+  const embeddingModel = input.embeddingModel?.trim()
+  if (!embeddingModel)
+    return ''
+
+  const provider = input.embeddingProvider || input.provider
+  const preset = AI_PROVIDER_PRESETS.find(p => p.id === provider)
+
+  // UI forms can accidentally copy the chat model into the embedding field.
+  // For known providers, prefer the provider's embedding model so RAG failures
+  // do not block ordinary writing and analysis requests before generation starts.
+  if (
+    preset?.defaultEmbeddingModel
+    && embeddingModel === input.model
+    && preset.defaultEmbeddingModel !== input.model
+  ) {
+    return preset.defaultEmbeddingModel
+  }
+
+  return embeddingModel
+}
+
 function normalizeAISettingsInput(input: UpdateAIProviderSettingsInput, current: EffectiveAISettings) {
   const provider = input.provider?.trim() || current.provider
   const preset = AI_PROVIDER_PRESETS.find(p => p.id === provider)
@@ -135,7 +171,12 @@ function normalizeAISettingsInput(input: UpdateAIProviderSettingsInput, current:
   const embeddingProvider = input.embeddingProvider?.trim() || current.embeddingProvider || provider
   const embeddingPreset = AI_PROVIDER_PRESETS.find(p => p.id === embeddingProvider)
   const embeddingBaseUrl = input.embeddingBaseUrl?.trim() || embeddingPreset?.baseUrl || baseUrl
-  const embeddingModel = input.embeddingModel?.trim() || embeddingPreset?.defaultEmbeddingModel || current.embeddingModel || 'text-embedding-3-small'
+  const embeddingModel = normalizeEmbeddingModel({
+    provider,
+    model,
+    embeddingProvider,
+    embeddingModel: input.embeddingModel?.trim() || current.embeddingModel,
+  }) || embeddingPreset?.defaultEmbeddingModel || 'text-embedding-3-small'
 
   return { provider, baseUrl, model, embeddingProvider, embeddingBaseUrl, embeddingModel }
 }

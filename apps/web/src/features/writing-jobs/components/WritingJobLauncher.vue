@@ -7,8 +7,9 @@ import { useChapterStore } from '../../../stores/chapter.store'
 import { useSceneStore } from '../../../stores/scene.store'
 import { MODE_LABEL } from '../composables/useWritingJobController'
 
-defineProps<{
+const props = defineProps<{
   creating: boolean
+  projectId: string
 }>()
 
 const emit = defineEmits<{
@@ -29,7 +30,7 @@ watch(formChapterId, async (id) => {
   formSceneId.value = null
   if (id) {
     try {
-      await sceneStore.fetchScenes(chapterStore.chapters[0]?.projectId || '', id)
+      await sceneStore.fetchScenes(props.projectId, id)
     }
     catch {}
   }
@@ -39,10 +40,28 @@ watch(formChapterId, async (id) => {
 })
 
 watch(form, (mode) => {
-  if (mode !== 'scene_draft') {
+  if (mode === 'outline_only') {
     formChapterId.value = null
     formSceneId.value = null
   }
+  else if (!formChapterId.value && chapters.value.length > 0) {
+    formChapterId.value = chapters.value[0].id
+  }
+  if (mode !== 'scene_draft')
+    formSceneId.value = null
+})
+
+watch(chapters, (items) => {
+  if (form.value !== 'outline_only' && !formChapterId.value && items.length > 0)
+    formChapterId.value = items[0].id
+})
+
+const createDisabled = computed(() => {
+  if ((form.value === 'draft_only' || form.value === 'outline_then_draft') && !formChapterId.value)
+    return true
+  if (form.value === 'scene_draft' && (!formChapterId.value || !formSceneId.value))
+    return true
+  return false
 })
 </script>
 
@@ -70,9 +89,9 @@ watch(form, (mode) => {
       </div>
     </div>
 
-    <div v-if="form === 'scene_draft'" class="space-y-3">
+    <div v-if="form !== 'outline_only'" class="space-y-3">
       <div>
-        <label class="mb-1 block text-xs text-text-muted">选择章节</label>
+        <label class="mb-1 block text-xs text-text-muted">正文写入章节</label>
         <select
           v-model="formChapterId"
           class="w-full border border-border-light rounded-md bg-bg-page px-3 py-2 text-sm"
@@ -85,7 +104,7 @@ watch(form, (mode) => {
           </option>
         </select>
       </div>
-      <div v-if="formChapterId">
+      <div v-if="form === 'scene_draft' && formChapterId">
         <label class="mb-1 block text-xs text-text-muted">选择场景</label>
         <select
           v-model="formSceneId"
@@ -104,7 +123,7 @@ watch(form, (mode) => {
     <div class="flex justify-end">
       <NButton
         :loading="creating"
-        :disabled="form === 'scene_draft' && (!formChapterId || !formSceneId)"
+        :disabled="createDisabled"
         @click="emit('create')"
       >
         创建任务

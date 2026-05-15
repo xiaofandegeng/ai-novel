@@ -58,6 +58,10 @@ const sceneDraftLabel = computed(() => {
   return `场景 ${props.job.sceneId.slice(0, 8)}...`
 })
 
+const missingTargetChapter = computed(() =>
+  props.job.mode !== 'outline_only' && !props.job.currentChapterId,
+)
+
 function getReviewOutput(step: WritingJobStep, steps: WritingJobStep[]): any | null {
   if (!CONFIRM_STEP_TYPES.has(step.stepType))
     return null
@@ -118,6 +122,11 @@ function getStepOutput(step: WritingJobStep): any | null {
       <div v-if="job.lastError" class="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
         <AlertCircle :size="14" class="mr-1 inline-block" />
         {{ job.lastError }}
+      </div>
+
+      <div v-if="missingTargetChapter" class="mb-4 rounded-md bg-amber-50 p-3 text-sm text-amber-700">
+        <AlertCircle :size="14" class="mr-1 inline-block" />
+        这个任务没有绑定正文写入章节，因此不会自动写入正文。请删除该旧任务，重新创建时选择“正文写入章节”。
       </div>
 
       <div class="flex gap-3">

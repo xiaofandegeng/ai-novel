@@ -1,5 +1,5 @@
 import type { KnowledgeContextSnippet } from '@ai-novel/shared'
-import { and, eq, inArray, or, sql } from 'drizzle-orm'
+import { and, eq, ilike, inArray, or } from 'drizzle-orm'
 import { db } from '../db'
 import { chapterMemories, characters, knowledgeChunks, storyBibles, storyFactTriples } from '../db/schema'
 import { searchSimilarEmbeddings } from './embedding.service'
@@ -41,14 +41,15 @@ export class KnowledgeRetrievalService {
     if (terms.length === 0)
       return []
 
-    const predicates = terms.flatMap((term) => {
+    const knowledgePredicates = terms.flatMap((term) => {
       const pattern = `%${term}%`
       return [
-        sql`${knowledgeChunks.title} ILIKE ${pattern}`,
-        sql`${knowledgeChunks.summary} ILIKE ${pattern}`,
-        sql`${knowledgeChunks.techniques} ILIKE ${pattern}`,
+        ilike(knowledgeChunks.title, pattern),
+        ilike(knowledgeChunks.summary, pattern),
+        ilike(knowledgeChunks.techniques, pattern),
       ]
     })
+    const memoryPredicates = terms.map(term => ilike(chapterMemories.summary, `%${term}%`))
 
     const [knowledgeRows, memoryRows] = await Promise.all([
       db
@@ -61,7 +62,7 @@ export class KnowledgeRetrievalService {
           createdAt: knowledgeChunks.createdAt,
         })
         .from(knowledgeChunks)
-        .where(and(eq(knowledgeChunks.projectId, projectId), or(...predicates)))
+        .where(and(eq(knowledgeChunks.projectId, projectId), or(...knowledgePredicates)))
         .limit(20),
       db
         .select({
@@ -71,7 +72,7 @@ export class KnowledgeRetrievalService {
           createdAt: chapterMemories.createdAt,
         })
         .from(chapterMemories)
-        .where(and(eq(chapterMemories.projectId, projectId), sql`${chapterMemories.summary} ILIKE ANY(${terms.map(t => `%${t}%`)})`))
+        .where(and(eq(chapterMemories.projectId, projectId), or(...memoryPredicates)))
         .limit(10),
     ])
 
@@ -244,7 +245,7 @@ export class KnowledgeRetrievalService {
         or(
           inArray(storyFactTriples.subjectName, names),
           inArray(storyFactTriples.objectName, names),
-          ...terms.map(t => sql`${storyFactTriples.predicate} ILIKE ${`%${t}%`}`),
+          ...terms.map(t => ilike(storyFactTriples.predicate, `%${t}%`)),
         ),
       ))
       .limit(20)
@@ -276,7 +277,7 @@ export class KnowledgeRetrievalService {
   private static async searchCharacters(projectId: string, terms: string[]): Promise<SearchResult[]> {
     if (terms.length === 0)
       return []
-    const predicates = terms.map(t => sql`${characters.name} ILIKE ${`%${t}%`}`)
+    const predicates = terms.map(t => ilike(characters.name, `%${t}%`))
 
     const rows = await db.select().from(characters).where(and(eq(characters.projectId, projectId), or(...predicates))).limit(5)
 
@@ -412,9 +413,14 @@ export class KnowledgeRetrievalService {
     if (terms.length === 0 && factTripleSubjects.length === 0)
       return []
 
+    const vectorPromise = this.vectorSearch(projectId, terms.join(' ')).catch((error) => {
+      console.warn('Knowledge vector retrieval failed, falling back to keyword retrieval:', error instanceof Error ? error.message : error)
+      return []
+    })
+
     const [keyword, vector, characters, bible, facts] = await Promise.all([
       this.keywordSearch(projectId, terms),
-      this.vectorSearch(projectId, terms.join(' ')),
+      vectorPromise,
       this.searchCharacters(projectId, terms),
       this.searchStoryBible(projectId, terms),
       this.searchFactTriples(projectId, factTripleSubjects, terms),

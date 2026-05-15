@@ -127,7 +127,21 @@ export async function initializeJobSteps(jobId: string): Promise<void> {
 }
 
 export async function getJobSteps(jobId: string) {
-  return db.select().from(writingJobSteps).where(eq(writingJobSteps.jobId, jobId)).orderBy(asc(writingJobSteps.createdAt))
+  const [job] = await db.select().from(writingJobs).where(eq(writingJobs.id, jobId))
+  const rows = await db.select().from(writingJobSteps).where(eq(writingJobSteps.jobId, jobId)).orderBy(asc(writingJobSteps.createdAt))
+  if (!job)
+    return rows
+
+  const sequence = STEP_SEQUENCE[job.mode]
+  const order = new Map(sequence.map((stepType, index) => [stepType, index]))
+
+  return rows.sort((left, right) => {
+    const leftOrder = order.get(left.stepType) ?? Number.MAX_SAFE_INTEGER
+    const rightOrder = order.get(right.stepType) ?? Number.MAX_SAFE_INTEGER
+    if (leftOrder !== rightOrder)
+      return leftOrder - rightOrder
+    return left.createdAt.localeCompare(right.createdAt)
+  })
 }
 
 async function updateJobStatus(jobId: string, status: string, lastError?: string | null) {

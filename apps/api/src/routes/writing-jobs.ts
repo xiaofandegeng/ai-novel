@@ -23,9 +23,15 @@ export function registerWritingJobRoutes(app: Hono) {
   app.post('/api/projects/:projectId/writing-jobs', async (c) => {
     const projectId = c.req.param('projectId')
     const body = await c.req.json()
+    const mode = body.mode
+
+    if ((mode === 'draft_only' || mode === 'outline_then_draft' || mode === 'scene_draft') && !body.currentChapterId) {
+      return c.json(fail('该写作模式必须选择目标章节，系统需要知道正文写入哪一章'), 400)
+    }
+
     await assertOptionalChapterBelongsToProject(projectId, body.currentChapterId)
 
-    if (body.mode === 'scene_draft') {
+    if (mode === 'scene_draft') {
       if (!body.sceneId || !body.currentChapterId)
         return c.json(fail('scene_draft mode requires both sceneId and currentChapterId'), 400)
       const [scene] = await db.select({ id: chapterScenes.id }).from(chapterScenes).where(
@@ -43,7 +49,7 @@ export function registerWritingJobRoutes(app: Hono) {
     const [row] = await db.insert(writingJobs).values({
       id,
       projectId,
-      mode: body.mode,
+      mode,
       currentChapterId: body.currentChapterId,
       sceneId: body.sceneId,
       status: 'idle',
