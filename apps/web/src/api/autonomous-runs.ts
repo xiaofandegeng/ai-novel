@@ -36,3 +36,7 @@ export async function resolveAutonomousException(projectId: string, runId: strin
 export async function ignoreAutonomousException(projectId: string, runId: string, exceptionId: string): Promise<void> {
   return apiPost<void>(`/api/projects/${projectId}/autonomous-runs/${runId}/exceptions/${exceptionId}/ignore`, {})
 }
+
+export async function fetchAutonomousInsight(projectId: string): Promise<any> {
+  return apiGet<any>(`/api/projects/${projectId}/autonomous-runs/insight`)
+}

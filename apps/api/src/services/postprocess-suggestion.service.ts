@@ -254,7 +254,10 @@ export async function applyAutoSuggestions(projectId: string, chapterId: string,
   return applyAcceptedSuggestions(projectId, chapterId)
 }
 
-async function applyOneSuggestion(
+/**
+ * 应用单条建议 (底层业务逻辑，可复用于变更集系统)
+ */
+export async function applyOneSuggestion(
   suggestionType: string,
   payload: Record<string, any>,
   projectId: string,

@@ -99,4 +99,11 @@ export function registerAutonomousRunRoutes(app: Hono) {
     await ignoreAutonomousException(projectId, runId, exceptionId)
     return c.json({ success: true })
   })
+
+  app.get('/api/projects/:projectId/autonomous-runs/insight', async (c) => {
+    const projectId = c.req.param('projectId')
+    const { getProjectNarrativeInsight } = await import('../services/autonomous-writing.service')
+    const insight = await getProjectNarrativeInsight(projectId)
+    return c.json(insight)
+  })
 }

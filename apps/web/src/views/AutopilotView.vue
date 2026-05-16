@@ -4,6 +4,7 @@ import { AlertCircle, ChevronLeft, RefreshCw, Rocket } from 'lucide-vue-next'
 import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import AutonomousExceptionQueue from '@/features/autonomous-writing/components/AutonomousExceptionQueue.vue'
+import AutonomousLiveInsight from '@/features/autonomous-writing/components/AutonomousLiveInsight.vue'
 import AutonomousRunControlBar from '@/features/autonomous-writing/components/AutonomousRunControlBar.vue'
 import AutonomousRunLauncher from '@/features/autonomous-writing/components/AutonomousRunLauncher.vue'
 import AutonomousRunTimeline from '@/features/autonomous-writing/components/AutonomousRunTimeline.vue'
@@ -156,6 +157,8 @@ function handleRefresh() {
 
       <!-- Right Column: Exceptions and Settings -->
       <div class="space-y-6">
+        <AutonomousLiveInsight :project-id="projectId" />
+
         <div v-if="currentRun" class="space-y-6">
           <NPanel title="待处理异常" :badge="exceptions.filter(e => e.status === 'open').length || undefined">
             <template v-if="exceptions.filter(e => e.status === 'open').length > 0">

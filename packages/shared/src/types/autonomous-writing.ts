@@ -13,6 +13,9 @@ export type AutonomousScopeType
     | 'volume'
     | 'chapter_range'
     | 'next_n_chapters'
+    | 'from_current_forward'
+    | 'continue_incomplete'
+    | 'rewrite_selected'
 
 export interface AutonomousWritingRun {
   id: string

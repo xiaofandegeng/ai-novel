@@ -79,7 +79,7 @@ export const autonomousWritingRuns = pgTable('autonomous_writing_runs', {
     | 'needs_attention'
   >().notNull().default('idle'),
   strategy: text('strategy').$type<'safe' | 'balanced' | 'fast'>().notNull().default('balanced'),
-  scopeType: text('scope_type').$type<'project' | 'volume' | 'chapter_range' | 'next_n_chapters'>().notNull(),
+  scopeType: text('scope_type').$type<'project' | 'volume' | 'chapter_range' | 'next_n_chapters' | 'from_current_forward' | 'continue_incomplete' | 'rewrite_selected'>().notNull(),
   volumeId: text('volume_id'),
   startChapterId: text('start_chapter_id'),
   endChapterId: text('end_chapter_id'),

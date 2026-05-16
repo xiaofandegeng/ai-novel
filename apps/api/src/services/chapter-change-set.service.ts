@@ -10,12 +10,10 @@ import {
   chapterMemories,
   chapters,
   chapterScenes,
-  characters,
-  foreshadowingItems,
-  storyFactTriples,
   writingJobSteps,
 } from '../db/schema'
 import { generateId, now } from '../utils'
+import { applyOneSuggestion } from './postprocess-suggestion.service'
 import { createSnapshot } from './version.service'
 
 export interface ChapterPostprocessResult {
@@ -248,6 +246,90 @@ async function createChangeSetItems(
     }
   }
 
+  // Foreshadowing Payoffs
+  if (changes.foreshadowingPayoffs?.length) {
+    for (const payoff of changes.foreshadowingPayoffs) {
+      items.push({
+        id: generateId(),
+        changeSetId,
+        projectId,
+        chapterId,
+        itemType: 'foreshadowing_payoff',
+        title: `回收伏笔：${payoff.title || payoff.foreshadowingId}`,
+        payloadJson: payoff,
+        riskLevel: 'medium' as any,
+        status: 'pending' as any,
+      })
+    }
+  }
+
+  // Relationship Updates
+  if (changes.relationshipUpdates?.length) {
+    for (const rel of changes.relationshipUpdates) {
+      items.push({
+        id: generateId(),
+        changeSetId,
+        projectId,
+        chapterId,
+        itemType: 'relationship_update',
+        title: `关系变化：${rel.characterAName} & ${rel.characterBName}`,
+        payloadJson: rel,
+        riskLevel: rel.strength > 7 ? 'high' : 'medium',
+        status: 'pending' as any,
+      })
+    }
+  }
+
+  // Conflicts
+  if (changes.newConflicts?.length) {
+    for (const conflict of changes.newConflicts) {
+      items.push({
+        id: generateId(),
+        changeSetId,
+        projectId,
+        chapterId,
+        itemType: 'conflict_create',
+        title: `发现新矛盾：${conflict.title}`,
+        payloadJson: conflict,
+        riskLevel: 'high' as any,
+        status: 'pending' as any,
+      })
+    }
+  }
+
+  if (changes.conflictUpdates?.length) {
+    for (const update of changes.conflictUpdates) {
+      items.push({
+        id: generateId(),
+        changeSetId,
+        projectId,
+        chapterId,
+        itemType: 'conflict_update',
+        title: `矛盾推进：${update.title || update.conflictId}`,
+        payloadJson: update,
+        riskLevel: 'medium' as any,
+        status: 'pending' as any,
+      })
+    }
+  }
+
+  // Notes
+  if (changes.styleNotes?.length) {
+    for (const note of changes.styleNotes) {
+      items.push({
+        id: generateId(),
+        changeSetId,
+        projectId,
+        chapterId,
+        itemType: 'style_note',
+        title: `风格笔记：${note.title || '新风格建议'}`,
+        payloadJson: note,
+        riskLevel: 'low' as any,
+        status: 'pending' as any,
+      })
+    }
+  }
+
   if (items.length > 0) {
     await db.insert(chapterChangeSetItems).values(items)
   }
@@ -375,61 +457,6 @@ export async function applyChangeSet(projectId: string, changeSetId: string): Pr
           case 'draft':
             // Already applied above
             break
-          case 'character_create': {
-            const { name, role, goal, fear, secret, desire, weakness, personality, arc } = item.payloadJson
-            await tx.insert(characters).values({
-              id: generateId(),
-              projectId,
-              name,
-              role,
-              goal,
-              fear,
-              secret,
-              desire,
-              weakness,
-              personality,
-              arc,
-              createdAt: now(),
-              updatedAt: now(),
-            } as any)
-            break
-          }
-          case 'fact_create': {
-            const { subjectType, subjectName, predicate, objectType, objectName, confidence, notes } = item.payloadJson
-            await tx.insert(storyFactTriples).values({
-              id: generateId(),
-              projectId,
-              subjectType,
-              subjectName,
-              predicate,
-              objectType,
-              objectName,
-              confidence: confidence || 70,
-              sourceType: 'ai_extracted',
-              sourceChapterId: fullChangeSet.chapterId,
-              status: 'confirmed' as any,
-              notes,
-              createdAt: now(),
-              updatedAt: now(),
-            } as any)
-            break
-          }
-          case 'foreshadowing_create': {
-            const { title, description, importance, notes } = item.payloadJson
-            await tx.insert(foreshadowingItems).values({
-              id: generateId(),
-              projectId,
-              title,
-              description,
-              importance: (importance || 'normal') as any,
-              setupChapterId: fullChangeSet.chapterId,
-              status: 'open' as any,
-              notes,
-              createdAt: now(),
-              updatedAt: now(),
-            } as any)
-            break
-          }
           case 'chapter_memory': {
             const existing = await tx.select().from(chapterMemories).where(and(
               eq(chapterMemories.projectId, projectId),
@@ -449,6 +476,33 @@ export async function applyChangeSet(projectId: string, changeSetId: string): Pr
                 createdAt: now(),
                 updatedAt: now(),
               } as any)
+            }
+            break
+          }
+          default: {
+            // Map item types to suggestion types for reuse
+            const typeMapping: Record<string, string> = {
+              character_create: 'character_add',
+              fact_create: 'fact_triple',
+              foreshadowing_create: 'foreshadowing_add',
+              foreshadowing_payoff: 'foreshadowing_payoff',
+              relationship_update: 'relationship_update',
+              conflict_create: 'conflict_add',
+              conflict_update: 'conflict_update',
+              style_note: 'style_note',
+              continuity_note: 'continuity_note',
+            }
+
+            const suggestionType = typeMapping[item.itemType]
+            if (suggestionType) {
+              await applyOneSuggestion(
+                suggestionType,
+                item.payloadJson,
+                projectId,
+                fullChangeSet.chapterId,
+                70, // Default confidence for change sets
+                tx,
+              )
             }
             break
           }

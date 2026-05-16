@@ -5,12 +5,52 @@ import {
   autonomousRunExceptions,
   autonomousRunJobs,
   autonomousWritingRuns,
+  chapterChangeSetItems,
   chapters,
+  characterRelationships,
+  characters,
   writingJobs,
   writingJobSteps,
 } from '../db/schema'
 import { generateId, now } from '../utils'
+import { getProjectHealthMetrics } from './health-metrics.service'
 import { approveStep, startJob } from './writing-job.service'
+
+export async function getProjectNarrativeInsight(projectId: string) {
+  const health = await getProjectHealthMetrics(projectId)
+
+  const [charCount] = await db.select({ count: sql`count(*)` }).from(characters).where(eq(characters.projectId, projectId))
+  const [relCount] = await db.select({ count: sql`count(*)` }).from(characterRelationships).where(eq(characterRelationships.projectId, projectId))
+
+  // Get recent structural changes
+  const recentEvents = await db.select()
+    .from(chapterChangeSetItems)
+    .where(and(
+      eq(chapterChangeSetItems.projectId, projectId),
+      not(eq(chapterChangeSetItems.itemType, 'draft')),
+    ))
+    .orderBy(desc(chapterChangeSetItems.createdAt))
+    .limit(10)
+
+  return {
+    stats: {
+      totalChapters: health.totalChapters,
+      completedChapters: health.completedChapters,
+      totalWords: health.totalWords,
+      characterCount: Number(charCount?.count || 0),
+      relationshipCount: Number(relCount?.count || 0),
+      activeConflictCount: health.activeConflicts,
+    },
+    radarMetrics: health.radarMetrics,
+    recentEvents: recentEvents.map(ev => ({
+      id: ev.id,
+      type: ev.itemType,
+      title: ev.title,
+      status: ev.status,
+      createdAt: ev.createdAt,
+    })),
+  }
+}
 
 export async function createAutonomousRun(
   projectId: string,
@@ -59,6 +99,7 @@ export async function createAutonomousRun(
 
     // Prepare initial chapter jobs based on scope
     await prepareRunJobs(tx, projectId, run.id, scopeType, {
+      strategy: run.strategy,
       volumeId,
       startChapterId,
       endChapterId,
@@ -76,6 +117,7 @@ async function prepareRunJobs(
   runId: string,
   scopeType: AutonomousScopeType,
   params: {
+    strategy: string
     volumeId?: string
     startChapterId?: string
     endChapterId?: string
@@ -83,6 +125,7 @@ async function prepareRunJobs(
     targetWordsPerChapter?: number
   },
 ) {
+  const targetWords = params.targetWordsPerChapter || 3000
   let targetChapters: any[] = []
 
   if (scopeType === 'chapter_range' && params.startChapterId) {
@@ -107,6 +150,49 @@ async function prepareRunJobs(
     targetChapters = await tx.select().from(chapters).where(and(
       eq(chapters.projectId, projectId),
       eq(chapters.volumeId, params.volumeId),
+    )).orderBy(asc(chapters.chapterNumber))
+  }
+  else if (scopeType === 'from_current_forward' && params.startChapterId) {
+    const startChapter = await tx.select({ chapterNumber: chapters.chapterNumber }).from(chapters).where(and(eq(chapters.id, params.startChapterId), eq(chapters.projectId, projectId))).limit(1)
+    if (!startChapter[0])
+      throw new Error('开始章节不存在')
+
+    targetChapters = await tx.select().from(chapters).where(and(
+      eq(chapters.projectId, projectId),
+      sql`${chapters.chapterNumber} >= ${startChapter[0].chapterNumber}`,
+      or(
+        isNull(chapters.draft),
+        sql`char_length(coalesce(${chapters.draft}, '')) < ${targetWords * 0.6}`,
+        not(eq(chapters.status, 'completed')),
+      ),
+    )).orderBy(asc(chapters.chapterNumber))
+  }
+  else if (scopeType === 'continue_incomplete') {
+    const minWords = 500 // Increased from 100 for better "incomplete" detection
+    targetChapters = await tx.select().from(chapters).where(and(
+      eq(chapters.projectId, projectId),
+      or(
+        isNull(chapters.draft),
+        sql`char_length(coalesce(${chapters.draft}, '')) < ${minWords}`,
+      ),
+    )).orderBy(asc(chapters.chapterNumber)).limit(20)
+  }
+  else if (scopeType === 'rewrite_selected' && params.startChapterId) {
+    const startChapter = await tx.select({ chapterNumber: chapters.chapterNumber }).from(chapters).where(and(eq(chapters.id, params.startChapterId), eq(chapters.projectId, projectId))).limit(1)
+    if (!startChapter[0])
+      throw new Error('开始章节不存在')
+
+    let endNumber = startChapter[0].chapterNumber
+    if (params.endChapterId) {
+      const endChapter = await tx.select({ chapterNumber: chapters.chapterNumber }).from(chapters).where(and(eq(chapters.id, params.endChapterId), eq(chapters.projectId, projectId))).limit(1)
+      if (endChapter[0])
+        endNumber = endChapter[0].chapterNumber
+    }
+
+    targetChapters = await tx.select().from(chapters).where(and(
+      eq(chapters.projectId, projectId),
+      sql`${chapters.chapterNumber} >= ${startChapter[0].chapterNumber}`,
+      sql`${chapters.chapterNumber} <= ${endNumber}`,
     )).orderBy(asc(chapters.chapterNumber))
   }
   else if (scopeType === 'next_n_chapters' && params.targetChapterCount) {
@@ -147,6 +233,7 @@ async function prepareRunJobs(
       mode: 'draft_only',
       status: 'idle',
       executionMode: 'auto',
+      autoApprovalLevel: mapRunStrategyToApprovalLevel(params.strategy as any),
       targetWords: params.targetWordsPerChapter,
       autonomousRunId: runId,
       createdAt: now(),
@@ -161,6 +248,9 @@ async function prepareRunJobs(
       'review_change_set',
       'auto_repair',
       'apply_change_set',
+      'postprocess',
+      'confirm_suggestions',
+      'apply_suggestions',
       'update_health',
       'done',
     ]
@@ -643,4 +733,12 @@ export async function ignoreAutonomousException(projectId: string, runId: string
 
     await runNextAutonomousStep(projectId, runId)
   }
+}
+
+function mapRunStrategyToApprovalLevel(strategy: string): 'conservative' | 'balanced' | 'aggressive' {
+  if (strategy === 'safe')
+    return 'conservative'
+  if (strategy === 'fast')
+    return 'aggressive'
+  return 'balanced'
 }

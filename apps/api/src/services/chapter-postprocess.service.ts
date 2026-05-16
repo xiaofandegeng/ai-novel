@@ -162,8 +162,14 @@ ${truncatedContent}
   "foreshadowingAdded": [{ "title": "伏笔标题", "description": "说明", "importance": "major", "confidence": 75 }],
   "foreshadowingPayoffs": [{ "title": "已回收伏笔标题", "description": "回收说明", "confidence": 70 }],
   "characterStateChanges": [{ "characterName": "角色名", "change": "变化描述", "confidence": 80 }],
-  "relationshipChanges": "人物关系变化描述",
-  "conflictProgress": "冲突推进情况",
+  "relationshipChanges": "人物关系变化描述 (自然语言)",
+  "relationshipUpdates": [
+    { "characterAName": "角色A", "characterBName": "角色B", "type": "ally/enemy/lover/family/mentor/rival/acquaintance", "strength": 1, "status": "当前关系状态", "description": "关系变化依据", "confidence": 80 }
+  ],
+  "conflictProgress": "冲突推进情况 (自然语言)",
+  "conflictUpdates": [
+    { "title": "冲突标题", "newStatus": "active/escalated/stalemate/resolved/abandoned", "newIntensity": 1, "reason": "正文依据", "confidence": 80 }
+  ],
   "themeProgress": "主题推进情况",
   "styleNotes": [{ "title": "风格特征", "description": "描述", "confidence": 70 }],
   "newCharacters": [{ "name": "新角色名", "role": "supporting/extra", "personality": "性格", "confidence": 70, "reason": "依据" }],
