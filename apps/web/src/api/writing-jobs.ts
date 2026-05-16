@@ -5,6 +5,10 @@ export function fetchWritingJob(projectId: string) {
   return apiGet<WritingJob | null>(`/api/projects/${projectId}/writing-jobs`)
 }
 
+export function fetchWritingJobById(projectId: string, id: string) {
+  return apiGet<WritingJob>(`/api/projects/${projectId}/writing-jobs/${id}`)
+}
+
 export function createWritingJob(projectId: string, data: CreateWritingJobInput) {
   return apiPost<WritingJob>(`/api/projects/${projectId}/writing-jobs`, data)
 }

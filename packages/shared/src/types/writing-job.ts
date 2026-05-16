@@ -1,5 +1,5 @@
 export type WritingJobMode = 'outline_only' | 'draft_only' | 'outline_then_draft' | 'scene_draft'
-export type WritingJobStatus = 'idle' | 'running' | 'waiting_review' | 'paused' | 'completed' | 'failed'
+export type WritingJobStatus = 'idle' | 'running' | 'waiting_review' | 'paused' | 'completed' | 'failed' | 'isolated'
 export type WritingJobExecutionMode = 'manual' | 'auto'
 export type AutoApprovalLevel = 'conservative' | 'balanced' | 'aggressive'
 

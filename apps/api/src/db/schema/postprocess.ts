@@ -163,8 +163,10 @@ export const autonomousRunExceptions = pgTable('autonomous_run_exceptions', {
   severity: text('severity').$type<'medium' | 'high' | 'critical'>().notNull(),
   title: text('title').notNull(),
   description: text('description'),
-  status: text('status').$type<'open' | 'resolved' | 'ignored'>().notNull().default('open'),
+  status: text('status').$type<'open' | 'resolved' | 'ignored' | 'auto_resolved' | 'isolated' | 'resolved_by_user'>().notNull().default('open'),
+  autoResolutionStrategy: text('auto_resolution_strategy').$type<'repair' | 'skip_chapter' | 'isolate_chapter' | 'retry' | 'stop_run'>(),
   resolution: text('resolution'),
+  resolutionReport: jsonb('resolution_report'),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { mode: 'string' }).notNull().defaultNow(),
 })

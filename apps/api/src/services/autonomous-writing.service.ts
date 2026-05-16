@@ -472,7 +472,7 @@ async function hasActiveBlockers(runId: string): Promise<boolean> {
 export async function handleAutonomousJobCompletion(
   projectId: string,
   jobId: string,
-  status: 'completed' | 'failed' | 'waiting_review',
+  status: 'completed' | 'failed' | 'waiting_review' | 'isolated',
   reason?: string,
 ): Promise<void> {
   const [job] = await db.select().from(writingJobs).where(eq(writingJobs.id, jobId))
@@ -501,6 +501,16 @@ export async function handleAutonomousJobCompletion(
       return
 
     // Continue to next
+    await runNextAutonomousStep(projectId, runId)
+  }
+  else if (status === 'isolated') {
+    // Already updated in writing-job.service.ts or elsewhere, but we can ensure it
+    await db.update(autonomousRunJobs).set({
+      status: 'isolated',
+      updatedAt: now(),
+    }).where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, jobId)))
+
+    // Continue to next immediately
     await runNextAutonomousStep(projectId, runId)
   }
   else if (status === 'failed') {

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { NButton, NPanel } from '@ai-novel/ui'
 import { AlertCircle, ChevronLeft, RefreshCw, Rocket } from 'lucide-vue-next'
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AutonomousExceptionQueue from '@/features/autonomous-writing/components/AutonomousExceptionQueue.vue'
+import AutonomousJobDetailModal from '@/features/autonomous-writing/components/AutonomousJobDetailModal.vue'
 import AutonomousLiveInsight from '@/features/autonomous-writing/components/AutonomousLiveInsight.vue'
 import AutonomousRunControlBar from '@/features/autonomous-writing/components/AutonomousRunControlBar.vue'
 import AutonomousRunLauncher from '@/features/autonomous-writing/components/AutonomousRunLauncher.vue'
@@ -27,6 +28,8 @@ const {
   pause,
   resume,
 } = useAutonomousRun(projectId)
+
+const selectedJobId = ref<string | null>(null)
 
 onMounted(async () => {
   await loadActiveRun()
@@ -79,6 +82,14 @@ function handleRefresh() {
   else {
     loadActiveRun()
   }
+}
+
+function handleViewJob(jobId: string) {
+  selectedJobId.value = jobId
+}
+
+function handleCloseModal() {
+  selectedJobId.value = null
 }
 </script>
 
@@ -151,6 +162,7 @@ function handleRefresh() {
           <AutonomousRunTimeline
             :jobs="currentRun.jobs"
             :current-job-id="currentRun.jobs.find(j => j.status === 'running')?.id"
+            @view-job="handleViewJob"
           />
         </div>
       </div>
@@ -191,6 +203,14 @@ function handleRefresh() {
         </div>
       </div>
     </div>
+
+    <!-- Job Detail Modal -->
+    <AutonomousJobDetailModal
+      v-if="selectedJobId"
+      :project-id="projectId"
+      :job-id="selectedJobId"
+      @close="handleCloseModal"
+    />
   </div>
 </template>
 

@@ -207,14 +207,18 @@ function getStepOutput(step: WritingJobStep): any | null {
             <span
               class="h-6 w-6 flex items-center justify-center rounded-full text-[10px] font-bold"
               :class="{
-                'bg-primary-soft text-primary': step.status === 'pending' || (step.status === 'running' && step.autoDecision !== 'paused'),
+                'bg-primary-soft text-primary': step.status === 'pending' || (step.status === 'running' && !['paused', 'isolated', 'repair'].includes(step.autoDecision || '')),
                 'bg-amber-100 text-amber-700': step.autoDecision === 'paused',
+                'bg-orange-100 text-orange-700': step.autoDecision === 'isolated',
+                'bg-blue-100 text-blue-700': step.autoDecision === 'repair' || step.autoDecision === 'medium_risk_repair',
                 'bg-green-100 text-green-700': step.status === 'completed',
                 'bg-red-100 text-red-700': step.status === 'failed',
                 'bg-gray-100 text-gray-500': step.status === 'skipped',
               }"
             >
               <Pause v-if="step.autoDecision === 'paused'" :size="12" />
+              <AlertCircle v-else-if="step.autoDecision === 'isolated'" :size="12" />
+              <RefreshCw v-else-if="step.autoDecision === 'repair' || step.autoDecision === 'medium_risk_repair'" :size="12" :class="{ 'animate-spin': step.status === 'running' }" />
               <Loader2 v-else-if="step.status === 'running'" :size="12" class="animate-spin" />
               <CheckCircle2 v-else-if="step.status === 'completed'" :size="12" />
               <XCircle v-else-if="step.status === 'failed'" :size="12" />
@@ -234,11 +238,29 @@ function getStepOutput(step: WritingJobStep): any | null {
               </NTag>
             </div>
 
-            <div v-if="step.autoDecision === 'approved'" class="mt-1 flex items-center gap-1 text-[10px] text-green-600">
+            <div v-if="step.autoRiskLevel" class="mt-1">
+              <NTag size="sm" :variant="step.autoRiskLevel === 'low' ? 'success' : step.autoRiskLevel === 'medium' ? 'warning' : 'error'">
+                风险: {{ step.autoRiskLevel.toUpperCase() }}
+              </NTag>
+            </div>
+
+            <div v-if="step.autoDecision === 'approved' || step.autoDecision === 'continue'" class="mt-1 flex items-center gap-1 text-[10px] text-green-600">
               <CheckCircle2 :size="10" /> 引擎自动通过：{{ step.autoDecisionReason }}
             </div>
             <div v-else-if="step.autoDecision === 'paused'" class="mt-1 flex items-center gap-1 text-[10px] text-amber-600">
               <Pause :size="10" /> 引擎自动暂停：{{ step.autoDecisionReason }}
+            </div>
+            <div v-else-if="step.autoDecision === 'repair' || step.autoDecision === 'medium_risk_repair'" class="mt-1 flex items-center gap-1 text-[10px] text-blue-600">
+              <RefreshCw :size="10" /> 引擎自动修复：{{ step.autoDecisionReason }}
+            </div>
+            <div v-else-if="step.autoDecision === 'isolated'" class="mt-1 flex items-center gap-1 text-[10px] text-orange-600">
+              <AlertCircle :size="10" /> 引擎自动隔离：{{ step.autoDecisionReason }}
+            </div>
+            <div v-else-if="step.autoDecision === 'skip'" class="mt-1 flex items-center gap-1 text-[10px] text-gray-500">
+              <SkipForward :size="10" /> 引擎自动跳过：{{ step.autoDecisionReason }}
+            </div>
+            <div v-else-if="step.autoDecision === 'stop_run'" class="mt-1 flex items-center gap-1 text-[10px] text-red-600">
+              <XCircle :size="10" /> 引擎自动终止：{{ step.autoDecisionReason }}
             </div>
 
             <div v-if="step.error" class="mt-1 text-xs text-red-600">

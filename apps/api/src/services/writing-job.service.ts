@@ -1,13 +1,14 @@
 import type { WritingJob, WritingJobStepType } from '@ai-novel/shared'
 import { and, asc, eq, or } from 'drizzle-orm'
 import { db } from '../db'
-import { chapters, chapterScenes, projectHealthReports, writingJobs, writingJobSteps } from '../db/schema'
+import { autonomousRunJobs, autonomousWritingRuns, chapters, chapterScenes, projectHealthReports, writingJobs, writingJobSteps } from '../db/schema'
 import { generateId, now } from '../utils'
 import { renderAIContext } from './ai-context-renderer'
 import { createAIContextSnapshot } from './ai-context-snapshot.service'
 import { buildProjectAIContext } from './ai-context.service'
 import { callAIJSON, getEffectiveAISettings } from './ai.service'
 import { AuthoringEventService } from './authoring-event.service'
+import { decideNextAction } from './auto-decision.service'
 import { attemptAutoRepair } from './auto-repair.service'
 import { applyChangeSet as applyChangeSetSvc, approveChangeSet as approveChangeSetSvc, createChapterChangeSet, rejectChangeSet as rejectChangeSetSvc } from './chapter-change-set.service'
 import { extractChapterChanges, runChapterPostprocess, runScenePostprocess } from './chapter-postprocess.service'
@@ -16,7 +17,6 @@ import { getProjectHealthMetrics } from './health-metrics.service'
 import { applyAcceptedSuggestions, applyAutoSuggestions } from './postprocess-suggestion.service'
 import { runGraphInference } from './story-graph-inference.service'
 import { createSnapshot } from './version.service'
-import { evaluateAutoApproval } from './writing-job-auto-approval.service'
 
 type JobMode = 'outline_only' | 'draft_only' | 'outline_then_draft' | 'scene_draft'
 
@@ -164,7 +164,7 @@ async function updateJobStatus(jobId: string, status: string, lastError?: string
   await db.update(writingJobs).set(fields).where(eq(writingJobs.id, jobId))
 
   // P1-3: 如果是自动驾驶任务，通知 Run 进度
-  if (['completed', 'failed', 'waiting_review'].includes(status)) {
+  if (['completed', 'failed', 'waiting_review', 'isolated'].includes(status)) {
     const [job] = await db.select({ projectId: writingJobs.projectId }).from(writingJobs).where(eq(writingJobs.id, jobId))
     if (job) {
       // 动态导入避免循环依赖
@@ -800,8 +800,8 @@ async function executeStep(
       }
 
       case 'confirm_plan':
-        // This is a pause point — signal pause
-        return false
+        // Proceed in auto mode, signal pause in manual
+        return job.executionMode !== 'auto'
 
       case 'generate_draft': {
         const contextOutput = previousStepOutputs.get('prepare_context') || '{}'
@@ -815,24 +815,26 @@ async function executeStep(
       case 'consistency_check': {
         const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
         const output = await executeConsistencyCheck(projectId, chapterId, sceneId, draftOutput, step.id)
+        if (job.executionMode === 'auto') {
+          return true
+        }
         const report = JSON.parse(output)
         if (report.overallStatus === 'blocked' || report.overallStatus === 'warning') {
-          return false // Pause for review if there are risks
+          return false // Pause for review if there are risks in manual mode
         }
         break
       }
 
       case 'confirm_apply':
-        // Pause point
-        return false
+        return job.executionMode !== 'auto'
 
       case 'apply_draft': {
         const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
         if (job.mode === 'scene_draft') {
-          await executeApplySceneDraft(projectId, sceneId, draftOutput, step.id, job.executionMode === 'auto')
+          await executeApplySceneDraft(projectId, sceneId, draftOutput, step.id, true)
         }
         else {
-          await executeApplyDraft(projectId, chapterId, draftOutput, step.id, job.executionMode === 'auto')
+          await executeApplyDraft(projectId, chapterId, draftOutput, step.id, true)
         }
         break
       }
@@ -849,8 +851,7 @@ async function executeStep(
       }
 
       case 'confirm_suggestions':
-        // Pause point
-        return false
+        return job.executionMode !== 'auto'
 
       case 'apply_suggestions':
         await executeApplySuggestions(projectId, chapterId, step.id, job)
@@ -859,14 +860,11 @@ async function executeStep(
       case 'build_change_set': {
         const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
         await executeBuildChangeSet(projectId, chapterId, sceneId, draftOutput, step.id, job.id)
-        // 如果是高风险或自动驾驶需要确认，可以在这里 return false
-        // 但通常我们让后续的 review_change_set 来处理暂停
         break
       }
 
       case 'review_change_set':
-        // Pause point for user to review the build_change_set result
-        return false
+        return job.executionMode !== 'auto'
 
       case 'apply_change_set': {
         // Find changeSetId from previous build_change_set step
@@ -1013,81 +1011,82 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
     if (!shouldContinue) {
       // 获取最新 step 状态（包含 output）
       const [updatedStep] = await db.select().from(writingJobSteps).where(eq(writingJobSteps.id, step.id))
-      const decision = evaluateAutoApproval({ job: job as any, step: updatedStep as any, previousOutputs })
 
-      if (job.executionMode === 'auto') {
-        if (decision.approved) {
-          // P1-1: 自动通过变更集后必须批准变更项，否则应用时会跳过结构化变更
-          if (step.stepType === 'review_change_set' && updatedStep.changeSetId) {
-            await approveChangeSetSvc(projectId, updatedStep.changeSetId)
-          }
-
-          await db.update(writingJobSteps).set({
-            autoDecision: 'approved',
-            autoDecisionReason: decision.reason,
-            reviewRequired: false,
-            status: 'completed',
-            finishedAt: now(),
-            updatedAt: now(),
-          }).where(eq(writingJobSteps.id, step.id))
-
-          await db.update(writingJobs).set({
-            autoApprovedSteps: (job.autoApprovedSteps || 0) + 1,
-            updatedAt: now(),
-          }).where(eq(writingJobs.id, job.id))
-
-          // 继续执行后续步骤 (while 循环会重新获取 steps)
-          continue
-        }
-        else if (decision.severity === 'medium' && step.stepType === 'review_change_set') {
-          // P1-4: 自动修复链路
-          const hasTriedRepair = allSteps.some(s => s.stepType === 'auto_repair' && s.status !== 'pending')
-          if (!hasTriedRepair) {
-            // 1. 创建或找到 auto_repair 步骤并设置为 pending
-            const repairStep = allSteps.find(s => s.stepType === 'auto_repair')
-            if (!repairStep) {
-              const repairStepId = generateId()
-              await db.insert(writingJobSteps).values({
-                id: repairStepId,
-                jobId,
-                stepType: 'auto_repair',
-                status: 'pending',
-                createdAt: now(),
-                updatedAt: now(),
-              })
-            }
-            else {
-              await db.update(writingJobSteps).set({
-                status: 'pending',
-                updatedAt: now(),
-              }).where(eq(writingJobSteps.id, repairStep.id))
-            }
-
-            // 2. 将当前步骤标记为已完成（带特殊标记），以便循环能走到 auto_repair
-            await db.update(writingJobSteps).set({
-              status: 'completed',
-              autoDecision: 'medium_risk_repair',
-              autoDecisionReason: '检测到中风险，自动尝试修复',
-              finishedAt: now(),
-              updatedAt: now(),
-            }).where(eq(writingJobSteps.id, step.id))
-
-            await updateJobStatus(jobId, 'running', '正在执行自动修复...')
-            continue // 重新循环，会发现 auto_repair 是下一个待处理步骤
-          }
-        }
+      // 获取当前运行策略（从 run 中获取，如果 job 属于某个 run）
+      let strategy: any = 'balanced'
+      if (job.autonomousRunId) {
+        const [run] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, job.autonomousRunId))
+        if (run)
+          strategy = run.strategy
       }
 
-      // P1-2: 暂停审查时，统一把 step 设置为 completed，否则 approveStep 接口会因为 status !== 'completed' 而报错
+      const decision = await decideNextAction({
+        projectId,
+        job: job as any,
+        step: updatedStep as any,
+        previousOutputs,
+        runStrategy: strategy,
+      })
+
+      // 更新步骤决策信息
       await db.update(writingJobSteps).set({
-        status: 'completed',
-        autoDecision: 'paused',
+        autoDecision: decision.action === 'continue' ? 'approved' : (decision.action as any),
+        autoRiskLevel: decision.riskLevel as any,
         autoDecisionReason: decision.reason,
-        reviewRequired: true,
+        autoDecisionReport: decision.report,
+        reviewRequired: decision.action !== 'continue' && decision.action !== 'repair',
+        status: 'completed',
         finishedAt: now(),
         updatedAt: now(),
       }).where(eq(writingJobSteps.id, step.id))
 
+      if (decision.action === 'continue') {
+        // P1-1: 自动通过变更集后必须批准变更项
+        if (step.stepType === 'review_change_set' && updatedStep.changeSetId) {
+          await approveChangeSetSvc(projectId, updatedStep.changeSetId)
+        }
+        continue
+      }
+
+      if (decision.action === 'repair') {
+        const hasTriedRepair = allSteps.some(s => s.stepType === 'auto_repair' && s.status !== 'pending')
+        if (!hasTriedRepair) {
+          await db.update(writingJobSteps).set({ status: 'pending', updatedAt: now() }).where(and(eq(writingJobSteps.jobId, jobId), eq(writingJobSteps.stepType, 'auto_repair')))
+
+          await updateJobStatus(jobId, 'running', '正在执行自动修复...')
+          continue
+        }
+        // 如果已经尝试过修复依然决策为 repair，则升级为 isolate
+        decision.action = 'isolate'
+      }
+
+      if (decision.action === 'isolate') {
+        await db.update(writingJobs).set({ status: 'failed', lastError: `已隔离: ${decision.reason}`, updatedAt: now() }).where(eq(writingJobs.id, jobId))
+
+        if (job.autonomousRunId) {
+          await db.update(autonomousRunJobs).set({
+            status: 'isolated',
+            isolationReason: decision.reason,
+            isolationReport: decision.report,
+            updatedAt: now(),
+          }).where(and(eq(autonomousRunJobs.runId, job.autonomousRunId), eq(autonomousRunJobs.writingJobId, jobId)))
+        }
+        return
+      }
+
+      if (decision.action === 'stop_run') {
+        await updateJobStatus(jobId, 'failed', decision.reason)
+        if (job.autonomousRunId) {
+          await db.update(autonomousWritingRuns).set({
+            status: 'needs_attention',
+            lastError: decision.reason,
+            updatedAt: now(),
+          }).where(eq(autonomousWritingRuns.id, job.autonomousRunId))
+        }
+        return
+      }
+
+      // 默认回退到等待审查 (Manual mode)
       await updateJobStatus(jobId, 'waiting_review', decision.reason)
       return
     }

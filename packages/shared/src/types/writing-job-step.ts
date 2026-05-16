@@ -18,7 +18,8 @@ export type WritingJobStepType
     | 'auto_repair'
     | 'done'
 export type WritingJobStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
-export type AutoDecision = 'approved' | 'paused' | 'rejected' | 'not_applicable' | 'medium_risk_repair'
+export type AutoDecision = 'approved' | 'paused' | 'rejected' | 'not_applicable' | 'medium_risk_repair' | 'repaired' | 'isolated' | 'skipped' | 'failed'
+export type AutoRiskLevel = 'none' | 'low' | 'medium' | 'high' | 'critical'
 
 export interface WritingJobStep {
   id: string
@@ -27,7 +28,9 @@ export interface WritingJobStep {
   status: WritingJobStepStatus
   reviewRequired: boolean
   autoDecision: AutoDecision | null
+  autoRiskLevel?: AutoRiskLevel | null
   autoDecisionReason: string | null
+  autoDecisionReport?: Record<string, any> | null
   input: string | null
   output: string | null
   error: string | null

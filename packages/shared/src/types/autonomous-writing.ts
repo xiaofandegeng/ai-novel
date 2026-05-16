@@ -46,8 +46,10 @@ export interface AutonomousRunJob {
   writingJobId: string
   chapterId: string | null
   sceneId: string | null
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'waiting_review'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'waiting_review' | 'isolated'
   orderIndex: number
+  isolationReason?: string | null
+  isolationReport?: Record<string, any> | null
   createdAt: string
   updatedAt: string
 }
@@ -59,6 +61,9 @@ export type AutonomousExceptionType
     | 'ai_failed'
     | 'health_regression'
     | 'manual_required'
+
+export type AutonomousExceptionStatus = 'open' | 'resolved' | 'ignored' | 'auto_resolved' | 'isolated' | 'resolved_by_user'
+export type AutoResolutionStrategy = 'repair' | 'skip_chapter' | 'isolate_chapter' | 'retry' | 'stop_run'
 
 export interface AutonomousRunException {
   id: string
@@ -72,8 +77,10 @@ export interface AutonomousRunException {
   severity: 'medium' | 'high' | 'critical'
   title: string
   description: string | null
-  status: 'open' | 'resolved' | 'ignored'
+  status: AutonomousExceptionStatus
+  autoResolutionStrategy?: AutoResolutionStrategy | null
   resolution: string | null
+  resolutionReport?: Record<string, any> | null
   createdAt: string
   updatedAt: string
 }

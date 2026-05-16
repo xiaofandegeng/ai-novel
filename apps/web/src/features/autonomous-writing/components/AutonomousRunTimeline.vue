@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { NTag } from '@ai-novel/ui'
 import {
+  AlertCircle,
   CheckCircle2,
   FileText,
   History,
@@ -20,6 +21,7 @@ function getStatusIcon(status: string) {
   switch (status) {
     case 'completed': return CheckCircle2
     case 'failed': return XCircle
+    case 'isolated': return AlertCircle
     case 'running': return PlayCircle
     default: return History
   }
@@ -29,6 +31,7 @@ function getStatusColor(status: string) {
   switch (status) {
     case 'completed': return 'text-green-500'
     case 'failed': return 'text-red-500'
+    case 'isolated': return 'text-orange-500'
     case 'running': return 'text-primary'
     default: return 'text-text-muted'
   }
@@ -53,7 +56,7 @@ function getStatusColor(status: string) {
         <!-- Node Dot -->
         <div
           class="absolute top-1 z-10 h-3 w-3 border-2 border-bg-surface rounded-full -left-[1.15rem]"
-          :class="job.status === 'running' ? 'bg-primary animate-pulse' : job.status === 'completed' ? 'bg-green-500' : 'bg-border-light'"
+          :class="job.status === 'running' ? 'bg-primary animate-pulse' : job.status === 'completed' ? 'bg-green-500' : job.status === 'isolated' ? 'bg-orange-500' : 'bg-border-light'"
         />
 
         <div class="border border-border-light rounded-md bg-bg-surface p-3 shadow-sm transition-colors hover:border-primary">
@@ -71,8 +74,8 @@ function getStatusColor(status: string) {
 
           <div class="flex items-center justify-between">
             <div class="flex gap-1">
-              <NTag size="sm" :variant="job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : 'default'">
-                {{ job.status.toUpperCase() }}
+              <NTag size="sm" :variant="job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : job.status === 'isolated' ? 'warning' : 'default'">
+                {{ job.status === 'isolated' ? '已隔离' : job.status.toUpperCase() }}
               </NTag>
             </div>
 

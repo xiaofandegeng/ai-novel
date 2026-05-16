@@ -16,8 +16,19 @@ import { fail, generateId, success } from '../utils'
 export function registerWritingJobRoutes(app: Hono) {
   app.get('/api/projects/:projectId/writing-jobs', async (c) => {
     const projectId = c.req.param('projectId')
-    const [row] = await db.select().from(writingJobs).where(eq(writingJobs.projectId, projectId))
+    const [row] = await db.select().from(writingJobs).where(eq(writingJobs.projectId, projectId)).orderBy(writingJobs.createdAt)
     return c.json(success(row || null))
+  })
+
+  app.get('/api/projects/:projectId/writing-jobs/:id', async (c) => {
+    const projectId = c.req.param('projectId')
+    const id = c.req.param('id')
+    const [row] = await db.select().from(writingJobs).where(
+      and(eq(writingJobs.id, id), eq(writingJobs.projectId, projectId)),
+    )
+    if (!row)
+      return c.json(fail('Job not found'), 404)
+    return c.json(success(row))
   })
 
   app.post('/api/projects/:projectId/writing-jobs', async (c) => {
