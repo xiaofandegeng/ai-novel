@@ -159,6 +159,7 @@ async function prepareRunJobs(
       'generate_draft',
       'build_change_set',
       'review_change_set',
+      'auto_repair',
       'apply_change_set',
       'update_health',
       'done',
@@ -233,14 +234,18 @@ export async function startAutonomousRun(projectId: string, runId: string): Prom
   if (run.status === 'running')
     return
 
-  // 检查是否有其他正在运行的任务
-  const otherRunning = await db.select().from(autonomousWritingRuns).where(and(
+  // 检查是否有其他活跃的自动驾驶任务
+  const otherActive = await db.select().from(autonomousWritingRuns).where(and(
     eq(autonomousWritingRuns.projectId, projectId),
-    eq(autonomousWritingRuns.status, 'running'),
+    or(
+      eq(autonomousWritingRuns.status, 'running'),
+      eq(autonomousWritingRuns.status, 'paused'),
+      eq(autonomousWritingRuns.status, 'needs_attention'),
+    ),
     not(eq(autonomousWritingRuns.id, runId)),
   ))
-  if (otherRunning.length > 0)
-    throw new Error('该项目已有其他正在进行的自动驾驶任务')
+  if (otherActive.length > 0)
+    throw new Error('该项目已有其他正在进行或待处理的自动驾驶任务')
 
   await db.update(autonomousWritingRuns).set({
     status: 'running',
@@ -255,6 +260,13 @@ export async function startAutonomousRun(projectId: string, runId: string): Prom
 }
 
 export async function runNextAutonomousStep(projectId: string, runId: string): Promise<void> {
+  // Guard: only proceed if run is still running
+  const [currentRun] = await db.select().from(autonomousWritingRuns).where(
+    eq(autonomousWritingRuns.id, runId),
+  )
+  if (!currentRun || currentRun.status !== 'running')
+    return
+
   // Find the first pending job
   const nextJob = await db.select().from(autonomousRunJobs).where(and(
     eq(autonomousRunJobs.runId, runId),
@@ -262,7 +274,14 @@ export async function runNextAutonomousStep(projectId: string, runId: string): P
   )).orderBy(asc(autonomousRunJobs.orderIndex)).limit(1)
 
   if (nextJob.length === 0) {
-    // All jobs done
+    // Before marking completed, check for blocking states
+    const hasBlockers = await hasActiveBlockers(runId)
+    if (hasBlockers) {
+      // There are still running/waiting_review jobs or open exceptions
+      // Don't mark completed - the run will be continued when blockers resolve
+      return
+    }
+
     await db.update(autonomousWritingRuns).set({
       status: 'completed',
       finishedAt: now(),
@@ -294,27 +313,70 @@ export async function runNextAutonomousStep(projectId: string, runId: string): P
 }
 
 export async function pauseAutonomousRun(projectId: string, runId: string, reason?: string): Promise<void> {
+  const [run] = await db.select().from(autonomousWritingRuns).where(and(
+    eq(autonomousWritingRuns.id, runId),
+    eq(autonomousWritingRuns.projectId, projectId),
+  ))
+
+  if (!run)
+    throw new Error('Run not found')
+  if (run.status !== 'running')
+    throw new Error('只有正在运行的任务才能暂停')
+
   await db.update(autonomousWritingRuns).set({
     status: 'paused',
     pausedReason: reason || 'Manual pause',
     updatedAt: now(),
-  }).where(and(
-    eq(autonomousWritingRuns.id, runId),
-    eq(autonomousWritingRuns.projectId, projectId),
-  ))
+  }).where(eq(autonomousWritingRuns.id, runId))
 }
 
 export async function resumeAutonomousRun(projectId: string, runId: string): Promise<void> {
+  const [run] = await db.select().from(autonomousWritingRuns).where(and(
+    eq(autonomousWritingRuns.id, runId),
+    eq(autonomousWritingRuns.projectId, projectId),
+  ))
+
+  if (!run)
+    throw new Error('Run not found')
+
+  if (run.status === 'needs_attention')
+    throw new Error('请先处理待处理异常')
+
+  if (run.status !== 'paused')
+    throw new Error('只有暂停状态的任务才能继续推进')
+
   await db.update(autonomousWritingRuns).set({
     status: 'running',
     pausedReason: null,
     updatedAt: now(),
-  }).where(and(
-    eq(autonomousWritingRuns.id, runId),
-    eq(autonomousWritingRuns.projectId, projectId),
-  ))
+  }).where(eq(autonomousWritingRuns.id, runId))
 
   await runNextAutonomousStep(projectId, runId)
+}
+
+async function hasActiveBlockers(runId: string): Promise<boolean> {
+  const [runningJob] = await db.select({ id: autonomousRunJobs.id }).from(autonomousRunJobs).where(and(
+    eq(autonomousRunJobs.runId, runId),
+    eq(autonomousRunJobs.status, 'running'),
+  )).limit(1)
+  if (runningJob)
+    return true
+
+  const [waitingJob] = await db.select({ id: autonomousRunJobs.id }).from(autonomousRunJobs).where(and(
+    eq(autonomousRunJobs.runId, runId),
+    eq(autonomousRunJobs.status, 'waiting_review'),
+  )).limit(1)
+  if (waitingJob)
+    return true
+
+  const [openException] = await db.select({ id: autonomousRunExceptions.id }).from(autonomousRunExceptions).where(and(
+    eq(autonomousRunExceptions.runId, runId),
+    eq(autonomousRunExceptions.status, 'open'),
+  )).limit(1)
+  if (openException)
+    return true
+
+  return false
 }
 
 export async function handleAutonomousJobCompletion(
@@ -342,6 +404,11 @@ export async function handleAutonomousJobCompletion(
       completedChapterCount: sql`${autonomousWritingRuns.completedChapterCount} + 1`,
       updatedAt: now(),
     }).where(eq(autonomousWritingRuns.id, runId))
+
+    // Re-read run status before continuing — pause may have been requested
+    const [latestRun] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, runId))
+    if (!latestRun || latestRun.status !== 'running')
+      return
 
     // Continue to next
     await runNextAutonomousStep(projectId, runId)
@@ -371,11 +438,16 @@ export async function handleAutonomousJobCompletion(
       chapterId: job.currentChapterId,
       writingJobId: jobId,
       stepId: failedStep?.id,
+      status: run.strategy === 'fast' ? 'ignored' : 'open',
+      resolution: run.strategy === 'fast' ? '快速策略自动跳过该章节' : null,
     })
 
     // If strategy is fast, we might continue anyway?
     if (run.strategy === 'fast') {
-      await runNextAutonomousStep(projectId, runId)
+      const [latestRun] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, runId))
+      if (latestRun && latestRun.status === 'running') {
+        await runNextAutonomousStep(projectId, runId)
+      }
     }
     else {
       await db.update(autonomousWritingRuns).set({
@@ -401,6 +473,8 @@ export async function handleAutonomousJobCompletion(
       writingJobId: jobId,
       stepId: reviewStep?.id,
       changeSetId: reviewStep?.changeSetId,
+      status: run.strategy === 'fast' ? 'ignored' : 'open',
+      resolution: run.strategy === 'fast' ? '快速策略自动跳过该章节' : null,
     })
 
     if (run.strategy === 'fast') {
@@ -439,6 +513,8 @@ export async function recordAutonomousException(
     changeSetId?: string | null
     writingJobId?: string | null
     stepId?: string | null
+    status?: 'open' | 'resolved' | 'ignored'
+    resolution?: string | null
   },
 ): Promise<void> {
   await db.insert(autonomousRunExceptions).values({
@@ -453,7 +529,8 @@ export async function recordAutonomousException(
     severity: input.severity,
     title: input.title,
     description: input.description || null,
-    status: 'open',
+    status: input.status || 'open',
+    resolution: input.resolution || null,
     createdAt: now(),
     updatedAt: now(),
   })
@@ -499,7 +576,7 @@ export async function resolveAutonomousException(projectId: string, runId: strin
         eq(autonomousRunJobs.chapterId, ex.chapterId),
         eq(autonomousRunJobs.status, 'waiting_review'),
       ))
-      await resumeAutonomousRun(projectId, runId)
+      await runNextAutonomousStep(projectId, runId)
     }
 
     // 只有成功推进后才标记为已解决
@@ -508,6 +585,9 @@ export async function resolveAutonomousException(projectId: string, runId: strin
       resolution,
       updatedAt: now(),
     }).where(eq(autonomousRunExceptions.id, exceptionId))
+
+    // Re-check if run can now complete or continue
+    await runNextAutonomousStep(projectId, runId)
   }
   catch (err: any) {
     // 恢复失败状态，防止 Run 停留在 running 但实际上没人在跑
@@ -548,5 +628,19 @@ export async function ignoreAutonomousException(projectId: string, runId: string
     ))
   }
 
-  await resumeAutonomousRun(projectId, runId)
+  // Check if there are still open exceptions before continuing
+  const remainingOpen = await db.select({ id: autonomousRunExceptions.id }).from(autonomousRunExceptions).where(and(
+    eq(autonomousRunExceptions.runId, runId),
+    eq(autonomousRunExceptions.status, 'open'),
+  )).limit(1)
+
+  if (remainingOpen.length === 0) {
+    // No more open exceptions — transition to running and continue
+    await db.update(autonomousWritingRuns).set({
+      status: 'running',
+      updatedAt: now(),
+    }).where(eq(autonomousWritingRuns.id, runId))
+
+    await runNextAutonomousStep(projectId, runId)
+  }
 }

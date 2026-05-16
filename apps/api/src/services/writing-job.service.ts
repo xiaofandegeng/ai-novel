@@ -34,8 +34,8 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'generate_draft',
     'build_change_set',
     'review_change_set',
-    'apply_change_set',
     'auto_repair',
+    'apply_change_set',
     'update_health',
     'done',
   ],
@@ -46,8 +46,8 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'generate_draft',
     'build_change_set',
     'review_change_set',
-    'apply_change_set',
     'auto_repair',
+    'apply_change_set',
     'update_health',
     'done',
   ],
@@ -58,8 +58,8 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'generate_draft',
     'build_change_set',
     'review_change_set',
-    'apply_change_set',
     'auto_repair',
+    'apply_change_set',
     'update_health',
     'done',
   ],
@@ -868,6 +868,17 @@ async function executeStep(
       }
 
       case 'auto_repair': {
+        // Only attempt repair when review_change_set detected medium risk
+        const reviewSteps = await getJobSteps(job.id)
+        const needsRepair = reviewSteps.some(
+          s => s.stepType === 'review_change_set' && s.autoDecision === 'medium_risk_repair',
+        )
+
+        if (!needsRepair) {
+          await updateStep(step.id, { status: 'skipped', autoDecisionReason: 'No repair needed - review passed' })
+          return true
+        }
+
         const draftOutputStr = previousStepOutputs.get('generate_draft') || '{}'
         const draftOutput = JSON.parse(draftOutputStr)
         const buildOutputStr = previousStepOutputs.get('build_change_set') || '{}'
@@ -889,16 +900,26 @@ async function executeStep(
         if (repairResult.repaired) {
           // Update generate_draft output with repaired content
           const updatedDraftOutput = { ...draftOutput, draft: repairResult.draftContent }
-          const generateDraftStep = (await getJobSteps(job.id)).find(s => s.stepType === 'generate_draft')
+          const generateDraftStep = reviewSteps.find(s => s.stepType === 'generate_draft')
           if (generateDraftStep) {
             await updateStep(generateDraftStep.id, { output: JSON.stringify(updatedDraftOutput) })
           }
 
-          // P1-3: 将 build_change_set 和 review_change_set 重置为 pending，以便修复后重跑
+          // Reject old change set before resetting steps
+          const oldBuildStep = reviewSteps.find(s => s.stepType === 'build_change_set' && s.changeSetId)
+          if (oldBuildStep?.changeSetId) {
+            await rejectChangeSetSvc(projectId, oldBuildStep.changeSetId)
+          }
+
+          // Reset build_change_set and review_change_set so they re-run with repaired content
           await db.update(writingJobSteps).set({
             status: 'pending',
             output: null,
+            changeSetId: null,
             finishedAt: null,
+            autoDecision: null,
+            autoDecisionReason: null,
+            reviewRequired: false,
             updatedAt: now(),
           }).where(and(
             eq(writingJobSteps.jobId, job.id),

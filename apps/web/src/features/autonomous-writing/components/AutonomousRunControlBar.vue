@@ -75,7 +75,7 @@ function getStatusLabel(status: string): string {
           <Pause :size="16" class="mr-1" /> 暂停
         </NButton>
         <NButton
-          v-else-if="['paused', 'needs_attention'].includes(currentRun.status)"
+          v-else-if="currentRun.status === 'paused'"
           variant="primary"
           size="sm"
           :loading="loading"
@@ -83,6 +83,12 @@ function getStatusLabel(status: string): string {
         >
           <Play :size="16" class="mr-1" /> 继续推进
         </NButton>
+        <span
+          v-else-if="currentRun.status === 'needs_attention'"
+          class="text-warning text-sm"
+        >
+          请先处理右侧待处理异常
+        </span>
 
         <NButton variant="ghost" size="sm" @click="emit('refresh')">
           <RefreshCw :size="16" />

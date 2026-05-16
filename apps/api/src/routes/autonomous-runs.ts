@@ -30,30 +30,50 @@ export function registerAutonomousRunRoutes(app: Hono) {
   app.post('/api/projects/:projectId/autonomous-runs', async (c) => {
     const projectId = c.req.param('projectId')
     const body = await c.req.json()
-    const run = await createAutonomousRun(projectId, body)
-    return c.json(run)
+    try {
+      const run = await createAutonomousRun(projectId, body)
+      return c.json(run)
+    }
+    catch (err: any) {
+      return c.json({ error: err.message }, 400)
+    }
   })
 
   app.post('/api/projects/:projectId/autonomous-runs/:runId/start', async (c) => {
     const projectId = c.req.param('projectId')
     const runId = c.req.param('runId')
-    await startAutonomousRun(projectId, runId)
-    return c.json({ success: true })
+    try {
+      await startAutonomousRun(projectId, runId)
+      return c.json({ success: true })
+    }
+    catch (err: any) {
+      return c.json({ error: err.message }, 400)
+    }
   })
 
   app.post('/api/projects/:projectId/autonomous-runs/:runId/pause', async (c) => {
     const projectId = c.req.param('projectId')
     const runId = c.req.param('runId')
     const { reason } = await c.req.json().catch(() => ({ reason: undefined }))
-    await pauseAutonomousRun(projectId, runId, reason)
-    return c.json({ success: true })
+    try {
+      await pauseAutonomousRun(projectId, runId, reason)
+      return c.json({ success: true })
+    }
+    catch (err: any) {
+      return c.json({ error: err.message }, 400)
+    }
   })
 
   app.post('/api/projects/:projectId/autonomous-runs/:runId/resume', async (c) => {
     const projectId = c.req.param('projectId')
     const runId = c.req.param('runId')
-    await resumeAutonomousRun(projectId, runId)
-    return c.json({ success: true })
+    try {
+      await resumeAutonomousRun(projectId, runId)
+      return c.json({ success: true })
+    }
+    catch (err: any) {
+      return c.json({ error: err.message }, 400)
+    }
   })
 
   app.get('/api/projects/:projectId/autonomous-runs/:runId/exceptions', async (c) => {
