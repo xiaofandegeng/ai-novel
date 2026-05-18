@@ -1,7 +1,7 @@
 import type { WritingJob, WritingJobStepType } from '@ai-novel/shared'
-import { and, asc, eq, or } from 'drizzle-orm'
+import { and, asc, eq, or, sql } from 'drizzle-orm'
 import { db } from '../db'
-import { autonomousRunJobs, autonomousWritingRuns, chapters, chapterScenes, projectHealthReports, writingJobs, writingJobSteps } from '../db/schema'
+import { autonomousRunExceptions, autonomousRunJobs, autonomousWritingRuns, chapters, chapterScenes, projectHealthReports, writingJobs, writingJobSteps } from '../db/schema'
 import { generateId, now } from '../utils'
 import { renderAIContext } from './ai-context-renderer'
 import { createAIContextSnapshot } from './ai-context-snapshot.service'
@@ -24,7 +24,7 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
   outline_only: [
     'prepare_context',
     'generate_plan',
-    'confirm_plan',
+    'validate_plan',
     'update_health',
     'auto_repair',
     'done',
@@ -33,11 +33,11 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'prepare_context',
     'generate_draft',
     'build_change_set',
-    'review_change_set',
+    'evaluate_change_set',
     'auto_repair',
     'apply_change_set',
     'postprocess',
-    'confirm_suggestions',
+    'classify_suggestions',
     'apply_suggestions',
     'update_health',
     'done',
@@ -45,14 +45,14 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
   outline_then_draft: [
     'prepare_context',
     'generate_plan',
-    'confirm_plan',
+    'validate_plan',
     'generate_draft',
     'build_change_set',
-    'review_change_set',
+    'evaluate_change_set',
     'auto_repair',
     'apply_change_set',
     'postprocess',
-    'confirm_suggestions',
+    'classify_suggestions',
     'apply_suggestions',
     'update_health',
     'done',
@@ -60,14 +60,14 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
   scene_draft: [
     'prepare_context',
     'generate_scene_draft',
-    'confirm_plan',
+    'validate_plan',
     'generate_draft',
     'build_change_set',
-    'review_change_set',
+    'evaluate_change_set',
     'auto_repair',
     'apply_change_set',
     'postprocess',
-    'confirm_suggestions',
+    'classify_suggestions',
     'apply_suggestions',
     'update_health',
     'done',
@@ -75,29 +75,27 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
 }
 
 const CONFIRM_STEPS = new Set<WritingJobStepType>([
-  'confirm_plan',
+  'validate_plan',
   'consistency_check',
-  'confirm_apply',
-  'confirm_suggestions',
-  'review_change_set',
+  'classify_suggestions',
+  'evaluate_change_set',
 ])
 
 const STEP_LABELS: Record<WritingJobStepType, string> = {
   prepare_context: '构建上下文',
   generate_plan: '生成大纲',
   generate_scene_draft: '生成场景大纲',
-  confirm_plan: '审查大纲',
+  validate_plan: '验证大纲',
   generate_draft: '生成正文',
   consistency_check: '一致性检查',
-  confirm_apply: '审查正文',
   apply_draft: '写入正文',
   save_version: '保存快照',
   postprocess: '章后管线',
-  confirm_suggestions: '审查建议',
+  classify_suggestions: '分类建议',
   apply_suggestions: '应用建议',
   update_health: '更新健康指标',
   build_change_set: '构建变更集',
-  review_change_set: '审查变更集',
+  evaluate_change_set: '评估变更集',
   apply_change_set: '应用变更集',
   auto_repair: '自动修复',
   done: '任务完成',
@@ -799,7 +797,7 @@ async function executeStep(
         break
       }
 
-      case 'confirm_plan':
+      case 'validate_plan':
         // Proceed in auto mode, signal pause in manual
         return job.executionMode !== 'auto'
 
@@ -825,9 +823,6 @@ async function executeStep(
         break
       }
 
-      case 'confirm_apply':
-        return job.executionMode !== 'auto'
-
       case 'apply_draft': {
         const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
         if (job.mode === 'scene_draft') {
@@ -850,7 +845,7 @@ async function executeStep(
         break
       }
 
-      case 'confirm_suggestions':
+      case 'classify_suggestions':
         return job.executionMode !== 'auto'
 
       case 'apply_suggestions':
@@ -863,7 +858,7 @@ async function executeStep(
         break
       }
 
-      case 'review_change_set':
+      case 'evaluate_change_set':
         return job.executionMode !== 'auto'
 
       case 'apply_change_set': {
@@ -878,7 +873,7 @@ async function executeStep(
         // Only attempt repair when review_change_set detected medium risk
         const reviewSteps = await getJobSteps(job.id)
         const needsRepair = reviewSteps.some(
-          s => s.stepType === 'review_change_set' && s.autoDecision === 'medium_risk_repair',
+          s => s.stepType === 'evaluate_change_set' && s.autoDecision === 'medium_risk_repair',
         )
 
         if (!needsRepair) {
@@ -930,7 +925,7 @@ async function executeStep(
             updatedAt: now(),
           }).where(and(
             eq(writingJobSteps.jobId, job.id),
-            or(eq(writingJobSteps.stepType, 'build_change_set'), eq(writingJobSteps.stepType, 'review_change_set')),
+            or(eq(writingJobSteps.stepType, 'build_change_set'), eq(writingJobSteps.stepType, 'evaluate_change_set')),
           ))
 
           await updateStep(step.id, { status: 'completed', output: JSON.stringify(repairResult.repairReport) })
@@ -996,7 +991,51 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
     // If step was previously failed, we only continue if it's a retry (which would have reset the status)
     // But here we might want to handle it
     if (step.status === 'failed') {
-      return // Wait for manual retry
+      // Manual jobs still wait for human retry
+      if (job.executionMode !== 'auto')
+        return
+
+      // Auto jobs: classify error and handle automatically
+      let strategy: any = 'balanced'
+      if (job.autonomousRunId) {
+        const [run] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, job.autonomousRunId))
+        if (run)
+          strategy = run.strategy
+      }
+
+      const [failedStep] = await db.select().from(writingJobSteps).where(eq(writingJobSteps.id, step.id))
+      const decision = await decideNextAction({
+        projectId,
+        job: job as any,
+        step: failedStep as any,
+        previousOutputs,
+        runStrategy: strategy,
+      })
+
+      await db.update(writingJobSteps).set({
+        autoDecision: decision.action as any,
+        autoRiskLevel: decision.riskLevel as any,
+        autoDecisionReason: decision.reason,
+        autoDecisionReport: decision.report,
+        updatedAt: now(),
+      }).where(eq(writingJobSteps.id, step.id))
+
+      if (decision.action === 'isolate' || decision.action === 'skip') {
+        await updateJobStatus(jobId, 'isolated', decision.reason)
+        if (job.autonomousRunId) {
+          await db.update(autonomousRunJobs).set({
+            status: 'isolated',
+            isolationReason: decision.reason,
+            isolationReport: decision.report,
+            updatedAt: now(),
+          }).where(and(eq(autonomousRunJobs.runId, job.autonomousRunId), eq(autonomousRunJobs.writingJobId, jobId)))
+        }
+        return
+      }
+
+      // Default for failed steps in auto mode: mark job failed, propagate to run
+      await updateJobStatus(jobId, 'failed', decision.reason)
+      return
     }
 
     const shouldContinue = await executeStep(
@@ -1034,7 +1073,7 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
         autoRiskLevel: decision.riskLevel as any,
         autoDecisionReason: decision.reason,
         autoDecisionReport: decision.report,
-        reviewRequired: decision.action !== 'continue' && decision.action !== 'repair',
+        reviewRequired: job.executionMode === 'manual' && decision.action !== 'continue' && decision.action !== 'repair',
         status: 'completed',
         finishedAt: now(),
         updatedAt: now(),
@@ -1042,7 +1081,7 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
 
       if (decision.action === 'continue') {
         // P1-1: 自动通过变更集后必须批准变更项
-        if (step.stepType === 'review_change_set' && updatedStep.changeSetId) {
+        if (step.stepType === 'evaluate_change_set' && updatedStep.changeSetId) {
           await approveChangeSetSvc(projectId, updatedStep.changeSetId)
         }
         continue
@@ -1077,17 +1116,43 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
       if (decision.action === 'stop_run') {
         await updateJobStatus(jobId, 'failed', decision.reason)
         if (job.autonomousRunId) {
+          // Record critical exception
+          await db.insert(autonomousRunExceptions).values({
+            id: generateId(),
+            runId: job.autonomousRunId,
+            projectId,
+            chapterId: job.currentChapterId,
+            writingJobId: jobId,
+            stepId: step.id,
+            exceptionType: 'ai_failed',
+            severity: 'critical',
+            title: 'Critical Error - Run Stopped',
+            description: decision.reason,
+            status: 'open',
+            createdAt: now(),
+            updatedAt: now(),
+          }).catch(err => console.error('Failed to record stop_run exception:', err))
+
+          await db.update(autonomousRunJobs).set({ status: 'failed', updatedAt: now() })
+            .where(and(eq(autonomousRunJobs.runId, job.autonomousRunId), eq(autonomousRunJobs.writingJobId, jobId)))
+
           await db.update(autonomousWritingRuns).set({
-            status: 'needs_attention',
+            status: 'failed',
             lastError: decision.reason,
+            failedChapterCount: sql`${autonomousWritingRuns.failedChapterCount} + 1`,
             updatedAt: now(),
           }).where(eq(autonomousWritingRuns.id, job.autonomousRunId))
         }
         return
       }
 
-      // 默认回退到等待审查 (Manual mode)
-      await updateJobStatus(jobId, 'waiting_review', decision.reason)
+      // Fallback: only for manual execution mode
+      if (job.executionMode === 'manual') {
+        await updateJobStatus(jobId, 'waiting_review', decision.reason)
+        return
+      }
+      // Safety net for autonomous jobs reaching here unexpectedly
+      await updateJobStatus(jobId, 'failed', `Unhandled decision action: ${decision.action}`)
       return
     }
   }
@@ -1141,7 +1206,7 @@ export async function approveStep(projectId: string, jobId: string, stepId: stri
   await updateStep(stepId, { status: 'completed', finishedAt: now() })
 
   // If this was a change set review, mark the change set as approved
-  if (step.stepType === 'review_change_set' && step.changeSetId) {
+  if (step.stepType === 'evaluate_change_set' && step.changeSetId) {
     await approveChangeSetSvc(projectId, step.changeSetId)
   }
 
@@ -1172,7 +1237,7 @@ export async function rejectStep(projectId: string, jobId: string, stepId: strin
   })
 
   // If this was a change set review, mark the change set as rejected
-  if (step.stepType === 'review_change_set' && step.changeSetId) {
+  if (step.stepType === 'evaluate_change_set' && step.changeSetId) {
     await rejectChangeSetSvc(projectId, step.changeSetId)
   }
 

@@ -6,7 +6,7 @@ import {
 } from '@ai-novel/ui'
 import { AlertCircle, X } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
-import { approveStep, fetchJobSteps, fetchWritingJobById, rejectStep, retryStep, startWritingJob } from '@/api/writing-jobs'
+import { fetchJobSteps, fetchWritingJobById, retryStep, startWritingJob } from '@/api/writing-jobs'
 import WritingJobStepTimeline from '@/features/writing-jobs/components/WritingJobStepTimeline.vue'
 
 const props = defineProps<{
@@ -44,38 +44,6 @@ async function loadData() {
 }
 
 onMounted(loadData)
-
-async function handleApprove(stepId: string) {
-  actionLoading.value = `approve-${stepId}`
-  try {
-    const res = await approveStep(props.projectId, props.jobId, stepId)
-    job.value = res.job
-    steps.value = res.steps
-    toast.add('已批准该步骤', 'success')
-  }
-  catch (err: any) {
-    toast.add(err.message || '操作失败', 'error')
-  }
-  finally {
-    actionLoading.value = null
-  }
-}
-
-async function handleReject(stepId: string) {
-  actionLoading.value = `reject-${stepId}`
-  try {
-    const res = await rejectStep(props.projectId, props.jobId, stepId)
-    job.value = res.job
-    steps.value = res.steps
-    toast.add('已驳回该步骤', 'success')
-  }
-  catch (err: any) {
-    toast.add(err.message || '操作失败', 'error')
-  }
-  finally {
-    actionLoading.value = null
-  }
-}
 
 async function handleRetry(stepId: string) {
   actionLoading.value = `retry-${stepId}`
@@ -138,9 +106,8 @@ async function handleStart() {
             :job="job"
             :steps="steps"
             :action-loading="actionLoading"
-            :current-review-step-id="job.status === 'waiting_review' ? steps.find(s => (s.reviewRequired || s.autoDecision === 'paused') && (s.status === 'running' || s.status === 'completed'))?.id : null"
-            @approve="handleApprove"
-            @reject="handleReject"
+            :current-review-step-id="steps.find(s => (s.reviewRequired || s.autoDecision === 'paused') && (s.status === 'running' || s.status === 'completed'))?.id"
+            read-only
             @retry="handleRetry"
             @start="handleStart"
           />

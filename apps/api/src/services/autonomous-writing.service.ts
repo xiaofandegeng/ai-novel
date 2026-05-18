@@ -14,7 +14,7 @@ import {
 } from '../db/schema'
 import { generateId, now } from '../utils'
 import { getProjectHealthMetrics } from './health-metrics.service'
-import { approveStep, startJob } from './writing-job.service'
+import { startJob } from './writing-job.service'
 
 export async function getProjectNarrativeInsight(projectId: string) {
   const health = await getProjectHealthMetrics(projectId)
@@ -245,11 +245,11 @@ async function prepareRunJobs(
       'prepare_context',
       'generate_draft',
       'build_change_set',
-      'review_change_set',
+      'evaluate_change_set',
       'auto_repair',
       'apply_change_set',
       'postprocess',
-      'confirm_suggestions',
+      'classify_suggestions',
       'apply_suggestions',
       'update_health',
       'done',
@@ -542,61 +542,33 @@ export async function handleAutonomousJobCompletion(
       resolution: run.strategy === 'fast' ? '快速策略自动跳过该章节' : null,
     })
 
-    // If strategy is fast, we might continue anyway?
-    if (run.strategy === 'fast') {
-      const [latestRun] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, runId))
-      if (latestRun && latestRun.status === 'running') {
-        await runNextAutonomousStep(projectId, runId)
-      }
-    }
-    else {
-      await db.update(autonomousWritingRuns).set({
-        status: 'needs_attention',
-        updatedAt: now(),
-      }).where(eq(autonomousWritingRuns.id, runId))
+    // Single chapter failure never stops the run — continue to next chapter
+    const [latestRun] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, runId))
+    if (latestRun && latestRun.status === 'running') {
+      await runNextAutonomousStep(projectId, runId)
     }
   }
   else if (status === 'waiting_review') {
-    // Find the step requiring review
-    const [reviewStep] = await db.select().from(writingJobSteps).where(and(
-      eq(writingJobSteps.jobId, jobId),
-      eq(writingJobSteps.reviewRequired, true),
-    )).orderBy(desc(writingJobSteps.updatedAt)).limit(1)
+    // This branch should not be reached in autonomous mode anymore.
+    // Safety net: isolate the chapter and continue the run.
+    await db.update(autonomousRunJobs).set({
+      status: 'isolated',
+      isolationReason: reason || '章节被隔离：高风险变更',
+      updatedAt: now(),
+    }).where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, jobId)))
 
-    // Record exception first
     await recordAutonomousException(projectId, runId, {
       exceptionType: 'high_risk_change_set',
-      severity: run.strategy === 'fast' ? 'medium' : 'high',
-      title: '需要人工审查',
-      description: reason || '检测到高风险变更，需要作者确认。',
+      severity: 'high',
+      title: '高风险章节已隔离',
+      description: reason || '检测到高风险变更，章节已自动隔离。',
       chapterId: job.currentChapterId,
       writingJobId: jobId,
-      stepId: reviewStep?.id,
-      changeSetId: reviewStep?.changeSetId,
-      status: run.strategy === 'fast' ? 'ignored' : 'open',
-      resolution: run.strategy === 'fast' ? '快速策略自动跳过该章节' : null,
     })
 
-    if (run.strategy === 'fast') {
-      // Fast strategy: skip this chapter and continue to next
-      await db.update(autonomousRunJobs).set({
-        status: 'skipped',
-        updatedAt: now(),
-      }).where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, jobId)))
-
+    const [latestRun] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, runId))
+    if (latestRun && latestRun.status === 'running') {
       await runNextAutonomousStep(projectId, runId)
-    }
-    else {
-      // Safe/Balanced: Mark job as waiting review and pause the run
-      await db.update(autonomousRunJobs).set({
-        status: 'waiting_review',
-        updatedAt: now(),
-      }).where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, jobId)))
-
-      await db.update(autonomousWritingRuns).set({
-        status: 'needs_attention',
-        updatedAt: now(),
-      }).where(eq(autonomousWritingRuns.id, runId))
     }
   }
 }
@@ -655,44 +627,72 @@ export async function resolveAutonomousException(projectId: string, runId: strin
   if (ex.status !== 'open')
     throw new Error('该异常已被处理')
 
-  // 先把 Run 恢复为运行中，这样后续的自动推进才能在 running 状态下工作
-  await db.update(autonomousWritingRuns).set({
-    status: 'running',
+  // Mark exception as resolved
+  await db.update(autonomousRunExceptions).set({
+    status: 'resolved',
+    resolution,
     updatedAt: now(),
-  }).where(eq(autonomousWritingRuns.id, runId))
+  }).where(eq(autonomousRunExceptions.id, exceptionId))
 
   try {
-    if (ex.writingJobId && ex.stepId) {
-      // 审批对应的章节步骤
-      await approveStep(projectId, ex.writingJobId, ex.stepId)
+    // Reset the failed/isolated job so it can be re-run
+    if (ex.writingJobId) {
+      // Reset job steps to pending so startJob re-initializes them
+      await db.update(writingJobSteps).set({
+        status: 'pending',
+        error: null,
+        output: null,
+        finishedAt: null,
+        autoDecision: null,
+        autoDecisionReason: null,
+        autoDecisionReport: null,
+        reviewRequired: false,
+        updatedAt: now(),
+      }).where(eq(writingJobSteps.jobId, ex.writingJobId))
+
+      // Reset job status
+      await db.update(writingJobs).set({
+        status: 'idle',
+        lastError: null,
+        updatedAt: now(),
+      }).where(eq(writingJobs.id, ex.writingJobId))
+
+      // Reset run job status
+      await db.update(autonomousRunJobs).set({
+        status: 'pending',
+        isolationReason: null,
+        isolationReport: null,
+        updatedAt: now(),
+      }).where(and(
+        eq(autonomousRunJobs.runId, runId),
+        eq(autonomousRunJobs.writingJobId, ex.writingJobId),
+      ))
     }
     else if (ex.chapterId) {
-      // 兼容老数据：手动推进
+      // Legacy: mark chapter job as completed and continue
       await db.update(autonomousRunJobs).set({
         status: 'completed',
         updatedAt: now(),
       }).where(and(
         eq(autonomousRunJobs.runId, runId),
         eq(autonomousRunJobs.chapterId, ex.chapterId),
-        eq(autonomousRunJobs.status, 'waiting_review'),
+        or(eq(autonomousRunJobs.status, 'failed'), eq(autonomousRunJobs.status, 'isolated')),
       ))
-      await runNextAutonomousStep(projectId, runId)
     }
 
-    // 只有成功推进后才标记为已解决
-    await db.update(autonomousRunExceptions).set({
-      status: 'resolved',
-      resolution,
+    // Set run to running and continue
+    await db.update(autonomousWritingRuns).set({
+      status: 'running',
       updatedAt: now(),
-    }).where(eq(autonomousRunExceptions.id, exceptionId))
+    }).where(eq(autonomousWritingRuns.id, runId))
 
-    // Re-check if run can now complete or continue
     await runNextAutonomousStep(projectId, runId)
   }
   catch (err: any) {
-    // 恢复失败状态，防止 Run 停留在 running 但实际上没人在跑
+    // Revert run to failed on error
     await db.update(autonomousWritingRuns).set({
-      status: 'needs_attention',
+      status: 'failed',
+      lastError: err.message || '异常恢复失败',
       updatedAt: now(),
     }).where(eq(autonomousWritingRuns.id, runId))
     throw err
@@ -724,7 +724,11 @@ export async function ignoreAutonomousException(projectId: string, runId: string
     }).where(and(
       eq(autonomousRunJobs.runId, runId),
       eq(autonomousRunJobs.chapterId, ex.chapterId),
-      eq(autonomousRunJobs.status, 'waiting_review'),
+      or(
+        eq(autonomousRunJobs.status, 'failed'),
+        eq(autonomousRunJobs.status, 'isolated'),
+        eq(autonomousRunJobs.status, 'waiting_review'),
+      ),
     ))
   }
 

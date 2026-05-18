@@ -51,7 +51,7 @@ export async function decideNextAction(input: {
       break
     }
 
-    case 'review_change_set': {
+    case 'evaluate_change_set': {
       // 变更集审查通常由 LLM 或规则给出风险评分
       const reviewData = tryParseJson(step.output)
       if (reviewData) {
@@ -130,7 +130,9 @@ function getActionByStrategy(strategy: AutonomousStrategy, risk: AutoRiskLevel):
   }
 
   if (strategy === 'fast') {
-    return 'continue' // fast 模式几乎不阻塞，除非崩溃
+    if (risk === 'none' || risk === 'low' || risk === 'medium')
+      return 'continue'
+    return 'isolate' // high risk isolate but don't stop run
   }
 
   return 'continue'

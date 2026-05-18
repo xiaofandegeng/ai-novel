@@ -957,7 +957,7 @@ async function seed() {
     {
       id: id(),
       jobId,
-      stepType: 'confirm_plan',
+      stepType: 'validate_plan',
       status: 'completed',
       input: null,
       output: null,

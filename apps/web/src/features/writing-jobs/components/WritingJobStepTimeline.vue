@@ -35,6 +35,7 @@ const props = defineProps<{
   steps: WritingJobStep[]
   actionLoading: string | null
   currentReviewStepId: string | null
+  readOnly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -277,7 +278,7 @@ function getStepOutput(step: WritingJobStep): any | null {
                   AI 生成内容预览
                 </div>
 
-                <template v-if="step.stepType === 'confirm_plan'">
+                <template v-if="step.stepType === 'validate_plan'">
                   <div v-if="getReviewOutput(step, steps)" class="text-xs text-text-secondary space-y-2">
                     <div v-if="getReviewOutput(step, steps).title" class="text-text-primary font-medium">
                       {{ getReviewOutput(step, steps).title }}
@@ -290,23 +291,6 @@ function getStepOutput(step: WritingJobStep): any | null {
                     </div>
                     <div v-if="getReviewOutput(step, steps).outline" class="whitespace-pre-wrap">
                       <span class="text-text-muted">大纲：</span>{{ getReviewOutput(step, steps).outline }}
-                    </div>
-                  </div>
-                  <div v-else class="text-xs text-text-muted">
-                    暂无预览内容
-                  </div>
-                </template>
-
-                <template v-else-if="step.stepType === 'confirm_apply'">
-                  <div v-if="getReviewOutput(step, steps)" class="text-xs text-text-secondary space-y-2">
-                    <div v-if="getReviewOutput(step, steps).title" class="text-text-primary font-medium">
-                      {{ getReviewOutput(step, steps).title }}
-                    </div>
-                    <div v-if="getReviewOutput(step, steps).wordCount" class="text-text-muted">
-                      字数：{{ getReviewOutput(step, steps).wordCount }}
-                    </div>
-                    <div v-if="getReviewOutput(step, steps).draft" class="max-h-60 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed">
-                      {{ getReviewOutput(step, steps).draft }}
                     </div>
                   </div>
                   <div v-else class="text-xs text-text-muted">
@@ -347,7 +331,7 @@ function getStepOutput(step: WritingJobStep): any | null {
                   </div>
                 </template>
 
-                <template v-else-if="step.stepType === 'review_change_set'">
+                <template v-else-if="step.stepType === 'evaluate_change_set'">
                   <ChapterChangeSetReviewPanel
                     v-if="step.changeSetId"
                     :project-id="job.projectId"
@@ -358,7 +342,7 @@ function getStepOutput(step: WritingJobStep): any | null {
                   </div>
                 </template>
 
-                <template v-else-if="step.stepType === 'confirm_suggestions'">
+                <template v-else-if="step.stepType === 'classify_suggestions'">
                   <div v-if="getReviewOutput(step, steps)" class="text-xs text-text-secondary">
                     <div v-if="getReviewOutput(step, steps).memory?.summary" class="mb-2">
                       <span class="text-text-muted">章节摘要：</span>{{ getReviewOutput(step, steps).memory.summary }}
@@ -376,21 +360,31 @@ function getStepOutput(step: WritingJobStep): any | null {
                 </template>
 
                 <div class="mt-3 flex gap-2">
-                  <NButton
-                    variant="primary"
-                    size="sm"
-                    :loading="actionLoading === `approve-${step.id}`"
-                    @click="emit('approve', step.id)"
-                  >
-                    <CheckCircle2 :size="12" class="mr-1" /> 确认继续
-                  </NButton>
-                  <NButton
-                    size="sm"
-                    :loading="actionLoading === `reject-${step.id}`"
-                    @click="emit('reject', step.id)"
-                  >
-                    <XCircle :size="12" class="mr-1" /> 驳回
-                  </NButton>
+                  <template v-if="readOnly">
+                    <NButton
+                      size="sm"
+                      @click="emit('retry', step.id)"
+                    >
+                      <BookOpen :size="12" class="mr-1" /> 查看决策报告
+                    </NButton>
+                  </template>
+                  <template v-else>
+                    <NButton
+                      variant="primary"
+                      size="sm"
+                      :loading="actionLoading === `approve-${step.id}`"
+                      @click="emit('approve', step.id)"
+                    >
+                      <CheckCircle2 :size="12" class="mr-1" /> 确认继续
+                    </NButton>
+                    <NButton
+                      size="sm"
+                      :loading="actionLoading === `reject-${step.id}`"
+                      @click="emit('reject', step.id)"
+                    >
+                      <XCircle :size="12" class="mr-1" /> 驳回
+                    </NButton>
+                  </template>
                 </div>
               </div>
             </div>
