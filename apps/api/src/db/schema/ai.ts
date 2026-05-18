@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
+import { boolean, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
 import { chapters, chapterScenes } from './chapter'
 import { novelProjects } from './project'

@@ -1061,7 +1061,7 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
       }
 
       if (decision.action === 'isolate') {
-        await db.update(writingJobs).set({ status: 'failed', lastError: `已隔离: ${decision.reason}`, updatedAt: now() }).where(eq(writingJobs.id, jobId))
+        await updateJobStatus(jobId, 'isolated', decision.reason)
 
         if (job.autonomousRunId) {
           await db.update(autonomousRunJobs).set({

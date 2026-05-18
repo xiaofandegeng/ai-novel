@@ -130,9 +130,7 @@ function getActionByStrategy(strategy: AutonomousStrategy, risk: AutoRiskLevel):
   }
 
   if (strategy === 'fast') {
-    if (risk !== 'critical')
-      return 'continue' // fast 模式几乎不阻塞，除非崩溃
-    return 'stop_run'
+    return 'continue' // fast 模式几乎不阻塞，除非崩溃
   }
 
   return 'continue'

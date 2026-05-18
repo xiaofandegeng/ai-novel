@@ -4,7 +4,7 @@ import {
   NLoadingState,
   useToast,
 } from '@ai-novel/ui'
-import { X } from 'lucide-vue-next'
+import { AlertCircle, X } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { approveStep, fetchJobSteps, fetchWritingJobById, rejectStep, retryStep, startWritingJob } from '@/api/writing-jobs'
 import WritingJobStepTimeline from '@/features/writing-jobs/components/WritingJobStepTimeline.vue'
@@ -124,6 +124,16 @@ async function handleStart() {
       <div class="flex-1 overflow-y-auto p-6">
         <NLoadingState v-if="loading" />
         <div v-else-if="job">
+          <div v-if="job.status === 'isolated' || job.status === 'failed'" class="mb-6 border border-orange-100 rounded-lg bg-orange-50 p-4 text-orange-700">
+            <div class="flex items-center gap-2 font-bold">
+              <AlertCircle :size="16" />
+              {{ job.status === 'isolated' ? '任务已隔离' : '任务已失败' }}
+            </div>
+            <div class="mt-1 text-sm opacity-90">
+              {{ job.lastError || '未知原因' }}
+            </div>
+          </div>
+
           <WritingJobStepTimeline
             :job="job"
             :steps="steps"

@@ -18,7 +18,7 @@ export type WritingJobStepType
     | 'auto_repair'
     | 'done'
 export type WritingJobStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
-export type AutoDecision = 'approved' | 'paused' | 'rejected' | 'not_applicable' | 'medium_risk_repair' | 'repaired' | 'isolated' | 'skipped' | 'failed'
+export type AutoDecision = 'approved' | 'paused' | 'rejected' | 'not_applicable' | 'medium_risk_repair' | 'repaired' | 'isolated' | 'skipped' | 'failed' | 'continue' | 'repair' | 'skip' | 'stop_run'
 export type AutoRiskLevel = 'none' | 'low' | 'medium' | 'high' | 'critical'
 
 export interface WritingJobStep {
