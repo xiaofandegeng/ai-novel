@@ -106,8 +106,6 @@ async function handleStart() {
             :job="job"
             :steps="steps"
             :action-loading="actionLoading"
-            :current-review-step-id="steps.find(s => (s.reviewRequired || s.autoDecision === 'paused') && (s.status === 'running' || s.status === 'completed'))?.id"
-            read-only
             @retry="handleRetry"
             @start="handleStart"
           />

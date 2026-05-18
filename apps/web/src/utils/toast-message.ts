@@ -56,8 +56,6 @@ export const T = {
   job_started: '任务已启动',
   job_paused: '任务已暂停',
   job_deleted: '任务已删除',
-  job_confirmed: '已确认，继续执行',
-  job_rejected: '已驳回',
   job_retrying: '正在重试...',
 
   // Story bible

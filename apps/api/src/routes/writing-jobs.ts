@@ -4,10 +4,8 @@ import { db } from '../db'
 import { chapterScenes, writingJobs } from '../db/schema'
 import { assertOptionalChapterBelongsToProject } from '../services/ownership.service'
 import {
-  approveStep,
   getJobSteps,
   initializeJobSteps,
-  rejectStep,
   retryStep,
   startJob,
 } from '../services/writing-job.service'
@@ -56,13 +54,8 @@ export function registerWritingJobRoutes(app: Hono) {
         return c.json(fail('Scene not found or does not belong to this chapter'), 400)
     }
 
-    if (body.executionMode && !['manual', 'auto'].includes(body.executionMode))
-      return c.json(fail('Invalid executionMode'), 400)
-    if (body.autoApprovalLevel && !['conservative', 'balanced', 'aggressive'].includes(body.autoApprovalLevel))
-      return c.json(fail('Invalid autoApprovalLevel'), 400)
-
-    if (body.executionMode === 'auto' && mode !== 'outline_only' && !body.currentChapterId)
-      return c.json(fail('全自动模式下必须选择目标章节，以便自动写入正文'), 400)
+    if (mode !== 'outline_only' && !body.currentChapterId)
+      return c.json(fail('必须选择目标章节，以便自动写入正文'), 400)
 
     const id = generateId()
     const [row] = await db.insert(writingJobs).values({
@@ -71,8 +64,7 @@ export function registerWritingJobRoutes(app: Hono) {
       mode,
       currentChapterId: body.currentChapterId,
       sceneId: body.sceneId,
-      executionMode: body.executionMode || 'manual',
-      autoApprovalLevel: body.autoApprovalLevel || 'conservative',
+      executionMode: 'auto',
       status: 'idle',
     }).returning()
 
@@ -120,9 +112,9 @@ export function registerWritingJobRoutes(app: Hono) {
       status: 'running',
       lastError: null,
       updatedAt: new Date().toISOString(),
-    }).where(and(eq(writingJobs.id, id), eq(writingJobs.projectId, projectId), eq(writingJobs.status, 'waiting_review'))).returning()
+    }).where(and(eq(writingJobs.id, id), eq(writingJobs.projectId, projectId), eq(writingJobs.status, 'paused'))).returning()
     if (!row)
-      return c.json(fail('Job not found or not in review state'), 404)
+      return c.json(fail('Job not found or not in paused state'), 404)
     return c.json(success(row))
   })
 
@@ -152,44 +144,6 @@ export function registerWritingJobRoutes(app: Hono) {
 
     const steps = await getJobSteps(jobId)
     return c.json(success(steps))
-  })
-
-  app.post('/api/projects/:projectId/writing-jobs/:jobId/steps/:stepId/approve', async (c) => {
-    const projectId = c.req.param('projectId')
-    const jobId = c.req.param('jobId')
-    const stepId = c.req.param('stepId')
-
-    try {
-      await approveStep(projectId, jobId, stepId)
-      // Return updated job and steps
-      const [job] = await db.select().from(writingJobs).where(
-        and(eq(writingJobs.id, jobId), eq(writingJobs.projectId, projectId)),
-      )
-      const steps = await getJobSteps(jobId)
-      return c.json(success({ job, steps }))
-    }
-    catch (e: any) {
-      return c.json(fail(e.message || 'Failed to approve step'), 400)
-    }
-  })
-
-  app.post('/api/projects/:projectId/writing-jobs/:jobId/steps/:stepId/reject', async (c) => {
-    const projectId = c.req.param('projectId')
-    const jobId = c.req.param('jobId')
-    const stepId = c.req.param('stepId')
-    const body = await c.req.json().catch(() => ({}))
-
-    try {
-      await rejectStep(projectId, jobId, stepId, body.reason)
-      const [job] = await db.select().from(writingJobs).where(
-        and(eq(writingJobs.id, jobId), eq(writingJobs.projectId, projectId)),
-      )
-      const steps = await getJobSteps(jobId)
-      return c.json(success({ job, steps }))
-    }
-    catch (e: any) {
-      return c.json(fail(e.message || 'Failed to reject step'), 400)
-    }
   })
 
   app.post('/api/projects/:projectId/writing-jobs/:jobId/steps/:stepId/retry', async (c) => {

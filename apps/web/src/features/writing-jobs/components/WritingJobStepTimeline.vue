@@ -18,10 +18,10 @@ import {
   Trash2,
   XCircle,
 } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useChapterStore } from '../../../stores/chapter.store'
 import {
-  CONFIRM_STEP_TYPES,
+  CHECKPOINT_STEP_TYPES,
   JOB_STATUS_LABEL,
   JOB_STATUS_VARIANT,
   MODE_LABEL,
@@ -34,18 +34,16 @@ const props = defineProps<{
   job: WritingJob
   steps: WritingJobStep[]
   actionLoading: string | null
-  currentReviewStepId: string | null
-  readOnly?: boolean
 }>()
 
 const emit = defineEmits<{
   start: []
   pause: []
   delete: []
-  approve: [stepId: string]
-  reject: [stepId: string]
   retry: [stepId: string]
 }>()
+
+const expandedReportStepId = ref<string | null>(null)
 
 const chapterStore = useChapterStore()
 
@@ -75,7 +73,7 @@ const missingTargetChapter = computed(() =>
 )
 
 function getReviewOutput(step: WritingJobStep, steps: WritingJobStep[]): any | null {
-  if (!CONFIRM_STEP_TYPES.has(step.stepType))
+  if (!CHECKPOINT_STEP_TYPES.has(step.stepType))
     return null
 
   // For consistency_check, the output is in the step itself
@@ -131,9 +129,6 @@ function getStepOutput(step: WritingJobStep): any | null {
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <NTag v-if="job.executionMode === 'auto'" variant="success" size="sm">
-            全自动 (已自动确认 {{ job.autoApprovedSteps || 0 }} 步)
-          </NTag>
           <NTag :variant="JOB_STATUS_VARIANT[job.status]">
             {{ JOB_STATUS_LABEL[job.status] }}
           </NTag>
@@ -200,7 +195,7 @@ function getStepOutput(step: WritingJobStep): any | null {
           class="flex items-start gap-3 rounded-md p-3 transition-colors"
           :class="{
             'bg-bg-subtle': step.status === 'running',
-            'bg-primary-soft/30': step.id === currentReviewStepId,
+            'bg-primary-soft/30': step.id === expandedReportStepId,
             'bg-red-50': step.status === 'failed',
           }"
         >
@@ -268,9 +263,20 @@ function getStepOutput(step: WritingJobStep): any | null {
               {{ step.error }}
             </div>
 
+            <!-- Toggle decision report for checkpoint steps -->
+            <NButton
+              v-if="step.autoDecision && CHECKPOINT_STEP_TYPES.has(step.stepType) && expandedReportStepId !== step.id"
+              size="sm"
+              variant="ghost"
+              class="mt-1"
+              @click="expandedReportStepId = step.id"
+            >
+              <BookOpen :size="12" class="mr-1" /> 查看决策报告
+            </NButton>
+
             <!-- Confirm step review panel -->
             <div
-              v-if="step.id === currentReviewStepId"
+              v-if="expandedReportStepId === step.id && CHECKPOINT_STEP_TYPES.has(step.stepType)"
               class="mt-3"
             >
               <div class="bg-bg-base border border-border-light rounded-md p-3">
@@ -360,38 +366,19 @@ function getStepOutput(step: WritingJobStep): any | null {
                 </template>
 
                 <div class="mt-3 flex gap-2">
-                  <template v-if="readOnly">
-                    <NButton
-                      size="sm"
-                      @click="emit('retry', step.id)"
-                    >
-                      <BookOpen :size="12" class="mr-1" /> 查看决策报告
-                    </NButton>
-                  </template>
-                  <template v-else>
-                    <NButton
-                      variant="primary"
-                      size="sm"
-                      :loading="actionLoading === `approve-${step.id}`"
-                      @click="emit('approve', step.id)"
-                    >
-                      <CheckCircle2 :size="12" class="mr-1" /> 确认继续
-                    </NButton>
-                    <NButton
-                      size="sm"
-                      :loading="actionLoading === `reject-${step.id}`"
-                      @click="emit('reject', step.id)"
-                    >
-                      <XCircle :size="12" class="mr-1" /> 驳回
-                    </NButton>
-                  </template>
+                  <NButton
+                    size="sm"
+                    @click="expandedReportStepId = expandedReportStepId === step.id ? null : step.id"
+                  >
+                    <BookOpen :size="12" class="mr-1" /> 关闭报告
+                  </NButton>
                 </div>
               </div>
             </div>
 
             <!-- Consistency check output -->
             <div
-              v-if="step.status === 'completed' && !CONFIRM_STEP_TYPES.has(step.stepType) && step.output && (step.stepType === 'consistency_check' || step.stepType === 'update_health')"
+              v-if="step.status === 'completed' && !CHECKPOINT_STEP_TYPES.has(step.stepType) && step.output && (step.stepType === 'consistency_check' || step.stepType === 'update_health')"
               class="mt-2"
             >
               <details class="text-xs text-text-muted">

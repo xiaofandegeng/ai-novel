@@ -4,7 +4,6 @@ export type AutonomousRunStatus
     | 'paused'
     | 'completed'
     | 'failed'
-    | 'needs_attention'
 
 export type AutonomousStrategy = 'safe' | 'balanced' | 'fast'
 
@@ -46,7 +45,7 @@ export interface AutonomousRunJob {
   writingJobId: string
   chapterId: string | null
   sceneId: string | null
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'waiting_review' | 'isolated'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'isolated'
   orderIndex: number
   isolationReason?: string | null
   isolationReport?: Record<string, any> | null
@@ -60,7 +59,7 @@ export type AutonomousExceptionType
     | 'apply_failed'
     | 'ai_failed'
     | 'health_regression'
-    | 'manual_required'
+    | 'operator_override_required'
 
 export type AutonomousExceptionStatus = 'open' | 'resolved' | 'ignored' | 'auto_resolved' | 'isolated' | 'resolved_by_user'
 export type AutoResolutionStrategy = 'repair' | 'skip_chapter' | 'isolate_chapter' | 'retry' | 'stop_run'

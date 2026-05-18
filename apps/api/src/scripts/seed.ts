@@ -917,7 +917,7 @@ async function seed() {
     currentChapterId: chapterIds[2],
     sceneId: null,
     mode: 'outline_then_draft',
-    status: 'waiting_review',
+    status: 'isolated',
     lastError: null,
     createdAt: now,
     updatedAt: now,

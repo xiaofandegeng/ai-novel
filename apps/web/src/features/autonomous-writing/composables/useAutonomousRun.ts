@@ -29,9 +29,6 @@ export function useAutonomousRun(projectId: string) {
         if (activeRun.status === 'running') {
           startPolling(activeRun.id)
         }
-        else if (activeRun.status === 'needs_attention') {
-          await loadExceptions(activeRun.id)
-        }
       }
     }
     catch (err: any) {
@@ -47,9 +44,6 @@ export function useAutonomousRun(projectId: string) {
     error.value = null
     try {
       currentRun.value = await fetchAutonomousRun(projectId, runId)
-      if (currentRun.value?.status === 'needs_attention') {
-        await loadExceptions(runId)
-      }
     }
     catch (err: any) {
       error.value = err.message || '加载自动驾驶任务失败'
@@ -152,11 +146,7 @@ export function useAutonomousRun(projectId: string) {
       try {
         currentRun.value = await fetchAutonomousRun(projectId, runId)
 
-        if (currentRun.value?.status === 'needs_attention') {
-          await loadExceptions(runId)
-        }
-
-        const terminalStatuses = ['completed', 'failed', 'paused', 'needs_attention']
+        const terminalStatuses = ['completed', 'failed', 'paused']
         if (currentRun.value && terminalStatuses.includes(currentRun.value.status)) {
           stopPolling()
         }

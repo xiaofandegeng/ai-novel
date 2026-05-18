@@ -33,14 +33,6 @@ export function fetchJobSteps(projectId: string, jobId: string) {
   return apiGet<WritingJobStep[]>(`/api/projects/${projectId}/writing-jobs/${jobId}/steps`)
 }
 
-export function approveStep(projectId: string, jobId: string, stepId: string) {
-  return apiPost<{ job: WritingJob, steps: WritingJobStep[] }>(`/api/projects/${projectId}/writing-jobs/${jobId}/steps/${stepId}/approve`, {})
-}
-
-export function rejectStep(projectId: string, jobId: string, stepId: string, reason?: string) {
-  return apiPost<{ job: WritingJob, steps: WritingJobStep[] }>(`/api/projects/${projectId}/writing-jobs/${jobId}/steps/${stepId}/reject`, { reason })
-}
-
 export function retryStep(projectId: string, jobId: string, stepId: string) {
   return apiPost<{ job: WritingJob, steps: WritingJobStep[] }>(`/api/projects/${projectId}/writing-jobs/${jobId}/steps/${stepId}/retry`, {})
 }

@@ -14,7 +14,7 @@ import { applyChangeSet as applyChangeSetSvc, approveChangeSet as approveChangeS
 import { extractChapterChanges, runChapterPostprocess, runScenePostprocess } from './chapter-postprocess.service'
 import { runConsistencyGuard } from './consistency-guard.service'
 import { getProjectHealthMetrics } from './health-metrics.service'
-import { applyAcceptedSuggestions, applyAutoSuggestions } from './postprocess-suggestion.service'
+import { applyAutoSuggestions } from './postprocess-suggestion.service'
 import { runGraphInference } from './story-graph-inference.service'
 import { createSnapshot } from './version.service'
 
@@ -74,7 +74,7 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
   ],
 }
 
-const CONFIRM_STEPS = new Set<WritingJobStepType>([
+const CHECKPOINT_STEPS = new Set<WritingJobStepType>([
   'validate_plan',
   'consistency_check',
   'classify_suggestions',
@@ -162,7 +162,7 @@ async function updateJobStatus(jobId: string, status: string, lastError?: string
   await db.update(writingJobs).set(fields).where(eq(writingJobs.id, jobId))
 
   // P1-3: 如果是自动驾驶任务，通知 Run 进度
-  if (['completed', 'failed', 'waiting_review', 'isolated'].includes(status)) {
+  if (['completed', 'failed', 'isolated'].includes(status)) {
     const [job] = await db.select({ projectId: writingJobs.projectId }).from(writingJobs).where(eq(writingJobs.id, jobId))
     if (job) {
       // 动态导入避免循环依赖
@@ -596,16 +596,14 @@ async function executeApplySuggestions(
   projectId: string,
   chapterId: string | null,
   stepId: string,
-  job: WritingJob,
+  _job: WritingJob,
 ): Promise<string> {
   if (!chapterId) {
     await updateStep(stepId, { output: JSON.stringify({ skipped: true, reason: 'no_chapter' }) })
     return JSON.stringify({ skipped: true })
   }
 
-  const result = job.executionMode === 'auto'
-    ? await applyAutoSuggestions(projectId, chapterId, job.autoApprovalLevel)
-    : await applyAcceptedSuggestions(projectId, chapterId)
+  const result = await applyAutoSuggestions(projectId, chapterId, 'balanced')
   const output = JSON.stringify(result)
   await updateStep(stepId, { output, updatedAt: now() })
   return output
@@ -798,8 +796,8 @@ async function executeStep(
       }
 
       case 'validate_plan':
-        // Proceed in auto mode, signal pause in manual
-        return job.executionMode !== 'auto'
+        // Always auto — no pause point
+        return false
 
       case 'generate_draft': {
         const contextOutput = previousStepOutputs.get('prepare_context') || '{}'
@@ -812,15 +810,8 @@ async function executeStep(
 
       case 'consistency_check': {
         const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
-        const output = await executeConsistencyCheck(projectId, chapterId, sceneId, draftOutput, step.id)
-        if (job.executionMode === 'auto') {
-          return true
-        }
-        const report = JSON.parse(output)
-        if (report.overallStatus === 'blocked' || report.overallStatus === 'warning') {
-          return false // Pause for review if there are risks in manual mode
-        }
-        break
+        await executeConsistencyCheck(projectId, chapterId, sceneId, draftOutput, step.id)
+        return true
       }
 
       case 'apply_draft': {
@@ -846,7 +837,7 @@ async function executeStep(
       }
 
       case 'classify_suggestions':
-        return job.executionMode !== 'auto'
+        return false
 
       case 'apply_suggestions':
         await executeApplySuggestions(projectId, chapterId, step.id, job)
@@ -859,7 +850,7 @@ async function executeStep(
       }
 
       case 'evaluate_change_set':
-        return job.executionMode !== 'auto'
+        return false
 
       case 'apply_change_set': {
         // Find changeSetId from previous build_change_set step
@@ -870,7 +861,7 @@ async function executeStep(
       }
 
       case 'auto_repair': {
-        // Only attempt repair when review_change_set detected medium risk
+        // Only attempt repair when evaluate_change_set detected medium risk
         const reviewSteps = await getJobSteps(job.id)
         const needsRepair = reviewSteps.some(
           s => s.stepType === 'evaluate_change_set' && s.autoDecision === 'medium_risk_repair',
@@ -913,7 +904,7 @@ async function executeStep(
             await rejectChangeSetSvc(projectId, oldBuildStep.changeSetId)
           }
 
-          // Reset build_change_set and review_change_set so they re-run with repaired content
+          // Reset build_change_set and evaluate_change_set so they re-run with repaired content
           await db.update(writingJobSteps).set({
             status: 'pending',
             output: null,
@@ -921,7 +912,6 @@ async function executeStep(
             finishedAt: null,
             autoDecision: null,
             autoDecisionReason: null,
-            reviewRequired: false,
             updatedAt: now(),
           }).where(and(
             eq(writingJobSteps.jobId, job.id),
@@ -991,11 +981,7 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
     // If step was previously failed, we only continue if it's a retry (which would have reset the status)
     // But here we might want to handle it
     if (step.status === 'failed') {
-      // Manual jobs still wait for human retry
-      if (job.executionMode !== 'auto')
-        return
-
-      // Auto jobs: classify error and handle automatically
+      // Auto mode: classify error and handle automatically
       let strategy: any = 'balanced'
       if (job.autonomousRunId) {
         const [run] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, job.autonomousRunId))
@@ -1073,7 +1059,6 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
         autoRiskLevel: decision.riskLevel as any,
         autoDecisionReason: decision.reason,
         autoDecisionReport: decision.report,
-        reviewRequired: job.executionMode === 'manual' && decision.action !== 'continue' && decision.action !== 'repair',
         status: 'completed',
         finishedAt: now(),
         updatedAt: now(),
@@ -1133,7 +1118,9 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
             updatedAt: now(),
           }).catch(err => console.error('Failed to record stop_run exception:', err))
 
-          await db.update(autonomousRunJobs).set({ status: 'failed', updatedAt: now() })
+          await db
+            .update(autonomousRunJobs)
+            .set({ status: 'failed', updatedAt: now() })
             .where(and(eq(autonomousRunJobs.runId, job.autonomousRunId), eq(autonomousRunJobs.writingJobId, jobId)))
 
           await db.update(autonomousWritingRuns).set({
@@ -1146,12 +1133,7 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
         return
       }
 
-      // Fallback: only for manual execution mode
-      if (job.executionMode === 'manual') {
-        await updateJobStatus(jobId, 'waiting_review', decision.reason)
-        return
-      }
-      // Safety net for autonomous jobs reaching here unexpectedly
+      // Safety net for unexpected decision actions
       await updateJobStatus(jobId, 'failed', `Unhandled decision action: ${decision.action}`)
       return
     }
@@ -1177,95 +1159,6 @@ export async function startJob(projectId: string, jobId: string): Promise<void> 
   await runNextSteps(projectId, jobId)
 }
 
-export async function approveStep(projectId: string, jobId: string, stepId: string): Promise<void> {
-  // Verify job belongs to project first
-  const [job] = await db.select().from(writingJobs).where(
-    and(eq(writingJobs.id, jobId), eq(writingJobs.projectId, projectId)),
-  )
-  if (!job)
-    throw new Error('Job not found')
-
-  // Verify the step is a confirm step
-  const [step] = await db.select().from(writingJobSteps).where(
-    and(eq(writingJobSteps.id, stepId), eq(writingJobSteps.jobId, jobId)),
-  )
-  if (!step)
-    throw new Error('Step not found')
-  if (!CONFIRM_STEPS.has(step.stepType))
-    throw new Error('Step is not a confirm step')
-  if (step.status !== 'completed')
-    throw new Error('Step is not in a confirmable state')
-
-  // Get all steps to find the index of this step
-  const allSteps = await getJobSteps(jobId)
-  const currentIdx = allSteps.findIndex(s => s.id === stepId)
-  if (currentIdx === -1)
-    throw new Error('Step not found in sequence')
-
-  // Mark the current confirm step as completed
-  await updateStep(stepId, { status: 'completed', finishedAt: now() })
-
-  // If this was a change set review, mark the change set as approved
-  if (step.stepType === 'evaluate_change_set' && step.changeSetId) {
-    await approveChangeSetSvc(projectId, step.changeSetId)
-  }
-
-  // Continue execution from the next step
-  await runNextSteps(projectId, jobId)
-}
-
-export async function rejectStep(projectId: string, jobId: string, stepId: string, reason?: string): Promise<void> {
-  const [job] = await db.select().from(writingJobs).where(
-    and(eq(writingJobs.id, jobId), eq(writingJobs.projectId, projectId)),
-  )
-  if (!job)
-    throw new Error('Job not found')
-
-  const [step] = await db.select().from(writingJobSteps).where(
-    and(eq(writingJobSteps.id, stepId), eq(writingJobSteps.jobId, jobId)),
-  )
-  if (!step)
-    throw new Error('Step not found')
-  if (!CONFIRM_STEPS.has(step.stepType))
-    throw new Error('Step is not a confirm step')
-
-  // Mark the confirm step as failed with the rejection reason
-  await updateStep(stepId, {
-    status: 'failed',
-    error: reason || 'User rejected',
-    finishedAt: now(),
-  })
-
-  // If this was a change set review, mark the change set as rejected
-  if (step.stepType === 'evaluate_change_set' && step.changeSetId) {
-    await rejectChangeSetSvc(projectId, step.changeSetId)
-  }
-
-  // Also mark the preceding generation step as failed (so it can be retried)
-  const allSteps = await getJobSteps(jobId)
-  const currentIdx = allSteps.findIndex(s => s.id === stepId)
-
-  if (currentIdx > 0) {
-    const prevStep = allSteps[currentIdx - 1]
-    if (prevStep && (prevStep.stepType === 'generate_plan' || prevStep.stepType === 'generate_draft' || prevStep.stepType === 'postprocess')) {
-      await updateStep(prevStep.id, {
-        status: 'failed',
-        error: reason || 'Output rejected by user',
-        finishedAt: now(),
-      })
-    }
-  }
-
-  // Mark all subsequent steps as skipped
-  for (let i = currentIdx + 1; i < allSteps.length; i++) {
-    if (allSteps[i].status === 'pending') {
-      await updateStep(allSteps[i].id, { status: 'skipped', finishedAt: now() })
-    }
-  }
-
-  await updateJobStatus(jobId, 'failed', reason || 'User rejected output')
-}
-
 export async function retryStep(projectId: string, jobId: string, stepId: string): Promise<void> {
   // Verify job belongs to project before any state changes
   const [job] = await db.select().from(writingJobs).where(
@@ -1289,7 +1182,7 @@ export async function retryStep(projectId: string, jobId: string, stepId: string
   let retryFromIdx = currentIdx
 
   // If this is a confirm step, retry from the generation step before it
-  if (CONFIRM_STEPS.has(step.stepType) && currentIdx > 0) {
+  if (CHECKPOINT_STEPS.has(step.stepType) && currentIdx > 0) {
     const prevStep = allSteps[currentIdx - 1]
     if (prevStep) {
       // Reset the generation step too

@@ -1,4 +1,3 @@
-import type { AutoApprovalLevel } from '@ai-novel/shared'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../db'
 import {
@@ -15,6 +14,8 @@ import {
 import { generateId, now } from '../utils'
 import { normalizeCharacterPair } from './character-utils.service'
 import { getOrCreateEmbedding } from './embedding.service'
+
+type ApprovalLevel = 'conservative' | 'balanced' | 'aggressive'
 
 const characterRoles = new Set(['protagonist', 'antagonist', 'mentor', 'ally', 'supporting', 'extra'])
 
@@ -204,7 +205,7 @@ export async function applyAcceptedSuggestions(projectId: string, chapterId: str
 /**
  * 自动根据风险等级筛选并应用建议 (全自动模式使用)
  */
-export async function applyAutoSuggestions(projectId: string, chapterId: string, level: AutoApprovalLevel): Promise<ApplyResult> {
+export async function applyAutoSuggestions(projectId: string, chapterId: string, level: ApprovalLevel): Promise<ApplyResult> {
   const pending = await getSuggestions(projectId, chapterId)
   const autoAcceptableIds: string[] = []
 

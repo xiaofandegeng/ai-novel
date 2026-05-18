@@ -63,7 +63,7 @@ function handleNewRun() {
 async function handleResolve(ex: any) {
   if (!currentRun.value)
     return
-  const resolution = '作者已人工确认并批准继续运行。'
+  const resolution = '已批准继续运行。'
   await resolveException(currentRun.value.id, ex.id, resolution)
   await loadRun(currentRun.value.id)
 }

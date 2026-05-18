@@ -25,8 +25,7 @@ function getStatusColor(status: string): TagVariant {
     case 'running': return 'primary'
     case 'completed': return 'success'
     case 'failed': return 'error'
-    case 'paused':
-    case 'needs_attention': return 'warning'
+    case 'paused': return 'warning'
     default: return 'default'
   }
 }
@@ -37,7 +36,6 @@ function getStatusLabel(status: string): string {
     case 'completed': return '驾驶完成'
     case 'failed': return '驾驶事故'
     case 'paused': return '已暂停'
-    case 'needs_attention': return '需要关注'
     default: return status
   }
 }
@@ -83,13 +81,6 @@ function getStatusLabel(status: string): string {
         >
           <Play :size="16" class="mr-1" /> 继续推进
         </NButton>
-        <span
-          v-else-if="currentRun.status === 'needs_attention'"
-          class="text-warning text-sm"
-        >
-          请先处理右侧待处理异常
-        </span>
-
         <NButton variant="ghost" size="sm" @click="emit('refresh')">
           <RefreshCw :size="16" />
         </NButton>

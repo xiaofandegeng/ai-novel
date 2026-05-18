@@ -17,7 +17,6 @@ import { T } from '@/utils/toast-message'
 export const JOB_STATUS_LABEL: Record<string, string> = {
   idle: '就绪',
   running: '运行中',
-  waiting_review: '等待审查',
   paused: '已暂停',
   completed: '已完成',
   failed: '失败',
@@ -26,7 +25,6 @@ export const JOB_STATUS_LABEL: Record<string, string> = {
 export const JOB_STATUS_VARIANT: Record<string, 'info' | 'warning' | 'success' | 'error' | 'default'> = {
   idle: 'default',
   running: 'info',
-  waiting_review: 'warning',
   paused: 'default',
   completed: 'success',
   failed: 'error',
@@ -67,7 +65,7 @@ export const STEP_STATUS_CONFIG: Record<WritingJobStepStatus, { label: string, v
   skipped: { label: '已跳过', variant: 'default', icon: SkipForward },
 }
 
-export const CONFIRM_STEP_TYPES = new Set(['validate_plan', 'consistency_check', 'classify_suggestions'])
+export const CHECKPOINT_STEP_TYPES = new Set(['validate_plan', 'consistency_check', 'classify_suggestions'])
 
 export function useWritingJobController(projectId: string) {
   const toast = useToast()
@@ -85,11 +83,8 @@ export function useWritingJobController(projectId: string) {
   const form = ref<WritingJobMode>('outline_then_draft')
   const formChapterId = ref<string | null>(null)
   const formSceneId = ref<string | null>(null)
-  const formExecutionMode = ref<'manual' | 'auto'>('manual')
-  const formAutoApprovalLevel = ref<'conservative' | 'balanced' | 'aggressive'>('conservative')
-
   function getReviewOutput(step: WritingJobStep): any | null {
-    if (!CONFIRM_STEP_TYPES.has(step.stepType))
+    if (!CHECKPOINT_STEP_TYPES.has(step.stepType))
       return null
     const idx = steps.value.findIndex(s => s.id === step.id)
     if (idx <= 0)
@@ -116,19 +111,6 @@ export function useWritingJobController(projectId: string) {
     }
   }
 
-  const currentReviewStepId = computed(() => {
-    if (job.value?.status !== 'waiting_review')
-      return null
-
-    // Look for the step that explicitly requires review
-    const reviewStep = steps.value.find(step =>
-      (step.reviewRequired || step.autoDecision === 'paused')
-      && (step.status === 'running' || step.status === 'completed'),
-    )
-
-    return reviewStep?.id ?? null
-  })
-
   onMounted(async () => {
     try {
       await Promise.all([
@@ -150,8 +132,6 @@ export function useWritingJobController(projectId: string) {
     try {
       const data: CreateWritingJobInput = {
         mode: form.value,
-        executionMode: formExecutionMode.value,
-        autoApprovalLevel: formAutoApprovalLevel.value,
       }
       if (form.value === 'draft_only' || form.value === 'outline_then_draft' || form.value === 'scene_draft') {
         if (!formChapterId.value) {
@@ -220,34 +200,6 @@ export function useWritingJobController(projectId: string) {
     }
   }
 
-  async function handleApprove(stepId: string) {
-    actionLoading.value = `approve-${stepId}`
-    try {
-      await writingJobStore.approveStep(projectId, stepId)
-      toast.add(T.job_confirmed, 'success')
-    }
-    catch (e: any) {
-      toast.add(e.message || getErrorMessage('job_confirm'), 'error')
-    }
-    finally {
-      actionLoading.value = null
-    }
-  }
-
-  async function handleReject(stepId: string) {
-    actionLoading.value = `reject-${stepId}`
-    try {
-      await writingJobStore.rejectStep(projectId, stepId)
-      toast.add(T.job_rejected, 'success')
-    }
-    catch (e: any) {
-      toast.add(e.message || getErrorMessage('job_reject'), 'error')
-    }
-    finally {
-      actionLoading.value = null
-    }
-  }
-
   async function handleRetry(stepId: string) {
     actionLoading.value = `retry-${stepId}`
     try {
@@ -271,9 +223,6 @@ export function useWritingJobController(projectId: string) {
     form,
     formChapterId,
     formSceneId,
-    formExecutionMode,
-    formAutoApprovalLevel,
-    currentReviewStepId,
     projectStore,
     getReviewOutput,
     getStepOutput,
@@ -281,8 +230,6 @@ export function useWritingJobController(projectId: string) {
     handleStart,
     handlePause,
     handleDelete,
-    handleApprove,
-    handleReject,
     handleRetry,
   }
 }

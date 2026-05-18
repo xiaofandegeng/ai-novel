@@ -64,8 +64,6 @@ const ERROR_MESSAGES: Record<string, string> = {
   job_start: '启动失败',
   job_pause: '暂停失败',
   job_delete: '删除失败',
-  job_confirm: '确认失败',
-  job_reject: '驳回失败',
   job_retry: '重试失败',
 
   // Story bible

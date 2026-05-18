@@ -73,7 +73,6 @@ export async function createAutonomousRun(
       or(
         eq(autonomousWritingRuns.status, 'running'),
         eq(autonomousWritingRuns.status, 'paused'),
-        eq(autonomousWritingRuns.status, 'needs_attention'),
       ),
     ))
     if (activeRuns.length > 0) {
@@ -232,8 +231,6 @@ async function prepareRunJobs(
       currentChapterId: ch.id,
       mode: 'draft_only',
       status: 'idle',
-      executionMode: 'auto',
-      autoApprovalLevel: mapRunStrategyToApprovalLevel(params.strategy as any),
       targetWords: params.targetWordsPerChapter,
       autonomousRunId: runId,
       createdAt: now(),
@@ -300,7 +297,6 @@ export async function getLatestActiveRun(projectId: string): Promise<any> {
     eq(autonomousWritingRuns.projectId, projectId),
     or(
       eq(autonomousWritingRuns.status, 'running'),
-      eq(autonomousWritingRuns.status, 'needs_attention'),
       eq(autonomousWritingRuns.status, 'paused'),
     ),
   )).orderBy(desc(autonomousWritingRuns.updatedAt)).limit(1)
@@ -330,7 +326,6 @@ export async function startAutonomousRun(projectId: string, runId: string): Prom
     or(
       eq(autonomousWritingRuns.status, 'running'),
       eq(autonomousWritingRuns.status, 'paused'),
-      eq(autonomousWritingRuns.status, 'needs_attention'),
     ),
     not(eq(autonomousWritingRuns.id, runId)),
   ))
@@ -367,7 +362,7 @@ export async function runNextAutonomousStep(projectId: string, runId: string): P
     // Before marking completed, check for blocking states
     const hasBlockers = await hasActiveBlockers(runId)
     if (hasBlockers) {
-      // There are still running/waiting_review jobs or open exceptions
+      // There are still running jobs or open exceptions
       // Don't mark completed - the run will be continued when blockers resolve
       return
     }
@@ -429,9 +424,6 @@ export async function resumeAutonomousRun(projectId: string, runId: string): Pro
   if (!run)
     throw new Error('Run not found')
 
-  if (run.status === 'needs_attention')
-    throw new Error('请先处理待处理异常')
-
   if (run.status !== 'paused')
     throw new Error('只有暂停状态的任务才能继续推进')
 
@@ -452,13 +444,6 @@ async function hasActiveBlockers(runId: string): Promise<boolean> {
   if (runningJob)
     return true
 
-  const [waitingJob] = await db.select({ id: autonomousRunJobs.id }).from(autonomousRunJobs).where(and(
-    eq(autonomousRunJobs.runId, runId),
-    eq(autonomousRunJobs.status, 'waiting_review'),
-  )).limit(1)
-  if (waitingJob)
-    return true
-
   const [openException] = await db.select({ id: autonomousRunExceptions.id }).from(autonomousRunExceptions).where(and(
     eq(autonomousRunExceptions.runId, runId),
     eq(autonomousRunExceptions.status, 'open'),
@@ -472,7 +457,7 @@ async function hasActiveBlockers(runId: string): Promise<boolean> {
 export async function handleAutonomousJobCompletion(
   projectId: string,
   jobId: string,
-  status: 'completed' | 'failed' | 'waiting_review' | 'isolated',
+  status: 'completed' | 'failed' | 'isolated',
   reason?: string,
 ): Promise<void> {
   const [job] = await db.select().from(writingJobs).where(eq(writingJobs.id, jobId))
@@ -543,29 +528,6 @@ export async function handleAutonomousJobCompletion(
     })
 
     // Single chapter failure never stops the run — continue to next chapter
-    const [latestRun] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, runId))
-    if (latestRun && latestRun.status === 'running') {
-      await runNextAutonomousStep(projectId, runId)
-    }
-  }
-  else if (status === 'waiting_review') {
-    // This branch should not be reached in autonomous mode anymore.
-    // Safety net: isolate the chapter and continue the run.
-    await db.update(autonomousRunJobs).set({
-      status: 'isolated',
-      isolationReason: reason || '章节被隔离：高风险变更',
-      updatedAt: now(),
-    }).where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, jobId)))
-
-    await recordAutonomousException(projectId, runId, {
-      exceptionType: 'high_risk_change_set',
-      severity: 'high',
-      title: '高风险章节已隔离',
-      description: reason || '检测到高风险变更，章节已自动隔离。',
-      chapterId: job.currentChapterId,
-      writingJobId: jobId,
-    })
-
     const [latestRun] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, runId))
     if (latestRun && latestRun.status === 'running') {
       await runNextAutonomousStep(projectId, runId)
@@ -646,7 +608,6 @@ export async function resolveAutonomousException(projectId: string, runId: strin
         autoDecision: null,
         autoDecisionReason: null,
         autoDecisionReport: null,
-        reviewRequired: false,
         updatedAt: now(),
       }).where(eq(writingJobSteps.jobId, ex.writingJobId))
 
@@ -727,7 +688,6 @@ export async function ignoreAutonomousException(projectId: string, runId: string
       or(
         eq(autonomousRunJobs.status, 'failed'),
         eq(autonomousRunJobs.status, 'isolated'),
-        eq(autonomousRunJobs.status, 'waiting_review'),
       ),
     ))
   }
@@ -747,12 +707,4 @@ export async function ignoreAutonomousException(projectId: string, runId: string
 
     await runNextAutonomousStep(projectId, runId)
   }
-}
-
-function mapRunStrategyToApprovalLevel(strategy: string): 'conservative' | 'balanced' | 'aggressive' {
-  if (strategy === 'safe')
-    return 'conservative'
-  if (strategy === 'fast')
-    return 'aggressive'
-  return 'balanced'
 }

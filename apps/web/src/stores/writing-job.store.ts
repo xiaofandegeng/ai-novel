@@ -52,22 +52,6 @@ export const useWritingJobStore = defineStore('writingJob', () => {
     steps.value = []
   }
 
-  async function approveStep(projectId: string, stepId: string) {
-    if (!job.value)
-      return
-    const result = await api.approveStep(projectId, job.value.id, stepId)
-    job.value = result.job
-    steps.value = result.steps
-  }
-
-  async function rejectStep(projectId: string, stepId: string, reason?: string) {
-    if (!job.value)
-      return
-    const result = await api.rejectStep(projectId, job.value.id, stepId, reason)
-    job.value = result.job
-    steps.value = result.steps
-  }
-
   async function retryStep(projectId: string, stepId: string) {
     if (!job.value)
       return
@@ -85,8 +69,6 @@ export const useWritingJobStore = defineStore('writingJob', () => {
     pauseJob,
     continueJob,
     deleteJob,
-    approveStep,
-    rejectStep,
     retryStep,
   }
 })

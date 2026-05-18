@@ -158,7 +158,7 @@ export const autonomousRunExceptions = pgTable('autonomous_run_exceptions', {
     | 'apply_failed'
     | 'ai_failed'
     | 'health_regression'
-    | 'manual_required'
+    | 'operator_override_required'
   >().notNull(),
   severity: text('severity').$type<'medium' | 'high' | 'critical'>().notNull(),
   title: text('title').notNull(),

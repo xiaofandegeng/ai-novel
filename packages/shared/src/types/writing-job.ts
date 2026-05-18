@@ -1,7 +1,5 @@
 export type WritingJobMode = 'outline_only' | 'draft_only' | 'outline_then_draft' | 'scene_draft'
-export type WritingJobStatus = 'idle' | 'running' | 'waiting_review' | 'paused' | 'completed' | 'failed' | 'isolated'
-export type WritingJobExecutionMode = 'manual' | 'auto'
-export type AutoApprovalLevel = 'conservative' | 'balanced' | 'aggressive'
+export type WritingJobStatus = 'idle' | 'running' | 'paused' | 'completed' | 'failed' | 'isolated'
 
 export interface WritingJob {
   id: string
@@ -10,8 +8,6 @@ export interface WritingJob {
   sceneId: string | null
   mode: WritingJobMode
   status: WritingJobStatus
-  executionMode: WritingJobExecutionMode
-  autoApprovalLevel: AutoApprovalLevel
   autoStopReason: string | null
   autoApprovedSteps: number
   targetWords: number | null
@@ -25,8 +21,6 @@ export interface CreateWritingJobInput {
   mode: WritingJobMode
   currentChapterId?: string
   sceneId?: string
-  executionMode?: WritingJobExecutionMode
-  autoApprovalLevel?: AutoApprovalLevel
 }
 
 export interface UpdateWritingJobInput {

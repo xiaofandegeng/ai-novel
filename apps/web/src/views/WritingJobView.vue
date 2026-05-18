@@ -21,16 +21,11 @@ const {
   form,
   formChapterId,
   formSceneId,
-  formExecutionMode,
-  formAutoApprovalLevel,
-  currentReviewStepId,
   projectStore,
   handleCreate,
   handleStart,
   handlePause,
   handleDelete,
-  handleApprove,
-  handleReject,
   handleRetry,
 } = useWritingJobController(projectId)
 </script>
@@ -61,8 +56,6 @@ const {
           v-model="form"
           v-model:chapter-id="formChapterId"
           v-model:scene-id="formSceneId"
-          v-model:execution-mode="formExecutionMode"
-          v-model:auto-approval-level="formAutoApprovalLevel"
           :project-id="projectId"
           :creating="creating"
           @create="handleCreate"
@@ -73,12 +66,9 @@ const {
           :job="job"
           :steps="steps"
           :action-loading="actionLoading"
-          :current-review-step-id="currentReviewStepId"
           @start="handleStart"
           @pause="handlePause"
           @delete="handleDelete"
-          @approve="handleApprove"
-          @reject="handleReject"
           @retry="handleRetry"
         />
       </div>

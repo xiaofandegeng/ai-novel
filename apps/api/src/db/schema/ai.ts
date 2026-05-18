@@ -1,4 +1,4 @@
-import { boolean, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
+import { integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
 import { chapters, chapterScenes } from './chapter'
 import { novelProjects } from './project'
@@ -9,9 +9,8 @@ export const writingJobs = pgTable('writing_jobs', {
   currentChapterId: text('current_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
   sceneId: text('scene_id').references(() => chapterScenes.id, { onDelete: 'set null' }),
   mode: text('mode').$type<'outline_only' | 'draft_only' | 'outline_then_draft' | 'scene_draft'>().notNull(),
-  status: text('status').$type<'idle' | 'running' | 'waiting_review' | 'paused' | 'completed' | 'failed' | 'isolated'>().notNull().default('idle'),
-  executionMode: text('execution_mode').$type<'manual' | 'auto'>().notNull().default('manual'),
-  autoApprovalLevel: text('auto_approval_level').$type<'conservative' | 'balanced' | 'aggressive'>().notNull().default('conservative'),
+  status: text('status').$type<'idle' | 'running' | 'paused' | 'completed' | 'failed' | 'isolated'>().notNull().default('idle'),
+  executionMode: text('execution_mode').$type<'auto'>().notNull().default('auto'),
   autoStopReason: text('auto_stop_reason'),
   autoApprovedSteps: integer('auto_approved_steps').notNull().default(0),
   targetWords: integer('target_words'),
@@ -25,7 +24,6 @@ export const writingJobSteps = pgTable('writing_job_steps', {
   jobId: text('job_id').notNull().references(() => writingJobs.id, { onDelete: 'cascade' }),
   stepType: text('step_type').$type<'prepare_context' | 'generate_plan' | 'validate_plan' | 'generate_draft' | 'generate_scene_draft' | 'consistency_check' | 'apply_draft' | 'save_version' | 'postprocess' | 'classify_suggestions' | 'apply_suggestions' | 'update_health' | 'build_change_set' | 'evaluate_change_set' | 'apply_change_set' | 'auto_repair' | 'done'>().notNull(),
   status: text('status').$type<'pending' | 'running' | 'completed' | 'failed' | 'skipped'>().notNull().default('pending'),
-  reviewRequired: boolean('review_required').notNull().default(false),
   autoDecision: text('auto_decision').$type<'approved' | 'paused' | 'rejected' | 'not_applicable' | 'medium_risk_repair' | 'repaired' | 'isolated' | 'skipped' | 'failed'>(),
   autoRiskLevel: text('auto_risk_level').$type<'none' | 'low' | 'medium' | 'high' | 'critical'>(),
   autoDecisionReason: text('auto_decision_reason'),
@@ -78,7 +76,6 @@ export const autonomousWritingRuns = pgTable('autonomous_writing_runs', {
     | 'paused'
     | 'completed'
     | 'failed'
-    | 'needs_attention'
   >().notNull().default('idle'),
   strategy: text('strategy').$type<'safe' | 'balanced' | 'fast'>().notNull().default('balanced'),
   scopeType: text('scope_type').$type<'project' | 'volume' | 'chapter_range' | 'next_n_chapters' | 'from_current_forward' | 'continue_incomplete' | 'rewrite_selected'>().notNull(),
@@ -105,7 +102,7 @@ export const autonomousRunJobs = pgTable('autonomous_run_jobs', {
   writingJobId: text('writing_job_id').notNull().references(() => writingJobs.id, { onDelete: 'cascade' }),
   chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
   sceneId: text('scene_id').references(() => chapterScenes.id, { onDelete: 'set null' }),
-  status: text('status').$type<'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'waiting_review' | 'isolated'>().notNull().default('pending'),
+  status: text('status').$type<'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'isolated'>().notNull().default('pending'),
   orderIndex: integer('order_index').notNull(),
   isolationReason: text('isolation_reason'),
   isolationReport: jsonb('isolation_report'),

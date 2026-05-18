@@ -25,7 +25,6 @@ export interface WritingJobStep {
   jobId: string
   stepType: WritingJobStepType
   status: WritingJobStepStatus
-  reviewRequired: boolean
   autoDecision: AutoDecision | null
   autoRiskLevel?: AutoRiskLevel | null
   autoDecisionReason: string | null
