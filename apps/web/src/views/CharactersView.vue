@@ -329,7 +329,7 @@ watch(activeTab, (tab) => {
 
             <div v-if="isAnalyzing || aiProposal !== null || aiError" class="animate-in fade-in slide-in-from-top-2 mt-4 border border-ai/20 rounded-lg bg-white p-3 shadow-sm space-y-3">
               <div class="flex items-center justify-between">
-                <span class="text-[10px] text-ai font-bold uppercase">AI 建议确认区</span>
+                <span class="text-[10px] text-ai font-bold uppercase">AI 建议处理区</span>
                 <button class="text-[10px] text-text-muted hover:text-ai" @click="clearAIProposal">
                   清除
                 </button>

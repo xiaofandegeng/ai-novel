@@ -7,9 +7,11 @@ const props = withDefaults(defineProps<{
   titleFallback?: string
   titleTo?: RouteLocationRaw
   backTo?: RouteLocationRaw
+  showBack?: boolean
 }>(), {
   titleFallback: '加载中…',
   backTo: '/',
+  showBack: false,
 })
 
 const displayTitle = () => props.title || props.titleFallback
@@ -18,14 +20,14 @@ const displayTitle = () => props.title || props.titleFallback
 <template>
   <div class="flex items-center gap-4">
     <router-link
-      v-if="backTo"
+      v-if="showBack && backTo"
       :to="backTo"
       class="flex items-center gap-2 text-text-muted transition-colors hover:text-primary"
       title="返回书库"
     >
       <ArrowLeft :size="20" />
     </router-link>
-    <div v-if="backTo" class="h-6 w-px bg-border-light" />
+    <div v-if="showBack && backTo" class="h-6 w-px bg-border-light" />
     <router-link
       v-if="titleTo"
       :to="titleTo"

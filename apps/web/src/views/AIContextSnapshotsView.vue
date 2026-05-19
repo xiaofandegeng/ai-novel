@@ -17,7 +17,7 @@ import { useRoute } from 'vue-router'
 import { useAIContextSnapshotStore } from '../stores/ai-context-snapshot.store'
 
 const route = useRoute()
-const projectId = route.params.projectId as string
+const projectId = route.params.id as string
 const snapshotStore = useAIContextSnapshotStore()
 
 const loading = ref(false)

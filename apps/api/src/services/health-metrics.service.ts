@@ -182,7 +182,7 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
     })
   }
 
-  // 7. 结构化候选待确认
+  // 7. 结构化候选待处理
   const pendingSuggestions = await db.select().from(chapterPostprocessSuggestions).where(and(
     eq(chapterPostprocessSuggestions.projectId, projectId),
     eq(chapterPostprocessSuggestions.status, 'pending'),
@@ -192,11 +192,11 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
       id: 'pending-postprocess-suggestions',
       severity: pendingSuggestions.length > 10 ? 'high' : 'medium',
       type: 'structure',
-      title: '结构化更新待确认',
+      title: '结构化更新待处理',
       message: `有 ${pendingSuggestions.length} 条 AI 抽取结果尚未确认，角色、关系、伏笔、事实图谱可能没有同步到上下文。`,
       actionLabel: '去确认建议',
       targetRoute: `/project/${projectId}/suggestions`,
-      suggestions: ['优先确认事实、人物关系和伏笔类建议', '拒绝无效建议，避免待确认队列堆积'],
+      suggestions: ['优先处理事实、人物关系和伏笔类建议', '忽略无效建议，避免处理队列堆积'],
     })
   }
 

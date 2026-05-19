@@ -174,14 +174,14 @@ async function handleCreateAndStart() {
           <div class="mb-1 flex items-center gap-1 font-bold">
             <AlertTriangle :size="14" /> 风险提示
           </div>
-          重写模式会<b>覆盖已有草稿</b>。系统会在写入前自动创建快照，但建议您在执行前确认已备份重要内容。
+          重写模式会<b>覆盖已有草稿</b>。系统会在写入前自动创建快照，并在异常时进入隔离与恢复链路。
         </div>
 
         <div class="border-l-4 border-primary rounded bg-bg-subtle p-3 text-xs text-text-secondary">
           <div class="mb-1 flex items-center gap-1 font-bold">
             <AlertCircle :size="12" /> 注意
           </div>
-          自动驾驶模式将自动执行上下文构建、生成、审查（基于策略）和应用。高风险变更或严重一致性冲突将产生异常并可能暂停任务。
+          自动驾驶模式将自动执行上下文构建、生成、检查、修复与写回。高风险变更会进入自动修复或隔离链路，只有致命错误会停止整轮任务。
         </div>
 
         <NButton

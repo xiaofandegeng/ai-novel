@@ -223,7 +223,7 @@ export function useCharacterWorkspace(projectId: string) {
     if (directRelationshipCount > 0)
       parts.push(`已直接关联 ${directRelationshipCount} 段人物关系`)
     if (suggestionCount > 0)
-      parts.push(`新增 ${suggestionCount} 条待确认关系候选`)
+      parts.push(`新增 ${suggestionCount} 条待处理关系候选`)
     return parts.join('，')
   }
 
@@ -421,7 +421,7 @@ export function useCharacterWorkspace(projectId: string) {
       clearAIProposal()
       if (lastCreatedId)
         selectCharacter(lastCreatedId)
-      toast.add(`已创建 ${candidates.length} 个小角色，直接关联 ${relationshipCount} 段人物关系，新增 ${suggestionCount} 条待确认关系候选`, 'success')
+      toast.add(`已创建 ${candidates.length} 个小角色，直接关联 ${relationshipCount} 段人物关系，新增 ${suggestionCount} 条待处理关系候选`, 'success')
     }
     catch {
       toast.add('部分小角色创建失败，请检查后重试', 'error')

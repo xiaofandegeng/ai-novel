@@ -738,7 +738,7 @@ async function seed() {
       }),
       confidence: 78,
       status: 'pending',
-      reason: '第二章白栀听到空白信时出现异常反应，可沉淀为待确认事实。',
+      reason: '第二章白栀听到空白信时出现异常反应，可沉淀为待处理事实。',
       createdAt: now,
       updatedAt: now,
     },

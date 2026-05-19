@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { StoryStructureTemplate } from '@ai-novel/shared'
 import type { PromptOverride, PromptTemplate } from '../../../api/prompt-templates'
-import { NButton, NPanel, NTag, useToast } from '@ai-novel/ui'
+import { NButton, NConfirmDialog, NPanel, NTag, useToast } from '@ai-novel/ui'
 import { Code, Layout, RefreshCw, Save, Terminal } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { promptTemplateApi } from '../../../api/prompt-templates'
@@ -21,6 +21,8 @@ const activeTab = ref<'prompts' | 'structure'>('prompts')
 
 // Structure state
 const applyingStructure = ref(false)
+const pendingStructureTemplateId = ref<string | null>(null)
+const showApplyStructureConfirm = ref(false)
 
 async function loadData() {
   loading.value = true
@@ -83,15 +85,20 @@ async function handleSaveOverride() {
   }
 }
 
-async function handleApplyStructure(templateId: string) {
-  // eslint-disable-next-line no-alert
-  if (!confirm('应用新结构将创建新的卷和幕，现有结构将被保留但可能导致混乱。确定继续吗？'))
-    return
+function requestApplyStructure(templateId: string) {
+  pendingStructureTemplateId.value = templateId
+  showApplyStructureConfirm.value = true
+}
 
+async function handleApplyStructure() {
+  if (!pendingStructureTemplateId.value)
+    return
   applyingStructure.value = true
   try {
-    await storyStructureApi.applyTemplate(props.projectId, templateId)
+    await storyStructureApi.applyTemplate(props.projectId, pendingStructureTemplateId.value)
     toast.add('结构模板已应用，请前往“大纲”查看', 'success')
+    showApplyStructureConfirm.value = false
+    pendingStructureTemplateId.value = null
   }
   catch (e: any) {
     toast.add(`应用失败: ${e.message}`, 'error')
@@ -265,7 +272,7 @@ onMounted(loadData)
                 size="sm"
                 variant="secondary"
                 :loading="applyingStructure"
-                @click="handleApplyStructure(s.id)"
+                @click="requestApplyStructure(s.id)"
               >
                 应用此结构模板
               </NButton>
@@ -274,6 +281,16 @@ onMounted(loadData)
         </NPanel>
       </div>
     </div>
+
+    <NConfirmDialog
+      v-model="showApplyStructureConfirm"
+      title="应用故事结构模板"
+      description="应用新结构将创建新的卷和幕，现有结构会被保留，但可能让当前大纲出现重复结构。系统会按自动化流程继续处理，是否继续？"
+      confirm-text="继续应用"
+      cancel-text="取消"
+      :loading="applyingStructure"
+      @confirm="handleApplyStructure"
+    />
   </div>
 </template>
 

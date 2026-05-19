@@ -132,7 +132,7 @@ onMounted(async () => {
         <!-- Pending Suggestions -->
         <div v-if="suggestions.length > 0" class="mt-4 px-2 pb-4">
           <div class="mb-2 flex items-center gap-2 px-2 text-[10px] text-primary font-bold tracking-wider uppercase">
-            <Sparkles :size="12" /> 待确认建议 (AI 推导)
+            <Sparkles :size="12" /> 待处理建议 (AI 推导)
           </div>
           <div class="space-y-2">
             <div

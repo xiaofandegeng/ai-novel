@@ -96,7 +96,7 @@ export function useAutonomousRun(projectId: string) {
       await loadRun(runId)
     }
     catch (err: any) {
-      error.value = err.message || '暂停失败'
+      error.value = err.message || '停止本轮失败'
     }
   }
 

@@ -233,7 +233,7 @@ async function handleRunInference() {
             章后分析
           </h1>
           <p class="text-sm text-text-muted">
-            审查 AI 提取的结构化变更，确认后写入知识库
+            查看 AI 提取的结构化变更，低风险自动入库，高风险进入隔离队列。
           </p>
         </div>
         <div class="flex gap-2">
@@ -344,7 +344,7 @@ async function handleRunInference() {
                   :variant="item.status === 'pending' ? 'info' : item.status === 'accepted' ? 'success' : item.status === 'applied' ? 'primary' : item.status === 'acknowledged' ? 'ai' : item.status === 'apply_failed' ? 'error' : 'default'"
                   size="sm"
                 >
-                  {{ item.status === 'pending' ? '待确认' : item.status === 'accepted' ? '已接受' : item.status === 'applied' ? '已应用' : item.status === 'acknowledged' ? '已记录' : item.status === 'apply_failed' ? '应用失败' : '已拒绝' }}
+                  {{ item.status === 'pending' ? '待处理' : item.status === 'accepted' ? '已接收' : item.status === 'applied' ? '已应用' : item.status === 'acknowledged' ? '已记录' : item.status === 'apply_failed' ? '应用失败' : '已忽略' }}
                 </NTag>
                 <template v-if="item.status === 'pending'">
                   <NButton variant="ghost" size="sm" class="text-green-600 hover:text-green-700" @click="handleAccept(item.id)">

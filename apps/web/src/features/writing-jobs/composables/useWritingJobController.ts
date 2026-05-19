@@ -17,7 +17,7 @@ import { T } from '@/utils/toast-message'
 export const JOB_STATUS_LABEL: Record<string, string> = {
   idle: '就绪',
   running: '运行中',
-  paused: '已暂停',
+  paused: '已中止',
   completed: '已完成',
   failed: '失败',
 }

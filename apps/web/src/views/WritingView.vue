@@ -166,7 +166,7 @@ async function handleSelectCandidate(candidateId: string) {
     snapshotId: candidate.contextSnapshotId ?? undefined,
   })
   showMultiCandidate.value = false
-  toast.add('候选方案已进入 AI 确认区，请确认后再写入正文', 'success')
+  toast.add('候选方案已进入自动处理区，系统会完成检查、修复与写回', 'success')
 }
 
 // --- Data loading ---

@@ -137,7 +137,7 @@ export async function autoLinkCharacterToGraph(projectId: string, characterId: s
     .limit(1)
 
   if (!anchorChapter)
-    return { suggestionsCreated: 0, message: '请先创建至少一个章节，系统才能生成待确认关系建议' }
+    return { suggestionsCreated: 0, message: '请先创建至少一个章节，系统才能生成待处理关系建议' }
 
   const allCharacters = await db.select().from(characters).where(eq(characters.projectId, projectId))
   const candidates = allCharacters.filter(c => c.id !== characterId)
@@ -185,7 +185,7 @@ export async function autoLinkCharacterToGraph(projectId: string, characterId: s
   return {
     suggestionsCreated,
     message: suggestionsCreated > 0
-      ? `已生成 ${suggestionsCreated} 条待确认人物关系建议`
+      ? `已生成 ${suggestionsCreated} 条待处理人物关系建议`
       : '没有发现需要新增的人物关系建议',
   }
 }

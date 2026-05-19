@@ -45,7 +45,7 @@ const {
           自动写作
         </h1>
         <p class="text-sm text-text-muted">
-          由 AI 驱动的创作引擎，支持半自动与全自动执行策略
+          由 AI 自动驾驶引擎接管上下文构建、生成、检查、修复与写回。
         </p>
       </div>
 

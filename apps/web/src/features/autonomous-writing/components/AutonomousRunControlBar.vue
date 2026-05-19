@@ -35,7 +35,7 @@ function getStatusLabel(status: string): string {
     case 'running': return '正在驾驶'
     case 'completed': return '驾驶完成'
     case 'failed': return '驾驶事故'
-    case 'paused': return '已暂停'
+    case 'paused': return '已中止'
     default: return status
   }
 }
@@ -70,7 +70,7 @@ function getStatusLabel(status: string): string {
           :loading="loading"
           @click="emit('pause', currentRun.id)"
         >
-          <Pause :size="16" class="mr-1" /> 暂停
+          <Pause :size="16" class="mr-1" /> 停止本轮
         </NButton>
         <NButton
           v-else-if="currentRun.status === 'paused'"
@@ -79,7 +79,7 @@ function getStatusLabel(status: string): string {
           :loading="loading"
           @click="emit('resume', currentRun.id)"
         >
-          <Play :size="16" class="mr-1" /> 继续推进
+          <Play :size="16" class="mr-1" /> 重新推进
         </NButton>
         <NButton variant="ghost" size="sm" @click="emit('refresh')">
           <RefreshCw :size="16" />

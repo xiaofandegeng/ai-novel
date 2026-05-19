@@ -160,14 +160,14 @@ function getStepOutput(step: WritingJobStep): any | null {
           :loading="actionLoading === 'start'"
           @click="emit('start')"
         >
-          <Play :size="14" class="mr-1" /> 继续
+          <Play :size="14" class="mr-1" /> 重新推进
         </NButton>
         <NButton
           v-if="job.status === 'running'"
           :loading="actionLoading === 'pause'"
           @click="emit('pause')"
         >
-          <Pause :size="14" class="mr-1" /> 暂停
+          <Pause :size="14" class="mr-1" /> 停止本轮
         </NButton>
         <NButton
           v-if="job.status === 'failed'"
@@ -230,7 +230,7 @@ function getStepOutput(step: WritingJobStep): any | null {
                 {{ STEP_LABEL[step.stepType] || step.stepType }}
               </span>
               <NTag v-if="step.status === 'running' || step.autoDecision === 'paused'" :variant="step.autoDecision === 'paused' ? 'warning' : 'info'" size="sm">
-                {{ step.autoDecision === 'paused' ? '等待审查' : STEP_STATUS_CONFIG[step.status].label }}
+                {{ step.autoDecision === 'paused' ? '自动隔离' : STEP_STATUS_CONFIG[step.status].label }}
               </NTag>
             </div>
 
@@ -244,7 +244,7 @@ function getStepOutput(step: WritingJobStep): any | null {
               <CheckCircle2 :size="10" /> 引擎自动通过：{{ step.autoDecisionReason }}
             </div>
             <div v-else-if="step.autoDecision === 'paused'" class="mt-1 flex items-center gap-1 text-[10px] text-amber-600">
-              <Pause :size="10" /> 引擎自动暂停：{{ step.autoDecisionReason }}
+              <Pause :size="10" /> 引擎自动隔离：{{ step.autoDecisionReason }}
             </div>
             <div v-else-if="step.autoDecision === 'repair' || step.autoDecision === 'medium_risk_repair'" class="mt-1 flex items-center gap-1 text-[10px] text-blue-600">
               <RefreshCw :size="10" /> 引擎自动修复：{{ step.autoDecisionReason }}
@@ -274,7 +274,7 @@ function getStepOutput(step: WritingJobStep): any | null {
               <BookOpen :size="12" class="mr-1" /> 查看决策报告
             </NButton>
 
-            <!-- Confirm step review panel -->
+            <!-- Automated decision report panel -->
             <div
               v-if="expandedReportStepId === step.id && CHECKPOINT_STEP_TYPES.has(step.stepType)"
               class="mt-3"

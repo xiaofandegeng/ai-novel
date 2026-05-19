@@ -159,7 +159,7 @@ function getItemIcon(type: string) {
       <!-- Consistency Details -->
       <div v-if="changeSet.consistencyReportJson" class="mt-4 border-t border-border-light pt-4">
         <div class="mb-2 px-1 text-xs text-text-muted font-semibold">
-          一致性审查报告
+          一致性检查报告
         </div>
         <div class="grid grid-cols-2 gap-2">
           <div

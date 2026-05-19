@@ -426,7 +426,7 @@ export async function applyOneSuggestion(
           characterBName: targetName,
           type: typeof relation.type === 'string' ? relation.type : 'acquaintance',
           strength: typeof relation.strength === 'number' ? relation.strength : 2,
-          status: typeof relation.status === 'string' ? relation.status : '新角色与既有角色产生交集，等待确认。',
+          status: typeof relation.status === 'string' ? relation.status : '新角色与既有角色产生交集，等待自动处理。',
           description: typeof relation.description === 'string' ? relation.description : '由新增角色建议自动生成的关系候选。',
           sourceType: 'auto_inferred',
           inferenceRule: 'character_add_relation',

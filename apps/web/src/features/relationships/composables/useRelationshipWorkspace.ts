@@ -135,7 +135,7 @@ export function useRelationshipWorkspace(projectId: string) {
       toast.add(result.message, 'success')
       // 提示用户去章后分析查看或刷新
       if (result.suggestionsCreated > 0) {
-        toast.add('推导成功！已生成建议，请前往“章后分析”页面确认应用', 'info')
+        toast.add('推导成功！已生成建议，请前往“章后分析”页面查看处理结果', 'info')
       }
     }
     catch (e: any) {

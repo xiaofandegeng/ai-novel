@@ -10,88 +10,94 @@ const router = createRouter({
     },
     {
       path: '/project/:id',
-      name: 'project-home',
-      component: () => import('@/views/ProjectHomeView.vue'),
-    },
-    {
-      path: '/project/:id/bible',
-      name: 'story-bible',
-      component: () => import('@/views/StoryBibleView.vue'),
-    },
-    {
-      path: '/project/:id/characters',
-      name: 'characters',
-      component: () => import('@/views/CharactersView.vue'),
-    },
-    {
-      path: '/project/:id/outline',
-      name: 'outline',
-      component: () => import('@/views/OutlineView.vue'),
-    },
-    {
-      path: '/project/:id/write',
-      name: 'write',
-      component: () => import('@/views/WritingView.vue'),
-    },
-    {
-      path: '/project/:id/relationships',
-      name: 'relationships',
-      component: () => import('@/views/RelationshipsView.vue'),
-    },
-    {
-      path: '/project/:id/conflicts',
-      name: 'conflicts',
-      component: () => import('@/views/ConflictMatrixView.vue'),
-    },
-    {
-      path: '/project/:id/foreshadowing',
-      name: 'foreshadowing',
-      component: () => import('@/views/ForeshadowingLedgerView.vue'),
-    },
-    {
-      path: '/project/:id/health',
-      name: 'project-health',
-      component: () => import('@/views/ProjectHealthView.vue'),
-    },
-    {
-      path: '/project/:id/autopilot',
-      name: 'autopilot',
-      component: () => import('@/views/AutopilotView.vue'),
-    },
-    {
-      path: '/project/:id/suggestions',
-      name: 'postprocess-suggestions',
-      component: () => import('@/views/PostChapterAnalysisView.vue'),
-    },
-    {
-      path: '/project/:id/context-snapshots',
-      name: 'context-snapshots',
-      component: () => import('@/views/AIContextSnapshotsView.vue'),
-    },
-    {
-      path: '/project/:id/knowledge',
-      name: 'knowledge',
-      component: () => import('@/views/KnowledgeBaseView.vue'),
-    },
-    {
-      path: '/project/:id/versions',
-      name: 'versions',
-      component: () => import('@/views/VersionHistoryView.vue'),
-    },
-    {
-      path: '/project/:id/quality',
-      name: 'quality',
-      component: () => import('@/views/QualityReviewView.vue'),
-    },
-    {
-      path: '/project/:id/settings',
-      name: 'project-settings',
-      component: () => import('@/views/ProjectSettingsView.vue'),
-    },
-    {
-      path: '/project/:id/weekly-report',
-      name: 'weekly-report',
-      component: () => import('@/views/AuthoringWeeklyReportView.vue'),
+      component: () => import('@/views/ProjectShellView.vue'),
+      children: [
+        {
+          path: '',
+          name: 'project-home',
+          component: () => import('@/views/ProjectHomeView.vue'),
+        },
+        {
+          path: 'bible',
+          name: 'story-bible',
+          component: () => import('@/views/StoryBibleView.vue'),
+        },
+        {
+          path: 'characters',
+          name: 'characters',
+          component: () => import('@/views/CharactersView.vue'),
+        },
+        {
+          path: 'outline',
+          name: 'outline',
+          component: () => import('@/views/OutlineView.vue'),
+        },
+        {
+          path: 'write',
+          name: 'write',
+          component: () => import('@/views/WritingView.vue'),
+        },
+        {
+          path: 'relationships',
+          name: 'relationships',
+          component: () => import('@/views/RelationshipsView.vue'),
+        },
+        {
+          path: 'conflicts',
+          name: 'conflicts',
+          component: () => import('@/views/ConflictMatrixView.vue'),
+        },
+        {
+          path: 'foreshadowing',
+          name: 'foreshadowing',
+          component: () => import('@/views/ForeshadowingLedgerView.vue'),
+        },
+        {
+          path: 'health',
+          name: 'project-health',
+          component: () => import('@/views/ProjectHealthView.vue'),
+        },
+        {
+          path: 'autopilot',
+          name: 'autopilot',
+          component: () => import('@/views/AutopilotView.vue'),
+        },
+        {
+          path: 'suggestions',
+          name: 'postprocess-suggestions',
+          component: () => import('@/views/PostChapterAnalysisView.vue'),
+        },
+        {
+          path: 'context-snapshots',
+          name: 'context-snapshots',
+          component: () => import('@/views/AIContextSnapshotsView.vue'),
+        },
+        {
+          path: 'knowledge',
+          name: 'knowledge',
+          component: () => import('@/views/KnowledgeBaseView.vue'),
+        },
+        {
+          path: 'versions',
+          name: 'versions',
+          component: () => import('@/views/VersionHistoryView.vue'),
+        },
+        {
+          path: 'quality',
+          name: 'quality',
+          component: () => import('@/views/QualityReviewView.vue'),
+        },
+        {
+          path: 'settings',
+          name: 'project-settings',
+          component: () => import('@/views/ProjectSettingsView.vue'),
+        },
+        {
+          path: 'weekly-report',
+          name: 'weekly-report',
+          component: () => import('@/views/AuthoringWeeklyReportView.vue'),
+        },
+      ],
     },
     {
       path: '/persona',

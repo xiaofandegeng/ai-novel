@@ -6,9 +6,12 @@ import {
   autonomousRunJobs,
   autonomousWritingRuns,
   chapterChangeSetItems,
+  chapterPostprocessSuggestions,
   chapters,
   characterRelationships,
   characters,
+  conflicts,
+  foreshadowingItems,
   writingJobs,
   writingJobSteps,
 } from '../db/schema'
@@ -21,6 +24,25 @@ export async function getProjectNarrativeInsight(projectId: string) {
 
   const [charCount] = await db.select({ count: sql`count(*)` }).from(characters).where(eq(characters.projectId, projectId))
   const [relCount] = await db.select({ count: sql`count(*)` }).from(characterRelationships).where(eq(characterRelationships.projectId, projectId))
+  const [conflictCount] = await db.select({ count: sql`count(*)` }).from(conflicts).where(and(
+    eq(conflicts.projectId, projectId),
+    not(eq(conflicts.status, 'resolved')),
+  ))
+  const [openForeshadowingCount] = await db.select({ count: sql`count(*)` }).from(foreshadowingItems).where(and(
+    eq(foreshadowingItems.projectId, projectId),
+    or(eq(foreshadowingItems.status, 'open'), eq(foreshadowingItems.status, 'progressing')),
+  ))
+  const [pendingSuggestionCount] = await db.select({ count: sql`count(*)` }).from(chapterPostprocessSuggestions).where(and(
+    eq(chapterPostprocessSuggestions.projectId, projectId),
+    eq(chapterPostprocessSuggestions.status, 'pending'),
+  ))
+  const [appliedSuggestionCount] = await db.select({ count: sql`count(*)` }).from(chapterPostprocessSuggestions).where(and(
+    eq(chapterPostprocessSuggestions.projectId, projectId),
+    or(
+      eq(chapterPostprocessSuggestions.status, 'applied'),
+      eq(chapterPostprocessSuggestions.status, 'acknowledged'),
+    ),
+  ))
 
   // Get recent structural changes
   const recentEvents = await db.select()
@@ -39,7 +61,10 @@ export async function getProjectNarrativeInsight(projectId: string) {
       totalWords: health.totalWords,
       characterCount: Number(charCount?.count || 0),
       relationshipCount: Number(relCount?.count || 0),
-      activeConflictCount: health.activeConflicts,
+      activeConflictCount: Number(conflictCount?.count || health.activeConflicts || 0),
+      openForeshadowingCount: Number(openForeshadowingCount?.count || 0),
+      pendingSuggestionCount: Number(pendingSuggestionCount?.count || 0),
+      appliedSuggestionCount: Number(appliedSuggestionCount?.count || 0),
     },
     radarMetrics: health.radarMetrics,
     recentEvents: recentEvents.map(ev => ({

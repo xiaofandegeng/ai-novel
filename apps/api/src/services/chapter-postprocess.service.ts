@@ -144,7 +144,7 @@ export async function extractChapterChanges(input: {
     ? `${content.substring(0, 6000)}...(内容过长已截断)`
     : content
 
-  const prompt = `你是一位专业的长篇小说编辑。请分析以下章节正文，提取结构化记忆和待确认建议。
+  const prompt = `你是一位专业的长篇小说编辑。请分析以下章节正文，提取结构化记忆和待处理建议。
 返回严格 JSON，不要 markdown。
 
 作品：${project?.title}
@@ -576,7 +576,7 @@ export async function runScenePostprocess(input: {
     : content
 
   const prompt = `你是一位专业的长篇小说编辑。请分析以下单个场景正文，提取结构化信息。
-场景级分析只生成待确认建议，不直接写入正式事实库。
+场景级分析只生成待处理建议，不直接写入正式事实库。
 返回严格 JSON，不要 markdown。
 
 作品：${project.title}
@@ -626,7 +626,7 @@ ${truncatedContent}
 
 要求：
 - 只提取明确出现在正文中的内容
-- 新角色、关系、伏笔回收、矛盾变化都只生成待确认建议
+- 新角色、关系、伏笔回收、矛盾变化都只生成待处理建议
 - 如果某类没有相关内容，返回空数组 []
 - confidence 范围 0-100`
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useSlots } from 'vue'
+import { computed, inject, useSlots } from 'vue'
 
 interface Props {
   projectName: string
@@ -16,10 +16,44 @@ const slots = useSlots()
 
 const hasContext = computed(() => !!slots.context)
 const hasToolbar = computed(() => !!slots.toolbar)
+const hasTopbarRight = computed(() => !!slots['topbar-right'])
+const insideProjectShell = inject('project-shell-active', false)
 </script>
 
 <template>
-  <div class="h-screen flex flex-col bg-bg-page">
+  <div v-if="insideProjectShell" class="min-h-full flex flex-col bg-bg-page">
+    <div
+      v-if="currentChapter || hasTopbarRight"
+      class="sticky top-0 z-10 min-h-14 flex shrink-0 items-center justify-between gap-4 border-b border-border-light bg-bg-surface/95 px-6 shadow-sm backdrop-blur"
+    >
+      <div class="min-w-0">
+        <span v-if="currentChapter" class="text-sm text-text-muted">
+          {{ currentChapter }}
+        </span>
+      </div>
+      <slot name="topbar-right" />
+    </div>
+
+    <div v-if="hasToolbar" class="shrink-0 border-b border-border-light bg-bg-surface">
+      <slot name="toolbar" />
+    </div>
+
+    <div class="min-h-0 flex-1 overflow-hidden">
+      <div v-if="hasContext" class="h-full flex overflow-hidden">
+        <main class="min-w-0 flex-1 overflow-y-auto bg-bg-page">
+          <slot />
+        </main>
+        <aside class="hidden w-90 shrink-0 overflow-y-auto border-l border-border-light bg-bg-surface xl:block">
+          <slot name="context" />
+        </aside>
+      </div>
+      <main v-else class="h-full overflow-y-auto bg-bg-page">
+        <slot />
+      </main>
+    </div>
+  </div>
+
+  <div v-else class="h-screen flex flex-col bg-bg-page">
     <!-- Top bar -->
     <header class="h-16 flex shrink-0 items-center border-b border-border-light bg-bg-surface/95 px-6 shadow-sm">
       <div class="flex flex-1 items-center gap-4">

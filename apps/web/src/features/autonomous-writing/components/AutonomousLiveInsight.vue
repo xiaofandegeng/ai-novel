@@ -8,6 +8,7 @@ import {
   BookOpen,
   ChevronRight,
   GitCompare,
+  Lightbulb,
   Users,
   Zap,
 } from 'lucide-vue-next'
@@ -61,16 +62,49 @@ function getEventColor(type: string) {
     return 'text-orange-500 bg-orange-50'
   return 'text-text-muted bg-bg-subtle'
 }
+
+function eventLabel(type: string) {
+  const map: Record<string, string> = {
+    character_create: '新增角色',
+    character_update: '角色更新',
+    relationship_create: '新增关系',
+    relationship_update: '关系变化',
+    conflict_create: '新增矛盾',
+    conflict_update: '矛盾推进',
+    foreshadowing_add: '新增伏笔',
+    foreshadowing_payoff: '伏笔回收',
+    chapter_element: '章节元素',
+  }
+  return map[type] || type.split('_').join(' ')
+}
 </script>
 
 <template>
-  <div class="autonomous-live-insight space-y-6">
+  <div class="autonomous-live-insight space-y-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h2 class="text-sm text-text-primary font-bold">
+          实时联动看板
+        </h2>
+        <p class="text-xs text-text-muted">
+          自动写作会同步更新人物、关系、矛盾、伏笔和健康指标。
+        </p>
+      </div>
+      <NTag v-if="insight" size="sm" variant="primary">
+        {{ insight.stats.pendingSuggestionCount || 0 }} 待处理
+      </NTag>
+    </div>
+
+    <div v-if="!insight" class="border border-border-light rounded-lg bg-bg-surface p-6 text-center text-sm text-text-muted">
+      正在加载联动数据...
+    </div>
+
     <!-- Quick Stats -->
-    <div v-if="insight" class="grid grid-cols-2 gap-3">
-      <div class="stat-card border border-border-light rounded-xl bg-bg-surface p-3 shadow-sm">
+    <div v-else class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div class="stat-card border border-border-light rounded-lg bg-bg-surface p-3">
         <div class="mb-1 flex items-center gap-2 text-text-muted">
           <Users :size="14" />
-          <span class="text-[10px] font-medium tracking-wider uppercase">角色 & 关系</span>
+          <span class="text-[10px] font-medium tracking-wider uppercase">角色 / 关系</span>
         </div>
         <div class="flex items-baseline gap-1">
           <span class="text-xl font-bold">{{ insight.stats.characterCount }}</span>
@@ -78,7 +112,7 @@ function getEventColor(type: string) {
         </div>
       </div>
 
-      <div class="stat-card border border-border-light rounded-xl bg-bg-surface p-3 shadow-sm">
+      <div class="stat-card border border-border-light rounded-lg bg-bg-surface p-3">
         <div class="mb-1 flex items-center gap-2 text-text-muted">
           <Zap :size="14" />
           <span class="text-[10px] font-medium tracking-wider uppercase">活跃矛盾</span>
@@ -86,6 +120,28 @@ function getEventColor(type: string) {
         <div class="flex items-baseline gap-1">
           <span class="text-xl text-orange-500 font-bold">{{ insight.stats.activeConflictCount }}</span>
           <span class="text-[10px] text-text-muted">个进行中</span>
+        </div>
+      </div>
+
+      <div class="stat-card border border-border-light rounded-lg bg-bg-surface p-3">
+        <div class="mb-1 flex items-center gap-2 text-text-muted">
+          <Lightbulb :size="14" />
+          <span class="text-[10px] font-medium tracking-wider uppercase">开放伏笔</span>
+        </div>
+        <div class="flex items-baseline gap-1">
+          <span class="text-xl text-amber-600 font-bold">{{ insight.stats.openForeshadowingCount || 0 }}</span>
+          <span class="text-[10px] text-text-muted">条追踪中</span>
+        </div>
+      </div>
+
+      <div class="stat-card border border-border-light rounded-lg bg-bg-surface p-3">
+        <div class="mb-1 flex items-center gap-2 text-text-muted">
+          <Activity :size="14" />
+          <span class="text-[10px] font-medium tracking-wider uppercase">自动入库</span>
+        </div>
+        <div class="flex items-baseline gap-1">
+          <span class="text-xl text-green-600 font-bold">{{ insight.stats.appliedSuggestionCount || 0 }}</span>
+          <span class="text-[10px] text-text-muted">条结构更新</span>
         </div>
       </div>
     </div>
@@ -117,7 +173,7 @@ function getEventColor(type: string) {
 
     <!-- Recent Narrative Events -->
     <NPanel v-if="insight" title="剧情与设定实时演进">
-      <div class="py-1 space-y-3">
+      <div class="max-h-[360px] overflow-y-auto py-1 space-y-3">
         <div
           v-for="event in insight.recentEvents"
           :key="event.id"
@@ -133,9 +189,9 @@ function getEventColor(type: string) {
             </div>
             <div class="mt-0.5 flex items-center gap-1">
               <NTag size="sm" :variant="event.status === 'applied' ? 'success' : 'default'">
-                {{ event.status === 'applied' ? '已入库' : '待确认' }}
+                {{ event.status === 'applied' ? '已入库' : '待处理' }}
               </NTag>
-              <span class="text-[9px] text-text-muted">{{ event.type.split('_').join(' ') }}</span>
+              <span class="text-[9px] text-text-muted">{{ eventLabel(event.type) }}</span>
             </div>
           </div>
           <ChevronRight :size="12" class="mt-2 text-text-muted opacity-0 transition-opacity group-hover:opacity-100" />

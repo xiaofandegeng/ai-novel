@@ -1,6 +1,17 @@
 <script setup lang="ts">
 import { NButton, NPanel } from '@ai-novel/ui'
-import { AlertCircle, ChevronLeft, RefreshCw, Rocket } from 'lucide-vue-next'
+import {
+  AlertCircle,
+  BookOpen,
+  ChevronLeft,
+  GitCompare,
+  Lightbulb,
+  RefreshCw,
+  Rocket,
+  ShieldCheck,
+  Users,
+  Zap,
+} from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AutonomousExceptionQueue from '@/features/autonomous-writing/components/AutonomousExceptionQueue.vue'
@@ -63,7 +74,7 @@ function handleNewRun() {
 async function handleResolve(ex: any) {
   if (!currentRun.value)
     return
-  const resolution = '已批准继续运行。'
+  const resolution = '已恢复自动运行。'
   await resolveException(currentRun.value.id, ex.id, resolution)
   await loadRun(currentRun.value.id)
 }
@@ -91,10 +102,38 @@ function handleViewJob(jobId: string) {
 function handleCloseModal() {
   selectedJobId.value = null
 }
+
+const syncItems = [
+  {
+    icon: Users,
+    title: '角色与小角色',
+    desc: '正文生成后自动抽取新增角色、登场状态、目标变化，并写入角色档案或待处理队列。',
+  },
+  {
+    icon: GitCompare,
+    title: '人物关系',
+    desc: '根据互动、冲突和情绪变化更新关系强度、关系类型和历史演变。',
+  },
+  {
+    icon: Zap,
+    title: '矛盾矩阵',
+    desc: '识别新矛盾、升级矛盾和已解决矛盾，避免剧情线各走各的。',
+  },
+  {
+    icon: Lightbulb,
+    title: '伏笔与事实',
+    desc: '把新伏笔、回收点和事实三元组同步进台账，下一章自动进入上下文。',
+  },
+  {
+    icon: ShieldCheck,
+    title: '健康巡检',
+    desc: '每章完成后检查偏题、人物跑偏、节奏异常和前后文断裂。',
+  },
+]
 </script>
 
 <template>
-  <div class="autopilot-view mx-auto max-w-5xl p-6 space-y-6">
+  <div class="autopilot-view mx-auto max-w-7xl p-6 space-y-6">
     <!-- Header -->
     <header class="flex items-center justify-between">
       <div class="flex items-center gap-3">
@@ -134,10 +173,8 @@ function handleCloseModal() {
       </div>
     </div>
 
-    <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <!-- Left Column: Controls and Timeline -->
-      <div class="lg:col-span-2 space-y-6">
-        <!-- Control Bar: Show if active run exists -->
+    <div class="grid grid-cols-1 gap-6 xl:grid-cols-[400px_1fr]">
+      <aside class="space-y-6">
         <AutonomousRunControlBar
           v-if="currentRun"
           :current-run="currentRun"
@@ -148,7 +185,6 @@ function handleCloseModal() {
           @refresh="handleRefresh"
         />
 
-        <!-- Launcher: Only show if no active run or if active run is finished -->
         <AutonomousRunLauncher
           v-if="!currentRun || ['completed', 'failed'].includes(currentRun.status)"
           :project-id="projectId"
@@ -157,51 +193,76 @@ function handleCloseModal() {
           @start="handleStart"
         />
 
-        <!-- Active Run Progress -->
-        <div v-if="currentRun" class="space-y-6">
+        <NPanel v-if="currentRun" title="待处理异常">
+          <template v-if="exceptions.filter(e => e.status === 'open').length > 0">
+            <AutonomousExceptionQueue
+              :exceptions="exceptions.filter(e => e.status === 'open')"
+              @resolve="handleResolve"
+              @ignore="handleIgnore"
+            />
+          </template>
+          <div v-else class="py-10 text-center text-sm text-text-muted">
+            <div class="mb-2 flex justify-center opacity-20">
+              <ShieldCheck :size="42" />
+            </div>
+            <p>暂无待处理异常</p>
+          </div>
+        </NPanel>
+      </aside>
+
+      <main class="space-y-6">
+        <AutonomousLiveInsight :project-id="projectId" />
+
+        <NPanel
+          title="章节推进与写回状态"
+          description="每章会依次完成上下文构建、生成正文、一致性检查、自动修复、写回正文、章后分析和台账同步。"
+        >
           <AutonomousRunTimeline
+            v-if="currentRun"
             :jobs="currentRun.jobs"
             :current-job-id="currentRun.jobs.find(j => j.status === 'running')?.id"
             @view-job="handleViewJob"
           />
-        </div>
-      </div>
-
-      <!-- Right Column: Exceptions and Settings -->
-      <div class="space-y-6">
-        <AutonomousLiveInsight :project-id="projectId" />
-
-        <div v-if="currentRun" class="space-y-6">
-          <NPanel title="待处理异常" :badge="exceptions.filter(e => e.status === 'open').length || undefined">
-            <template v-if="exceptions.filter(e => e.status === 'open').length > 0">
-              <AutonomousExceptionQueue
-                :exceptions="exceptions.filter(e => e.status === 'open')"
-                @resolve="handleResolve"
-                @ignore="handleIgnore"
-              />
-            </template>
-            <div v-else class="py-12 text-center text-text-muted">
-              <div class="mb-2 flex justify-center opacity-20">
-                <RefreshCw :size="48" />
+          <div v-else class="grid gap-4 py-2 md:grid-cols-2">
+            <div class="border border-border-light rounded-lg border-dashed bg-bg-subtle p-4">
+              <div class="mb-2 flex items-center gap-2 text-sm font-semibold">
+                <BookOpen :size="16" class="text-primary" />
+                未启动自动驾驶
               </div>
-              <p>暂无待处理异常</p>
+              <p class="text-sm text-text-muted leading-6">
+                启动后，这里会显示每章从大纲、场景、正文到章后分析的完整推进状态。
+              </p>
             </div>
-          </NPanel>
+            <div class="border border-border-light rounded-lg border-dashed bg-bg-subtle p-4">
+              <div class="mb-2 flex items-center gap-2 text-sm font-semibold">
+                <ShieldCheck :size="16" class="text-primary" />
+                同步不会静默污染
+              </div>
+              <p class="text-sm text-text-muted leading-6">
+                高置信变更自动入库，低置信和冲突变更进入待处理队列，下一次写作会读取已确认结构。
+              </p>
+            </div>
+          </div>
+        </NPanel>
 
-          <NPanel title="自动驾驶说明">
-            <ul class="list-disc pl-4 text-xs text-text-secondary space-y-2">
-              <li><b>安全策略</b>：遇到任何不确定性都会暂停。</li>
-              <li><b>平衡策略</b>：自动处理低风险变更，中高风险入队。</li>
-              <li><b>快速策略</b>：跳过阻塞章节，尽可能完成剩余任务。</li>
-              <li>异常入队时，任务会进入“需要关注”状态并停止。</li>
-            </ul>
-          </NPanel>
-        </div>
-
-        <div v-else class="border border-border-light rounded-xl bg-bg-subtle p-8 text-center text-text-muted">
-          <p>请在左侧配置并启动自动驾驶</p>
-        </div>
-      </div>
+        <NPanel title="自动同步范围" description="自动驾驶不是单独写正文，而是持续维护小说工程里的结构化记忆。">
+          <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div
+              v-for="item in syncItems"
+              :key="item.title"
+              class="border border-border-light rounded-lg bg-bg-surface p-3"
+            >
+              <div class="mb-2 flex items-center gap-2 text-sm font-semibold">
+                <component :is="item.icon" :size="16" class="text-primary" />
+                {{ item.title }}
+              </div>
+              <p class="text-xs text-text-muted leading-5">
+                {{ item.desc }}
+              </p>
+            </div>
+          </div>
+        </NPanel>
+      </main>
     </div>
 
     <!-- Job Detail Modal -->

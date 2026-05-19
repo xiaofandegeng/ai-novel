@@ -14,7 +14,7 @@ import { applyChangeSet as applyChangeSetSvc, approveChangeSet as approveChangeS
 import { extractChapterChanges, runChapterPostprocess, runScenePostprocess } from './chapter-postprocess.service'
 import { runConsistencyGuard } from './consistency-guard.service'
 import { getProjectHealthMetrics } from './health-metrics.service'
-import { applyAutoSuggestions } from './postprocess-suggestion.service'
+import { applyAutoSuggestions, getSuggestions } from './postprocess-suggestion.service'
 import { runGraphInference } from './story-graph-inference.service'
 import { createSnapshot } from './version.service'
 
@@ -77,7 +77,6 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
 const CHECKPOINT_STEPS = new Set<WritingJobStepType>([
   'validate_plan',
   'consistency_check',
-  'classify_suggestions',
   'evaluate_change_set',
 ])
 
@@ -548,7 +547,7 @@ async function executeSaveVersion(
     projectId,
     chapterId,
     content,
-    'Writing job approved draft',
+    'Writing job applied draft',
   )
   const snapshotId = result && 'id' in result ? result.id : null
   const output = JSON.stringify({ snapshotId, wordCount: content.length })
@@ -603,8 +602,32 @@ async function executeApplySuggestions(
     return JSON.stringify({ skipped: true })
   }
 
-  const result = await applyAutoSuggestions(projectId, chapterId, 'balanced')
+  const result = await applyAutoSuggestions(projectId, chapterId, 'aggressive')
   const output = JSON.stringify(result)
+  await updateStep(stepId, { output, updatedAt: now() })
+  return output
+}
+
+async function executeClassifySuggestions(
+  projectId: string,
+  chapterId: string | null,
+  stepId: string,
+): Promise<string> {
+  if (!chapterId) {
+    const output = JSON.stringify({ skipped: true, reason: 'no_chapter' })
+    await updateStep(stepId, { output, updatedAt: now() })
+    return output
+  }
+
+  const suggestions = await getSuggestions(projectId, chapterId)
+  const pending = suggestions.filter(s => s.status === 'pending')
+  const output = JSON.stringify({
+    total: suggestions.length,
+    pending: pending.length,
+    highConfidence: pending.filter(s => (s.confidence || 0) >= 80).length,
+    lowConfidence: pending.filter(s => (s.confidence || 0) < 80).length,
+    nextAction: 'auto_apply_high_confidence',
+  })
   await updateStep(stepId, { output, updatedAt: now() })
   return output
 }
@@ -756,7 +779,7 @@ async function executeApplyChangeSet(
   return output
 }
 
-// ---- Core engine: auto-execute steps until hitting a confirm step or completion ----
+// ---- Core engine: auto-execute steps until automation completes or isolates a blocking issue ----
 
 async function executeStep(
   step: typeof writingJobSteps.$inferSelect,
@@ -766,7 +789,7 @@ async function executeStep(
   job: WritingJob,
   previousStepOutputs: Map<string, string>,
 ): Promise<boolean> {
-  // Returns true if execution should continue, false if we hit a confirm/pause point
+  // Returns true if execution should continue, false if the automation isolated a blocking issue
 
   const timestamp = now()
   await updateStep(step.id, { status: 'running', startedAt: timestamp, error: null })
@@ -837,7 +860,8 @@ async function executeStep(
       }
 
       case 'classify_suggestions':
-        return false
+        await executeClassifySuggestions(projectId, chapterId, step.id)
+        break
 
       case 'apply_suggestions':
         await executeApplySuggestions(projectId, chapterId, step.id, job)
@@ -868,7 +892,7 @@ async function executeStep(
         )
 
         if (!needsRepair) {
-          await updateStep(step.id, { status: 'skipped', autoDecisionReason: 'No repair needed - review passed' })
+          await updateStep(step.id, { status: 'skipped', autoDecisionReason: 'No repair needed - checks passed' })
           return true
         }
 
@@ -1065,7 +1089,7 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
       }).where(eq(writingJobSteps.id, step.id))
 
       if (decision.action === 'continue') {
-        // P1-1: 自动通过变更集后必须批准变更项
+        // P1-1: 自动通过变更集后必须将变更项转入可应用状态
         if (step.stepType === 'evaluate_change_set' && updatedStep.changeSetId) {
           await approveChangeSetSvc(projectId, updatedStep.changeSetId)
         }
@@ -1175,13 +1199,13 @@ export async function retryStep(projectId: string, jobId: string, stepId: string
   if (step.status !== 'failed')
     throw new Error('Only failed steps can be retried')
 
-  // Find the generate step that corresponds to this confirm step
+  // Find the generate step that corresponds to this checkpoint step
   const allSteps = await getJobSteps(jobId)
   const currentIdx = allSteps.findIndex(s => s.id === stepId)
 
   let retryFromIdx = currentIdx
 
-  // If this is a confirm step, retry from the generation step before it
+  // If this is a checkpoint step, retry from the generation step before it
   if (CHECKPOINT_STEPS.has(step.stepType) && currentIdx > 0) {
     const prevStep = allSteps[currentIdx - 1]
     if (prevStep) {

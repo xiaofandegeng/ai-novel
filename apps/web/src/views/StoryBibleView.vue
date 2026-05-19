@@ -117,7 +117,7 @@ const {
                       <div class="flex items-center gap-2">
                         <Sparkles :size="18" class="text-ai" />
                         <h3 class="text-sm text-ai font-bold uppercase">
-                          AI 建议确认区
+                          AI 建议处理区
                         </h3>
                       </div>
                       <NButton variant="ghost" size="sm" @click="dismissAISuggestion">

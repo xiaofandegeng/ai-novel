@@ -94,7 +94,7 @@ function getExceptionIcon(type: string) {
               <Eye :size="12" class="mr-1" /> 查看详情
             </NButton>
             <NButton size="sm" outline @click="emit('resolve', ex)">
-              <CheckCircle :size="12" class="mr-1" /> 批准并继续
+              <CheckCircle :size="12" class="mr-1" /> 恢复自动运行
             </NButton>
             <NButton size="sm" outline class="ml-auto">
               <MoreVertical :size="12" />

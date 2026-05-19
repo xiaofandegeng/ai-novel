@@ -42,7 +42,7 @@ function handleAction(action: 'insert' | 'replace' | 'backup' | 'discard') {
               AI 创作迭代建议
             </h3>
             <p class="text-[10px] text-text-muted uppercase">
-              等待确认
+              等待自动处理
             </p>
           </div>
         </div>

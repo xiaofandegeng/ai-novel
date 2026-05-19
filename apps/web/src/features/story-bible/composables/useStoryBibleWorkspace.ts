@@ -51,7 +51,7 @@ function buildStoryBiblePrompt(prompt: string, sectionLabel: string) {
     '1. 不要输出 Markdown 加粗、分割线、代码块或标题装饰。',
     '2. 不要向作者提问，不要写"作者决策点""请告知倾向"等对话式内容。',
     '3. 如果有待决策内容，请直接整理成"待定：..."设定草案。',
-    '4. 内容要保持设定口吻，便于作者确认后追加或替换到设定集中。',
+    '4. 内容要保持设定口吻，便于自动驾驶引擎检查后追加或替换到设定集中。',
   ].join('\n')
 }
 
@@ -85,7 +85,7 @@ function normalizeStoryBibleSuggestion(raw: string): ProcessedStoryBibleSuggesti
     if (/^-{3,}$/.test(line))
       continue
 
-    const isDecisionHeading = /^(?:作者决策点|决策点|需要作者确认|下一步确认|请你选择|请告知)/.test(line)
+    const isDecisionHeading = /^(?:作者决策点|决策点|需要处理|下一步处理|请你选择|请告知)/.test(line)
     const isAssistantMeta = /请告知|告诉我你的倾向|我将据此|下一阶段|进入下一阶段|如果你愿意|我可以继续|是否需要|你倾向于/.test(line)
 
     if (isDecisionHeading) {
