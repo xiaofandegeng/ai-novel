@@ -304,39 +304,6 @@ function getStepOutput(step: WritingJobStep): any | null {
                   </div>
                 </template>
 
-                <template v-else-if="step.stepType === 'consistency_check'">
-                  <div v-if="getStepOutput(step)" class="text-xs text-text-secondary space-y-2">
-                    <div class="flex items-center gap-2">
-                      <span class="font-medium">一致性评估：</span>
-                      <NTag
-                        :variant="getStepOutput(step).overallStatus === 'pass' ? 'success' : getStepOutput(step).overallStatus === 'warning' ? 'warning' : 'error'"
-                        size="sm"
-                      >
-                        {{ getStepOutput(step).overallStatus === 'pass' ? '通过' : getStepOutput(step).overallStatus === 'warning' ? '有风险' : '严重阻断' }}
-                      </NTag>
-                      <span class="text-text-muted">评分：{{ getStepOutput(step).score }}</span>
-                    </div>
-                    <div v-if="getStepOutput(step).risks?.length" class="space-y-1">
-                      <div
-                        v-for="(risk, rIdx) in getStepOutput(step).risks"
-                        :key="rIdx"
-                        class="rounded bg-red-50 p-2 text-red-700"
-                      >
-                        <div class="font-medium">
-                          {{ risk.type === 'logic' ? '逻辑' : risk.type === 'character' ? '人设' : risk.type === 'plot' ? '情节' : '风格' }}冲突
-                        </div>
-                        <div>{{ risk.message }}</div>
-                      </div>
-                    </div>
-                    <div v-else class="text-green-600">
-                      未发现明显一致性风险。
-                    </div>
-                  </div>
-                  <div v-else class="text-xs text-text-muted">
-                    暂无预览内容
-                  </div>
-                </template>
-
                 <template v-else-if="step.stepType === 'evaluate_change_set'">
                   <ChapterChangeSetReviewPanel
                     v-if="step.changeSetId"

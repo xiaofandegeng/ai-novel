@@ -6,6 +6,7 @@ import {
   Bug,
   Calendar,
   ClipboardList,
+  FilePenLine,
   History,
   LayoutDashboard,
   Lightbulb,
@@ -32,6 +33,12 @@ const primaryMenuItems = [
     path: `/project/${props.projectId}/autopilot`,
     icon: Bot,
     activeMatch: /autopilot/,
+  },
+  {
+    name: '单章写作',
+    path: `/project/${props.projectId}/writing-job`,
+    icon: FilePenLine,
+    activeMatch: /writing-job/,
   },
   {
     name: '项目总览',

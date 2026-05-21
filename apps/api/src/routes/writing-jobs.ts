@@ -1,5 +1,5 @@
 import type { Hono } from 'hono'
-import { and, eq } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '../db'
 import { chapterScenes, writingJobs } from '../db/schema'
 import { assertOptionalChapterBelongsToProject } from '../services/ownership.service'
@@ -14,7 +14,17 @@ import { fail, generateId, success } from '../utils'
 export function registerWritingJobRoutes(app: Hono) {
   app.get('/api/projects/:projectId/writing-jobs', async (c) => {
     const projectId = c.req.param('projectId')
-    const [row] = await db.select().from(writingJobs).where(eq(writingJobs.projectId, projectId)).orderBy(writingJobs.createdAt)
+    const [activeRow] = await db.select().from(writingJobs).where(
+      and(
+        eq(writingJobs.projectId, projectId),
+        inArray(writingJobs.status, ['idle', 'running']),
+      ),
+    ).orderBy(desc(writingJobs.createdAt))
+
+    if (activeRow)
+      return c.json(success(activeRow))
+
+    const [row] = await db.select().from(writingJobs).where(eq(writingJobs.projectId, projectId)).orderBy(desc(writingJobs.createdAt))
     return c.json(success(row || null))
   })
 

@@ -76,33 +76,9 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
 
 const CHECKPOINT_STEPS = new Set<WritingJobStepType>([
   'validate_plan',
-  'consistency_check',
   'evaluate_change_set',
+  'classify_suggestions',
 ])
-
-const STEP_LABELS: Record<WritingJobStepType, string> = {
-  prepare_context: '构建上下文',
-  generate_plan: '生成大纲',
-  generate_scene_draft: '生成场景大纲',
-  validate_plan: '验证大纲',
-  generate_draft: '生成正文',
-  consistency_check: '一致性检查',
-  apply_draft: '写入正文',
-  save_version: '保存快照',
-  postprocess: '章后管线',
-  classify_suggestions: '分类建议',
-  apply_suggestions: '应用建议',
-  update_health: '更新健康指标',
-  build_change_set: '构建变更集',
-  evaluate_change_set: '评估变更集',
-  apply_change_set: '应用变更集',
-  auto_repair: '自动修复',
-  done: '任务完成',
-}
-
-export function getStepLabel(stepType: WritingJobStepType): string {
-  return STEP_LABELS[stepType] || stepType
-}
 
 export async function initializeJobSteps(jobId: string): Promise<void> {
   const [job] = await db.select().from(writingJobs).where(eq(writingJobs.id, jobId))

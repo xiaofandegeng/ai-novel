@@ -63,6 +63,11 @@ const router = createRouter({
           component: () => import('@/views/AutopilotView.vue'),
         },
         {
+          path: 'writing-job',
+          name: 'writing-job',
+          component: () => import('@/views/WritingJobView.vue'),
+        },
+        {
           path: 'suggestions',
           name: 'postprocess-suggestions',
           component: () => import('@/views/PostChapterAnalysisView.vue'),

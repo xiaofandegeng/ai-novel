@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { NAppLayout } from '@ai-novel/ui'
-import { computed, onMounted, provide, watch } from 'vue'
-import { RouterView, useRoute } from 'vue-router'
+import { computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import ProjectBreadcrumb from '@/components/ProjectBreadcrumb.vue'
 import { useProjectStore } from '@/stores/project.store'
+import ProjectShellOutlet from './ProjectShellOutlet.vue'
 
 const route = useRoute()
 const projectStore = useProjectStore()
-
-provide('project-shell-active', true)
 
 const projectId = computed(() => route.params.id as string)
 
@@ -47,6 +46,6 @@ watch(projectId, () => {
       <AppSidebar :project-id="projectId" />
     </template>
 
-    <RouterView />
+    <ProjectShellOutlet />
   </NAppLayout>
 </template>

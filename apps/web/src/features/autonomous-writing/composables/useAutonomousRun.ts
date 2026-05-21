@@ -1,5 +1,5 @@
 import type { AutonomousWritingRun, CreateAutonomousRunInput } from '@ai-novel/shared'
-import { computed, onUnmounted, ref } from 'vue'
+import { onUnmounted, ref } from 'vue'
 import {
   createAutonomousRun as apiCreateRun,
   ignoreAutonomousException as apiIgnoreException,
@@ -26,6 +26,7 @@ export function useAutonomousRun(projectId: string) {
       const activeRun = await fetchActiveAutonomousRun(projectId)
       if (activeRun) {
         currentRun.value = activeRun
+        await loadExceptions(activeRun.id)
         if (activeRun.status === 'running') {
           startPolling(activeRun.id)
         }
@@ -145,6 +146,7 @@ export function useAutonomousRun(projectId: string) {
     timer.value = setInterval(async () => {
       try {
         currentRun.value = await fetchAutonomousRun(projectId, runId)
+        await loadExceptions(runId)
 
         const terminalStatuses = ['completed', 'failed', 'paused']
         if (currentRun.value && terminalStatuses.includes(currentRun.value.status)) {
@@ -180,6 +182,5 @@ export function useAutonomousRun(projectId: string) {
     resume,
     resolveException,
     ignoreException,
-    isPolling: computed(() => !!timer.value),
   }
 }

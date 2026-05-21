@@ -1,4 +1,4 @@
-import type { CreateWritingJobInput, WritingJobMode, WritingJobStep, WritingJobStepStatus, WritingJobStepType } from '@ai-novel/shared'
+import type { CreateWritingJobInput, WritingJobMode, WritingJobStepStatus, WritingJobStepType } from '@ai-novel/shared'
 import { useToast } from '@ai-novel/ui'
 import {
   CheckCircle2,
@@ -20,6 +20,7 @@ export const JOB_STATUS_LABEL: Record<string, string> = {
   paused: '已中止',
   completed: '已完成',
   failed: '失败',
+  isolated: '已隔离',
 }
 
 export const JOB_STATUS_VARIANT: Record<string, 'info' | 'warning' | 'success' | 'error' | 'default'> = {
@@ -28,6 +29,7 @@ export const JOB_STATUS_VARIANT: Record<string, 'info' | 'warning' | 'success' |
   paused: 'default',
   completed: 'success',
   failed: 'error',
+  isolated: 'warning',
 }
 
 export const MODE_LABEL: Record<WritingJobMode, string> = {
@@ -65,7 +67,7 @@ export const STEP_STATUS_CONFIG: Record<WritingJobStepStatus, { label: string, v
   skipped: { label: '已跳过', variant: 'default', icon: SkipForward },
 }
 
-export const CHECKPOINT_STEP_TYPES = new Set(['validate_plan', 'consistency_check', 'classify_suggestions'])
+export const CHECKPOINT_STEP_TYPES = new Set(['validate_plan', 'evaluate_change_set', 'classify_suggestions'])
 
 export function useWritingJobController(projectId: string) {
   const toast = useToast()
@@ -79,37 +81,15 @@ export function useWritingJobController(projectId: string) {
 
   const job = computed(() => writingJobStore.job)
   const steps = computed(() => writingJobStore.steps)
+  const canCreateNewJob = computed(() => {
+    if (!job.value)
+      return true
+    return ['completed', 'failed', 'paused', 'isolated'].includes(job.value.status)
+  })
 
   const form = ref<WritingJobMode>('outline_then_draft')
   const formChapterId = ref<string | null>(null)
   const formSceneId = ref<string | null>(null)
-  function getReviewOutput(step: WritingJobStep): any | null {
-    if (!CHECKPOINT_STEP_TYPES.has(step.stepType))
-      return null
-    const idx = steps.value.findIndex(s => s.id === step.id)
-    if (idx <= 0)
-      return null
-    const prevStep = steps.value[idx - 1]
-    if (!prevStep?.output)
-      return null
-    try {
-      return JSON.parse(prevStep.output)
-    }
-    catch {
-      return null
-    }
-  }
-
-  function getStepOutput(step: WritingJobStep): any | null {
-    if (!step.output)
-      return null
-    try {
-      return JSON.parse(step.output)
-    }
-    catch {
-      return null
-    }
-  }
 
   onMounted(async () => {
     try {
@@ -161,7 +141,12 @@ export function useWritingJobController(projectId: string) {
   async function handleStart() {
     actionLoading.value = 'start'
     try {
-      await writingJobStore.startJob(projectId)
+      if (job.value?.status === 'paused') {
+        await writingJobStore.continueJob(projectId)
+      }
+      else {
+        await writingJobStore.startJob(projectId)
+      }
       toast.add(T.job_started, 'success')
     }
     catch (e: any) {
@@ -220,12 +205,11 @@ export function useWritingJobController(projectId: string) {
     actionLoading,
     job,
     steps,
+    canCreateNewJob,
     form,
     formChapterId,
     formSceneId,
     projectStore,
-    getReviewOutput,
-    getStepOutput,
     handleCreate,
     handleStart,
     handlePause,
