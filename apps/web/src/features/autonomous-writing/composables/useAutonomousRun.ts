@@ -1,5 +1,5 @@
 import type { AutonomousWritingRun, CreateAutonomousRunInput } from '@ai-novel/shared'
-import { onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import {
   abandonAutonomousRun as apiAbandonRun,
   createAutonomousRun as apiCreateRun,
@@ -79,7 +79,12 @@ export function useAutonomousRun(projectId: string) {
       currentRun.value = await fetchAutonomousRun(projectId, runId)
     }
     catch (err: any) {
-      error.value = err.message || '加载自动驾驶任务失败'
+      if (err.message?.includes('not found')) {
+        currentRun.value = null
+      }
+      else {
+        error.value = err.message || '加载自动驾驶任务失败'
+      }
     }
     finally {
       loading.value = false
@@ -196,7 +201,13 @@ export function useAutonomousRun(projectId: string) {
         }
       }
       catch (e: any) {
-        error.value = e.message || '轮询更新失败'
+        if (e.message?.includes('not found')) {
+          currentRun.value = null
+          stopPolling()
+        }
+        else {
+          error.value = e.message || '轮询更新失败'
+        }
       }
     }, 3000)
   }
@@ -208,6 +219,35 @@ export function useAutonomousRun(projectId: string) {
     }
   }
 
+  const totalJobs = computed(() => currentRun.value?.jobs?.length ?? 0)
+  const completedJobs = computed(() => currentRun.value?.jobs?.filter((j: any) => j.status === 'completed').length ?? 0)
+  const failedJobs = computed(() => currentRun.value?.jobs?.filter((j: any) => j.status === 'failed').length ?? 0)
+  const chapterProgress = computed(() => totalJobs.value === 0 ? 0 : Math.round((completedJobs.value / totalJobs.value) * 100))
+  const runningJob = computed(() => currentRun.value?.jobs?.find((j: any) => j.status === 'running') ?? null)
+
+  const elapsedMs = computed(() => {
+    if (!currentRun.value?.startedAt)
+      return 0
+    const start = new Date(currentRun.value.startedAt).getTime()
+    const end = currentRun.value.finishedAt
+      ? new Date(currentRun.value.finishedAt).getTime()
+      : (currentRun.value.status === 'paused' ? new Date(currentRun.value.updatedAt).getTime() : Date.now())
+    return Math.max(0, end - start)
+  })
+
+  const averageMsPerChapter = computed(() => {
+    if (!currentRun.value?.startedAt || completedJobs.value === 0)
+      return 0
+    return elapsedMs.value / completedJobs.value
+  })
+
+  const estimatedRemainingMs = computed(() => {
+    if (averageMsPerChapter.value === 0)
+      return 0
+    const remaining = totalJobs.value - completedJobs.value - failedJobs.value
+    return remaining <= 0 ? 0 : remaining * averageMsPerChapter.value
+  })
+
   onUnmounted(stopPolling)
 
   return {
@@ -215,6 +255,14 @@ export function useAutonomousRun(projectId: string) {
     exceptions,
     loading,
     error,
+    totalJobs,
+    completedJobs,
+    failedJobs,
+    chapterProgress,
+    elapsedMs,
+    runningJob,
+    averageMsPerChapter,
+    estimatedRemainingMs,
     createRun,
     loadRun,
     loadActiveRun,

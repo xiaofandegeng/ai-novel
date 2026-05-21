@@ -16,15 +16,7 @@ import {
 import { fail, success } from '../utils'
 
 export function registerAutonomousRunRoutes(app: Hono) {
-  app.get('/api/projects/:projectId/autonomous-runs/:runId', async (c) => {
-    const projectId = c.req.param('projectId')
-    const runId = c.req.param('runId')
-    const run = await getAutonomousRun(projectId, runId)
-    if (!run)
-      return c.json(fail('Run not found'), 404)
-    return c.json(success(run))
-  })
-
+  // Literal routes MUST be registered before :runId to avoid being shadowed
   app.get('/api/projects/:projectId/autonomous-runs/active', async (c) => {
     const projectId = c.req.param('projectId')
     const run = await getLatestActiveRun(projectId)
@@ -35,6 +27,22 @@ export function registerAutonomousRunRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
     const run = await getLatestRun(projectId)
     return c.json(success(run || null))
+  })
+
+  app.get('/api/projects/:projectId/autonomous-runs/insight', async (c) => {
+    const projectId = c.req.param('projectId')
+    const { getProjectNarrativeInsight } = await import('../services/autonomous-writing.service')
+    const insight = await getProjectNarrativeInsight(projectId)
+    return c.json(success(insight))
+  })
+
+  app.get('/api/projects/:projectId/autonomous-runs/:runId', async (c) => {
+    const projectId = c.req.param('projectId')
+    const runId = c.req.param('runId')
+    const run = await getAutonomousRun(projectId, runId)
+    if (!run)
+      return c.json(fail('Run not found'), 404)
+    return c.json(success(run))
   })
 
   app.get('/api/projects/:projectId/autonomous-runs/:runId/insight', async (c) => {
@@ -127,12 +135,5 @@ export function registerAutonomousRunRoutes(app: Hono) {
     const exceptionId = c.req.param('exceptionId')
     await ignoreAutonomousException(projectId, runId, exceptionId)
     return c.json(success(true))
-  })
-
-  app.get('/api/projects/:projectId/autonomous-runs/insight', async (c) => {
-    const projectId = c.req.param('projectId')
-    const { getProjectNarrativeInsight } = await import('../services/autonomous-writing.service')
-    const insight = await getProjectNarrativeInsight(projectId)
-    return c.json(success(insight))
   })
 }

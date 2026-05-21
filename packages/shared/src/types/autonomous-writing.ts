@@ -50,6 +50,12 @@ export interface AutonomousRunJob {
   orderIndex: number
   isolationReason?: string | null
   isolationReport?: Record<string, any> | null
+  stepSummary?: {
+    totalSteps: number
+    completedSteps: number
+    currentStep: string | null
+    currentStepLabel: string | null
+  } | null
   createdAt: string
   updatedAt: string
 }

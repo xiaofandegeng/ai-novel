@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { NTag } from '@ai-novel/ui'
 import {
-  AlertCircle,
   CheckCircle2,
   FileText,
   History,
@@ -21,7 +20,6 @@ function getStatusIcon(status: string) {
   switch (status) {
     case 'completed': return CheckCircle2
     case 'failed': return XCircle
-    case 'isolated': return AlertCircle
     case 'running': return PlayCircle
     default: return History
   }
@@ -36,6 +34,16 @@ function getStatusColor(status: string) {
     default: return 'text-text-muted'
   }
 }
+
+function getStepBarColor(status: string) {
+  switch (status) {
+    case 'running': return 'bg-primary'
+    case 'completed': return 'bg-green-500'
+    case 'failed': return 'bg-red-400'
+    case 'isolated': return 'bg-orange-400'
+    default: return 'bg-border-light'
+  }
+}
 </script>
 
 <template>
@@ -47,7 +55,7 @@ function getStatusColor(status: string) {
       </h3>
     </div>
 
-    <div class="relative pl-4 before:absolute before:bottom-2 before:left-1 before:top-2 before:w-0.5 space-y-6 before:bg-border-light before:content-['']">
+    <div class="relative pl-4 before:absolute before:bottom-2 before:left-1 before:top-2 before:w-0.5 space-y-4 before:bg-border-light before:content-['']">
       <div
         v-for="job in jobs"
         :key="job.id"
@@ -59,23 +67,43 @@ function getStatusColor(status: string) {
           :class="job.status === 'running' ? 'bg-primary animate-pulse' : job.status === 'completed' ? 'bg-green-500' : job.status === 'isolated' ? 'bg-orange-500' : 'bg-border-light'"
         />
 
-        <div class="border border-border-light rounded-md bg-bg-surface p-3 shadow-sm transition-colors hover:border-primary">
+        <div
+          class="border rounded-md p-3 shadow-sm transition-colors hover:border-primary"
+          :class="job.status === 'running' ? 'border-primary/30 bg-primary/[0.02]' : 'border-border-light bg-bg-surface'"
+        >
           <div class="mb-1 flex items-center justify-between">
             <div class="flex items-center gap-2">
               <component :is="getStatusIcon(job.status)" :size="14" :class="getStatusColor(job.status)" />
-              <span class="text-sm font-medium">章节: {{ job.chapterId?.slice(0, 8) }}</span>
+              <span class="text-sm font-medium">第 {{ job.orderIndex + 1 }} 章</span>
             </div>
             <span class="text-[10px] text-text-muted">{{ new Date(job.createdAt).toLocaleTimeString() }}</span>
           </div>
 
-          <div class="mb-2 text-xs text-text-secondary">
-            任务 ID: {{ job.writingJobId.slice(0, 8) }}...
+          <!-- Step Progress -->
+          <div v-if="job.stepSummary && job.stepSummary.totalSteps > 0" class="mt-2">
+            <div class="mb-1 flex items-center justify-between text-[10px] text-text-muted">
+              <span>
+                步骤 {{ job.stepSummary.completedSteps }} / {{ job.stepSummary.totalSteps }}
+                <template v-if="job.stepSummary.currentStepLabel">
+                  · {{ job.stepSummary.currentStepLabel }}
+                </template>
+              </span>
+              <span>{{ Math.round((job.stepSummary.completedSteps / job.stepSummary.totalSteps) * 100) }}%</span>
+            </div>
+            <div class="h-1 w-full overflow-hidden rounded-full bg-bg-subtle">
+              <div
+                class="h-full transition-all duration-300"
+                :class="getStepBarColor(job.status)"
+                :style="{ width: `${(job.stepSummary.completedSteps / job.stepSummary.totalSteps) * 100}%` }"
+              />
+            </div>
           </div>
 
-          <div class="flex items-center justify-between">
+          <!-- Status & Detail -->
+          <div class="mt-2 flex items-center justify-between">
             <div class="flex gap-1">
-              <NTag size="sm" :variant="job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : job.status === 'isolated' ? 'warning' : 'default'">
-                {{ job.status === 'isolated' ? '已隔离' : job.status.toUpperCase() }}
+              <NTag size="sm" :variant="job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : job.status === 'running' ? 'primary' : job.status === 'isolated' ? 'warning' : 'default'">
+                {{ job.status === 'isolated' ? '已隔离' : job.status === 'pending' ? '等待中' : job.status.toUpperCase() }}
               </NTag>
             </div>
 

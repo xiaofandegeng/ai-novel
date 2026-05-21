@@ -5,7 +5,6 @@ import {
 } from '@ai-novel/ui'
 import {
   Activity,
-  BookOpen,
   ChevronRight,
   GitCompare,
   Lightbulb,
@@ -98,6 +97,7 @@ function eventLabel(type: string) {
         </h2>
         <p class="text-xs text-text-muted">
           自动写作会同步更新人物、关系、矛盾、伏笔和健康指标。
+          <span v-if="insight?.progress" class="text-text-secondary">| 已写 {{ insight.progress.writtenWords }} 字</span>
         </p>
       </div>
       <NTag v-if="insight" size="sm" variant="primary">
@@ -180,32 +180,6 @@ function eventLabel(type: string) {
         <div v-else class="flex items-baseline gap-1">
           <span class="text-xl text-green-600 font-bold">{{ insight.stats.appliedSuggestionCount || 0 }}</span>
           <span class="text-[10px] text-text-muted">条结构更新</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Progress Stats -->
-    <div v-if="insight" class="border border-border-light rounded-xl bg-bg-surface p-4 shadow-sm">
-      <div class="mb-3 flex items-center justify-between">
-        <div class="flex items-center gap-2 text-sm font-bold">
-          <BookOpen :size="16" class="text-primary" />
-          写作进度
-        </div>
-        <NTag size="sm" variant="primary">
-          {{ Math.round(((insight.progress?.completedChapters || insight.stats.completedChapters) / (insight.progress?.totalChapters || insight.stats.totalChapters)) * 100) || 0 }}%
-        </NTag>
-      </div>
-      <div class="space-y-2">
-        <div class="h-1.5 w-full overflow-hidden rounded-full bg-bg-subtle">
-          <div
-            class="h-full bg-primary transition-all duration-500"
-            :style="{ width: `${((insight.progress?.completedChapters || insight.stats.completedChapters) / (insight.progress?.totalChapters || insight.stats.totalChapters)) * 100 || 0}%` }"
-          />
-        </div>
-        <div class="flex justify-between text-[10px] text-text-muted">
-          <span>已完成 {{ insight.progress?.completedChapters || insight.stats.completedChapters }} / {{ insight.progress?.totalChapters || insight.stats.totalChapters }} 章</span>
-          <span v-if="insight.progress">本轮预计 {{ insight.progress.targetWords }} 字 (已写 {{ insight.progress.writtenWords }} 字)</span>
-          <span v-else>共 {{ (insight.stats.totalWords / 10000).toFixed(1) }} 万字</span>
         </div>
       </div>
     </div>

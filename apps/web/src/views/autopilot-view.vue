@@ -3,6 +3,7 @@ import { NAppLayout, NButton, NPanel } from '@ai-novel/ui'
 import {
   AlertCircle,
   BookOpen,
+  ChevronDown,
   GitCompare,
   Lightbulb,
   PenLine,
@@ -43,9 +44,18 @@ const {
   pause,
   resume,
   abandon,
+  totalJobs,
+  completedJobs,
+  failedJobs,
+  chapterProgress,
+  elapsedMs,
+  estimatedRemainingMs,
+  runningJob,
+  averageMsPerChapter,
 } = useAutonomousRun(projectId)
 
 const selectedJobId = ref<string | null>(null)
+const showSyncScope = ref(false)
 
 onMounted(async () => {
   await Promise.all([
@@ -214,6 +224,14 @@ const syncItems = [
             v-if="currentRun"
             :current-run="currentRun"
             :loading="loading"
+            :total-jobs="totalJobs"
+            :completed-jobs="completedJobs"
+            :failed-jobs="failedJobs"
+            :chapter-progress="chapterProgress"
+            :elapsed-ms="elapsedMs"
+            :estimated-remaining-ms="estimatedRemainingMs"
+            :average-ms-per-chapter="averageMsPerChapter"
+            :running-job="runningJob"
             @pause="handlePause"
             @resume="handleResume"
             @abandon="handleAbandon"
@@ -248,8 +266,7 @@ const syncItems = [
         </aside>
 
         <main class="space-y-6">
-          <AutonomousLiveInsight :project-id="projectId" :run-id="currentRun?.id" />
-
+          <!-- Timeline: most important during a run -->
           <NPanel
             title="章节推进与写回状态"
             description="每章会依次完成上下文构建、生成正文、一致性检查、自动修复、写回正文、章后分析和台账同步。"
@@ -282,23 +299,52 @@ const syncItems = [
             </div>
           </NPanel>
 
-          <NPanel title="自动同步范围" description="自动驾驶不是单独写正文，而是持续维护小说工程里的结构化记忆。">
-            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-              <div
-                v-for="item in syncItems"
-                :key="item.title"
-                class="border border-border-light rounded-lg bg-bg-surface p-3"
-              >
-                <div class="mb-2 flex items-center gap-2 text-sm font-semibold">
-                  <component :is="item.icon" :size="16" class="text-primary" />
-                  {{ item.title }}
+          <!-- Live Insight: supplementary stats -->
+          <AutonomousLiveInsight :project-id="projectId" :run-id="currentRun?.id" />
+
+          <!-- Auto Sync Scope: collapsible when run is active -->
+          <template v-if="!currentRun || ['completed', 'failed', 'abandoned'].includes(currentRun.status)">
+            <NPanel title="自动同步范围" description="自动驾驶不是单独写正文，而是持续维护小说工程里的结构化记忆。">
+              <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <div
+                  v-for="item in syncItems"
+                  :key="item.title"
+                  class="border border-border-light rounded-lg bg-bg-surface p-3"
+                >
+                  <div class="mb-2 flex items-center gap-2 text-sm font-semibold">
+                    <component :is="item.icon" :size="16" class="text-primary" />
+                    {{ item.title }}
+                  </div>
+                  <p class="text-xs text-text-muted leading-5">
+                    {{ item.desc }}
+                  </p>
                 </div>
-                <p class="text-xs text-text-muted leading-5">
-                  {{ item.desc }}
-                </p>
+              </div>
+            </NPanel>
+          </template>
+          <details v-else class="group rounded-lg border border-border-light">
+            <summary class="flex cursor-pointer items-center gap-1 p-3 text-xs text-text-muted hover:text-text-secondary">
+              <ChevronDown :size="12" class="transition-transform group-open:rotate-180" />
+              查看自动同步范围说明
+            </summary>
+            <div class="border-t border-border-light p-3">
+              <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <div
+                  v-for="item in syncItems"
+                  :key="item.title"
+                  class="rounded-lg bg-bg-surface p-3"
+                >
+                  <div class="mb-2 flex items-center gap-2 text-sm font-semibold">
+                    <component :is="item.icon" :size="16" class="text-primary" />
+                    {{ item.title }}
+                  </div>
+                  <p class="text-xs text-text-muted leading-5">
+                    {{ item.desc }}
+                  </p>
+                </div>
               </div>
             </div>
-          </NPanel>
+          </details>
         </main>
       </div>
 

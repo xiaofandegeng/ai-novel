@@ -18,6 +18,54 @@ import {
 } from '../db/schema'
 import { generateId, now } from '../utils'
 import { getProjectHealthMetrics } from './health-metrics.service'
+
+const STEP_LABEL_ZH: Record<string, string> = {
+  prepare_context: '构建上下文',
+  generate_plan: '生成大纲',
+  generate_draft: '生成正文',
+  build_change_set: '构建变更集',
+  evaluate_change_set: '评估变更集',
+  auto_repair: '自动修复',
+  apply_change_set: '应用变更集',
+  postprocess: '章后管线',
+  classify_suggestions: '分类建议',
+  apply_suggestions: '应用建议',
+  update_health: '更新健康指标',
+  done: '任务完成',
+}
+
+async function attachStepSummaries(jobs: any[]) {
+  const writingJobIds = jobs.map(j => j.writingJobId).filter(Boolean) as string[]
+  if (writingJobIds.length === 0) {
+    return jobs.map(j => ({ ...j, stepSummary: null }))
+  }
+  const allSteps = await db.select({
+    jobId: writingJobSteps.jobId,
+    stepType: writingJobSteps.stepType,
+    status: writingJobSteps.status,
+  }).from(writingJobSteps).where(inArray(writingJobSteps.jobId, writingJobIds))
+
+  const summaries = new Map<string, { totalSteps: number, completedSteps: number, currentStep: string | null, currentStepLabel: string | null }>()
+  for (const step of allSteps) {
+    let s = summaries.get(step.jobId)
+    if (!s) {
+      s = { totalSteps: 0, completedSteps: 0, currentStep: null, currentStepLabel: null }
+      summaries.set(step.jobId, s)
+    }
+    s.totalSteps++
+    if (step.status === 'completed' || step.status === 'skipped')
+      s.completedSteps++
+    if (step.status === 'running') {
+      s.currentStep = step.stepType
+      s.currentStepLabel = STEP_LABEL_ZH[step.stepType] || step.stepType
+    }
+  }
+
+  return jobs.map(j => ({
+    ...j,
+    stepSummary: summaries.get(j.writingJobId) || { totalSteps: 0, completedSteps: 0, currentStep: null, currentStepLabel: null },
+  }))
+}
 import { startJob } from './writing-job.service'
 
 export async function getProjectNarrativeInsight(projectId: string) {
@@ -334,8 +382,9 @@ export async function getAutonomousRun(projectId: string, runId: string): Promis
     return null
 
   const jobs = await db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.runId, runId)).orderBy(asc(autonomousRunJobs.orderIndex))
+  const jobsWithSteps = await attachStepSummaries(jobs)
 
-  return { ...run, jobs }
+  return { ...run, jobs: jobsWithSteps }
 }
 
 export async function getLatestActiveRun(projectId: string): Promise<any> {
@@ -352,8 +401,9 @@ export async function getLatestActiveRun(projectId: string): Promise<any> {
     return null
 
   const jobs = await db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.runId, run.id)).orderBy(asc(autonomousRunJobs.orderIndex))
+  const jobsWithSteps = await attachStepSummaries(jobs)
 
-  return { ...run, jobs }
+  return { ...run, jobs: jobsWithSteps }
 }
 
 export async function startAutonomousRun(projectId: string, runId: string): Promise<void> {
