@@ -45,7 +45,7 @@ async function handleSubmit(accepted: boolean) {
 
   submitting.value = true
   try {
-    console.info('quality-feedback:', {
+    console.warn('quality-feedback:', {
       projectId: props.projectId,
       rating: rating.value || (accepted ? 5 : 1),
       tags: selectedTags.value,

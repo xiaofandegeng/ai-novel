@@ -37,7 +37,6 @@ export function useSceneDraft(
 
     saving.value = true
     try {
-      const previousLength = lastSavedContent.value.length
       await sceneStore.updateScene(projectId, currentChapterId.value, currentSceneId.value, {
         content: sceneContent.value,
         status: 'drafting',

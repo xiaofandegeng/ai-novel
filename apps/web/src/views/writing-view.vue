@@ -332,10 +332,6 @@ function handleRunAI(type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft
 }
 
 async function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discard') {
-  const acceptedAiWords = (action === 'insert' || action === 'replace')
-    ? pendingAIResult.value?.content.length ?? 0
-    : 0
-  const resultBeforeConfirm = pendingAIResult.value
   confirmAIResult(action, {
     projectId,
     currentChapterId: currentChapterId.value,

@@ -55,7 +55,6 @@ const {
 } = useAutonomousRun(projectId)
 
 const selectedJobId = ref<string | null>(null)
-const showSyncScope = ref(false)
 
 onMounted(async () => {
   await Promise.all([

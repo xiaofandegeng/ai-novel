@@ -3,23 +3,30 @@ import type { ForeshadowingItem } from '@ai-novel/shared'
 import { NButton, NLoadingState, NTag } from '@ai-novel/ui'
 import { AlertTriangle, Lightbulb, Sparkles } from 'lucide-vue-next'
 
-const props = defineProps<{
-  ganttBars: Array<{
-    item: ForeshadowingItem
-    start: number
-    end: number
-    color: string
-    hasRisk: boolean
-    riskLevel: string
-  }>
-  chapterNumbers: number[]
-  maxChapter: number
-  selectedItem: ForeshadowingItem | null
-  riskReport: { risks: Array<{ id: string, title: string, riskType: string, riskLevel: string, message: string }>, summary: { high: number, medium: number, low: number } } | null
-  payoffSuggestion: { suggestedChapter: string, suggestedMethod: string, reasoning: string } | null
-  loadingSuggestion: boolean
-  loading: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    ganttBars: Array<{
+      item: ForeshadowingItem
+      start: number
+      end: number
+      color: string
+      hasRisk?: boolean
+      riskLevel?: string
+    }>
+    chapterNumbers: number[]
+    maxChapter: number
+    selectedItem: ForeshadowingItem | null
+    riskReport?: { risks: Array<{ id: string, title: string, riskType: string, riskLevel: string, message: string }>, summary: { high: number, medium: number, low: number } } | null
+    payoffSuggestion?: { suggestedChapter: string, suggestedMethod: string, reasoning: string } | null
+    loadingSuggestion?: boolean
+    loading: boolean
+  }>(),
+  {
+    riskReport: null,
+    payoffSuggestion: null,
+    loadingSuggestion: false,
+  },
+)
 
 const emit = defineEmits<{
   select: [id: string]

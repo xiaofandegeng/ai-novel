@@ -99,12 +99,8 @@ const statusVariant = FORESHADOWING_STATUS_VARIANT
           :chapter-numbers="gantt.chapterNumbers.value"
           :max-chapter="gantt.maxChapter.value"
           :selected-item="gantt.selectedItem.value"
-          :risk-report="gantt.riskReport.value"
-          :payoff-suggestion="gantt.payoffSuggestion.value"
-          :loading-suggestion="gantt.loadingSuggestion.value"
           :loading="gantt.loading.value"
           @select="gantt.selectItem"
-          @suggest-payoff="gantt.loadPayoffSuggestion"
         />
       </div>
 

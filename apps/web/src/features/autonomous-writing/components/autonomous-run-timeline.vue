@@ -2,11 +2,13 @@
 import { NTag } from '@ai-novel/ui'
 import {
   CheckCircle2,
+  ExternalLink,
   FileText,
   History,
   PlayCircle,
   XCircle,
 } from 'lucide-vue-next'
+import { useRoute } from 'vue-router'
 
 defineProps<{
   jobs: any[]
@@ -15,6 +17,9 @@ defineProps<{
 defineEmits<{
   (e: 'viewJob', jobId: string): void
 }>()
+
+const route = useRoute()
+const projectId = route.params.id as string
 
 function getStatusIcon(status: string) {
   switch (status) {
@@ -99,21 +104,28 @@ function getStepBarColor(status: string) {
             </div>
           </div>
 
-          <!-- Status & Detail -->
+          <!-- Status & Actions -->
           <div class="mt-2 flex items-center justify-between">
-            <div class="flex gap-1">
-              <NTag size="sm" :variant="job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : job.status === 'running' ? 'primary' : job.status === 'isolated' ? 'warning' : 'default'">
-                {{ job.status === 'isolated' ? '已隔离' : job.status === 'pending' ? '等待中' : job.status.toUpperCase() }}
-              </NTag>
-            </div>
+            <NTag size="sm" :variant="job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : job.status === 'running' ? 'primary' : job.status === 'isolated' ? 'warning' : 'default'">
+              {{ job.status === 'isolated' ? '已隔离' : job.status === 'pending' ? '等待中' : job.status.toUpperCase() }}
+            </NTag>
 
-            <a
-              href="#"
-              class="flex items-center gap-0.5 text-[10px] text-primary hover:underline"
-              @click.prevent="$emit('viewJob', job.writingJobId)"
-            >
-              <FileText :size="10" /> 详情
-            </a>
+            <div class="flex items-center gap-2">
+              <router-link
+                v-if="job.chapterId"
+                :to="`/project/${projectId}/write?chapter=${job.chapterId}`"
+                class="flex items-center gap-0.5 text-[10px] text-primary hover:underline"
+              >
+                <ExternalLink :size="10" /> 前往章节
+              </router-link>
+              <a
+                href="#"
+                class="flex items-center gap-0.5 text-[10px] text-text-muted hover:text-primary hover:underline"
+                @click.prevent="$emit('viewJob', job.writingJobId)"
+              >
+                <FileText :size="10" /> 详情
+              </a>
+            </div>
           </div>
         </div>
       </div>

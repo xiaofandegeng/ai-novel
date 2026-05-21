@@ -66,7 +66,6 @@ async function attachStepSummaries(jobs: any[]) {
     stepSummary: summaries.get(j.writingJobId) || { totalSteps: 0, completedSteps: 0, currentStep: null, currentStepLabel: null },
   }))
 }
-import { startJob } from './writing-job.service'
 
 export async function getProjectNarrativeInsight(projectId: string) {
   const health = await getProjectHealthMetrics(projectId)
@@ -504,6 +503,7 @@ export async function runNextAutonomousStep(projectId: string, runId: string): P
   // Execute the underlying writing job
   // This will run asynchronously or we wait for it?
   // In our engine, runNextSteps (called by startJob) is async but the call itself returns
+  const { startJob } = await import('./writing-job.service')
   await startJob(projectId, jobToRun.writingJobId)
 }
 

@@ -33,7 +33,6 @@ export function useWritingDraft(
 
     saving.value = true
     try {
-      const previousLength = lastSavedDraft.value.length
       await chapterStore.updateChapter(projectId, currentChapterId.value, {
         draft: draft.value,
         status: 'writing',
