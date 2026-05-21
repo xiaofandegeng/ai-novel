@@ -51,7 +51,7 @@ function getStatusLabel(status: string): string {
         <div>
           <div class="flex items-center gap-2">
             <h3 class="text-lg font-bold">
-              自动驾驶中
+              {{ ['completed', 'failed'].includes(currentRun.status) ? '最近驾驶记录' : '自动驾驶中' }}
             </h3>
             <NTag size="sm" :variant="getStatusColor(currentRun.status) as any">
               {{ getStatusLabel(currentRun.status) }}

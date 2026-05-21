@@ -12,11 +12,12 @@ import {
   Users,
   Zap,
 } from 'lucide-vue-next'
-import { onMounted, onUnmounted, ref } from 'vue'
-import { fetchAutonomousInsight } from '@/api/autonomous-runs'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { fetchAutonomousInsight, fetchAutonomousRunInsight } from '@/api/autonomous-runs'
 
 const props = defineProps<{
   projectId: string
+  runId?: string
 }>()
 
 const insight = ref<any>(null)
@@ -24,12 +25,21 @@ const timer = ref<any>(null)
 
 async function load() {
   try {
-    insight.value = await fetchAutonomousInsight(props.projectId)
+    if (props.runId) {
+      insight.value = await fetchAutonomousRunInsight(props.projectId, props.runId)
+    }
+    else {
+      insight.value = await fetchAutonomousInsight(props.projectId)
+    }
   }
   catch (err) {
     console.error('Failed to load narrative insight', err)
   }
 }
+
+watch(() => props.runId, () => {
+  load()
+})
 
 onMounted(() => {
   load()
@@ -106,7 +116,14 @@ function eventLabel(type: string) {
           <Users :size="14" />
           <span class="text-[10px] font-medium tracking-wider uppercase">角色 / 关系</span>
         </div>
-        <div class="flex items-baseline gap-1">
+        <div v-if="insight.syncSummary" class="flex flex-col">
+          <div class="flex items-baseline gap-1">
+            <span class="text-xl font-bold">{{ insight.syncSummary.createdCharacters + insight.syncSummary.updatedCharacters }}</span>
+            <span class="text-[10px] text-text-muted">变更</span>
+          </div>
+          <span class="text-[9px] text-text-muted">新增 {{ insight.syncSummary.createdCharacters }} | 更新 {{ insight.syncSummary.updatedCharacters }}</span>
+        </div>
+        <div v-else class="flex items-baseline gap-1">
           <span class="text-xl font-bold">{{ insight.stats.characterCount }}</span>
           <span class="text-[10px] text-text-muted">/ {{ insight.stats.relationshipCount }} 关系</span>
         </div>
@@ -117,7 +134,14 @@ function eventLabel(type: string) {
           <Zap :size="14" />
           <span class="text-[10px] font-medium tracking-wider uppercase">活跃矛盾</span>
         </div>
-        <div class="flex items-baseline gap-1">
+        <div v-if="insight.syncSummary" class="flex flex-col">
+          <div class="flex items-baseline gap-1">
+            <span class="text-xl text-orange-500 font-bold">{{ insight.syncSummary.createdConflicts + insight.syncSummary.updatedConflicts }}</span>
+            <span class="text-[10px] text-text-muted">更新</span>
+          </div>
+          <span class="text-[9px] text-text-muted">新增 {{ insight.syncSummary.createdConflicts }} | 推进 {{ insight.syncSummary.updatedConflicts }}</span>
+        </div>
+        <div v-else class="flex items-baseline gap-1">
           <span class="text-xl text-orange-500 font-bold">{{ insight.stats.activeConflictCount }}</span>
           <span class="text-[10px] text-text-muted">个进行中</span>
         </div>
@@ -128,7 +152,14 @@ function eventLabel(type: string) {
           <Lightbulb :size="14" />
           <span class="text-[10px] font-medium tracking-wider uppercase">开放伏笔</span>
         </div>
-        <div class="flex items-baseline gap-1">
+        <div v-if="insight.syncSummary" class="flex flex-col">
+          <div class="flex items-baseline gap-1">
+            <span class="text-xl text-amber-600 font-bold">{{ insight.syncSummary.createdForeshadowing }}</span>
+            <span class="text-[10px] text-text-muted">埋设 / {{ insight.syncSummary.paidOffForeshadowing }} 回收</span>
+          </div>
+          <span class="text-[9px] text-text-muted">已回收 {{ insight.syncSummary.paidOffForeshadowing }} 个伏笔</span>
+        </div>
+        <div v-else class="flex items-baseline gap-1">
           <span class="text-xl text-amber-600 font-bold">{{ insight.stats.openForeshadowingCount || 0 }}</span>
           <span class="text-[10px] text-text-muted">条追踪中</span>
         </div>
@@ -139,7 +170,14 @@ function eventLabel(type: string) {
           <Activity :size="14" />
           <span class="text-[10px] font-medium tracking-wider uppercase">自动入库</span>
         </div>
-        <div class="flex items-baseline gap-1">
+        <div v-if="insight.syncSummary" class="flex flex-col">
+          <div class="flex items-baseline gap-1">
+            <span class="text-xl text-green-600 font-bold">{{ insight.syncSummary.createdFacts }}</span>
+            <span class="text-[10px] text-text-muted">事实</span>
+          </div>
+          <span class="text-[9px] text-text-muted">应用建议 {{ insight.syncSummary.appliedSuggestions }} 条</span>
+        </div>
+        <div v-else class="flex items-baseline gap-1">
           <span class="text-xl text-green-600 font-bold">{{ insight.stats.appliedSuggestionCount || 0 }}</span>
           <span class="text-[10px] text-text-muted">条结构更新</span>
         </div>
@@ -154,19 +192,20 @@ function eventLabel(type: string) {
           写作进度
         </div>
         <NTag size="sm" variant="primary">
-          {{ Math.round((insight.stats.completedChapters / insight.stats.totalChapters) * 100) || 0 }}%
+          {{ Math.round(((insight.progress?.completedChapters || insight.stats.completedChapters) / (insight.progress?.totalChapters || insight.stats.totalChapters)) * 100) || 0 }}%
         </NTag>
       </div>
       <div class="space-y-2">
         <div class="h-1.5 w-full overflow-hidden rounded-full bg-bg-subtle">
           <div
             class="h-full bg-primary transition-all duration-500"
-            :style="{ width: `${(insight.stats.completedChapters / insight.stats.totalChapters) * 100 || 0}%` }"
+            :style="{ width: `${((insight.progress?.completedChapters || insight.stats.completedChapters) / (insight.progress?.totalChapters || insight.stats.totalChapters)) * 100 || 0}%` }"
           />
         </div>
         <div class="flex justify-between text-[10px] text-text-muted">
-          <span>已完成 {{ insight.stats.completedChapters }} / {{ insight.stats.totalChapters }} 章</span>
-          <span>共 {{ (insight.stats.totalWords / 10000).toFixed(1) }} 万字</span>
+          <span>已完成 {{ insight.progress?.completedChapters || insight.stats.completedChapters }} / {{ insight.progress?.totalChapters || insight.stats.totalChapters }} 章</span>
+          <span v-if="insight.progress">本轮预计 {{ insight.progress.targetWords }} 字 (已写 {{ insight.progress.writtenWords }} 字)</span>
+          <span v-else>共 {{ (insight.stats.totalWords / 10000).toFixed(1) }} 万字</span>
         </div>
       </div>
     </div>

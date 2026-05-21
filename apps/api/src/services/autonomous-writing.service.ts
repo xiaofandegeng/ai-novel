@@ -6,6 +6,7 @@ import {
   autonomousRunJobs,
   autonomousWritingRuns,
   chapterChangeSetItems,
+  chapterChangeSets,
   chapterPostprocessSuggestions,
   chapters,
   characterRelationships,
@@ -731,5 +732,140 @@ export async function ignoreAutonomousException(projectId: string, runId: string
     }).where(eq(autonomousWritingRuns.id, runId))
 
     await runNextAutonomousStep(projectId, runId)
+  }
+}
+
+export async function getLatestRun(projectId: string): Promise<any> {
+  const [run] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.projectId, projectId)).orderBy(desc(autonomousWritingRuns.updatedAt)).limit(1)
+
+  if (!run)
+    return null
+
+  const jobs = await db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.runId, run.id)).orderBy(asc(autonomousRunJobs.orderIndex))
+
+  return { ...run, jobs }
+}
+
+export async function getAutonomousRunInsight(projectId: string, runId: string) {
+  const [run] = await db.select().from(autonomousWritingRuns).where(and(
+    eq(autonomousWritingRuns.id, runId),
+    eq(autonomousWritingRuns.projectId, projectId),
+  ))
+  if (!run)
+    throw new Error('未找到自动驾驶记录')
+
+  // 获取这一轮下的所有 jobs
+  const jobs = await db.select({
+    writingJobId: autonomousRunJobs.writingJobId,
+    chapterId: autonomousRunJobs.chapterId,
+    status: autonomousRunJobs.status,
+  }).from(autonomousRunJobs).where(eq(autonomousRunJobs.runId, runId))
+
+  const jobIds = jobs.map(j => j.writingJobId).filter(Boolean) as string[]
+
+  let changeItems: any[] = []
+  if (jobIds.length > 0) {
+    // 找出所有属于本轮 jobs 的 changeset items
+    changeItems = await db.select({
+      id: chapterChangeSetItems.id,
+      itemType: chapterChangeSetItems.itemType,
+      title: chapterChangeSetItems.title,
+      status: chapterChangeSetItems.status,
+      createdAt: chapterChangeSetItems.createdAt,
+    })
+      .from(chapterChangeSetItems)
+      .innerJoin(chapterChangeSets, eq(chapterChangeSetItems.changeSetId, chapterChangeSets.id))
+      .where(sql`${chapterChangeSets.writingJobId} IN ${jobIds}`)
+  }
+
+  // 聚合计数
+  const createdCharacters = changeItems.filter(i => i.itemType === 'character_create' && i.status === 'applied').length
+  const updatedCharacters = changeItems.filter(i => i.itemType === 'character_update' && i.status === 'applied').length
+  const createdRelationships = changeItems.filter(i => i.itemType === 'relationship_create' && i.status === 'applied').length
+  const updatedRelationships = changeItems.filter(i => i.itemType === 'relationship_update' && i.status === 'applied').length
+  const createdConflicts = changeItems.filter(i => i.itemType === 'conflict_create' && i.status === 'applied').length
+  const updatedConflicts = changeItems.filter(i => i.itemType === 'conflict_update' && i.status === 'applied').length
+  const createdForeshadowing = changeItems.filter(i => i.itemType === 'foreshadowing_create' && i.status === 'applied').length
+  const paidOffForeshadowing = changeItems.filter(i => i.itemType === 'foreshadowing_payoff' && i.status === 'applied').length
+  const createdFacts = changeItems.filter(i => i.itemType === 'fact_create' && i.status === 'applied').length
+
+  // 获取整个项目的建议统计
+  const [pendingSuggestionCount] = await db.select({ count: sql`count(*)` }).from(chapterPostprocessSuggestions).where(and(
+    eq(chapterPostprocessSuggestions.projectId, projectId),
+    eq(chapterPostprocessSuggestions.status, 'pending'),
+  ))
+  const [appliedSuggestionCount] = await db.select({ count: sql`count(*)` }).from(chapterPostprocessSuggestions).where(and(
+    eq(chapterPostprocessSuggestions.projectId, projectId),
+    or(
+      eq(chapterPostprocessSuggestions.status, 'applied'),
+      eq(chapterPostprocessSuggestions.status, 'acknowledged'),
+    ),
+  ))
+
+  const health = await getProjectHealthMetrics(projectId)
+
+  // 截取前 10 条非草稿的剧情和设定变更事件
+  const recentEvents = changeItems
+    .filter(i => i.itemType !== 'draft')
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 10)
+
+  // 进度统计
+  const totalChapters = jobs.length
+  const completedChapters = jobs.filter(j => j.status === 'completed').length
+  const writtenWords = run.completedChapterCount * run.targetWordsPerChapter
+  const targetWords = totalChapters * run.targetWordsPerChapter
+
+  return {
+    runId: run.id,
+    projectId: run.projectId,
+    status: run.status,
+    stats: {
+      pendingSuggestionCount: Number(pendingSuggestionCount?.count || 0),
+      appliedSuggestionCount: Number(appliedSuggestionCount?.count || 0),
+    },
+    progress: {
+      completedChapters,
+      totalChapters,
+      writtenWords,
+      targetWords,
+    },
+    syncSummary: {
+      createdCharacters,
+      updatedCharacters,
+      createdRelationships,
+      updatedRelationships,
+      createdConflicts,
+      updatedConflicts,
+      createdForeshadowing,
+      paidOffForeshadowing,
+      createdFacts,
+      pendingSuggestions: Number(pendingSuggestionCount?.count || 0),
+      appliedSuggestions: Number(appliedSuggestionCount?.count || 0),
+    },
+    health: {
+      score: health.radarMetrics?.theme
+        ? Math.round((
+            (health.radarMetrics.theme || 80)
+            + (health.radarMetrics.character || 80)
+            + (health.radarMetrics.foreshadowing || 80)
+            + (health.radarMetrics.conflict || 80)
+            + (health.radarMetrics.pacing || 80)
+            + (health.radarMetrics.style || 80)
+          ) / 6)
+        : 85,
+      themeRisk: 100 - (health.radarMetrics?.theme || 80),
+      characterRisk: 100 - (health.radarMetrics?.character || 80),
+      continuityRisk: 100 - (health.radarMetrics?.conflict || 80),
+      foreshadowingRisk: 100 - (health.radarMetrics?.foreshadowing || 80),
+      rhythmRisk: 100 - (health.radarMetrics?.pacing || 80),
+    },
+    recentEvents: recentEvents.map(ev => ({
+      id: ev.id,
+      type: ev.itemType,
+      title: ev.title,
+      status: ev.status,
+      createdAt: ev.createdAt,
+    })),
   }
 }

@@ -6,7 +6,6 @@ import {
   Bug,
   Calendar,
   ClipboardList,
-  FilePenLine,
   History,
   LayoutDashboard,
   Lightbulb,
@@ -35,12 +34,6 @@ const primaryMenuItems = [
     activeMatch: /autopilot/,
   },
   {
-    name: '单章写作',
-    path: `/project/${props.projectId}/writing-job`,
-    icon: FilePenLine,
-    activeMatch: /writing-job/,
-  },
-  {
     name: '项目总览',
     path: `/project/${props.projectId}`,
     icon: LayoutDashboard,
@@ -57,12 +50,6 @@ const primaryMenuItems = [
     path: `/project/${props.projectId}/health`,
     icon: Activity,
     activeMatch: /health/,
-  },
-  {
-    name: '创作周报',
-    path: `/project/${props.projectId}/weekly-report`,
-    icon: Calendar,
-    activeMatch: /weekly-report/,
   },
   {
     name: '项目设置',
@@ -91,9 +78,6 @@ const setupItems = [
     icon: Search,
     activeMatch: /knowledge/,
   },
-]
-
-const ledgerItems = [
   {
     name: '角色档案',
     path: `/project/${props.projectId}/characters`,
@@ -118,6 +102,9 @@ const ledgerItems = [
     icon: Lightbulb,
     activeMatch: /foreshadowing/,
   },
+]
+
+const systemItems = [
   {
     name: '版本历史',
     path: `/project/${props.projectId}/versions`,
@@ -125,26 +112,34 @@ const ledgerItems = [
     activeMatch: /versions/,
   },
   {
-    name: '章后流水',
+    name: '创作周报',
+    path: `/project/${props.projectId}/weekly-report`,
+    icon: Calendar,
+    activeMatch: /weekly-report/,
+  },
+  {
+    name: '章后建议',
     path: `/project/${props.projectId}/suggestions`,
     icon: ClipboardList,
     activeMatch: /suggestions/,
   },
-]
-
-const systemItems = [
   {
     name: '上下文调试',
     path: `/project/${props.projectId}/context-snapshots`,
     icon: Bug,
     activeMatch: /context-snapshots/,
   },
+  {
+    name: '写作任务调试',
+    path: `/project/${props.projectId}/system/writing-job-debug`,
+    icon: Bug,
+    activeMatch: /writing-job-debug/,
+  },
 ]
 
 type SidebarItem = typeof primaryMenuItems[number]
 
 const hasActiveSetup = computed(() => setupItems.some(isActive))
-const hasActiveLedger = computed(() => ledgerItems.some(isActive))
 const hasActiveSystem = computed(() => systemItems.some(isActive))
 
 function isActive(item: SidebarItem) {
@@ -199,35 +194,6 @@ function isActive(item: SidebarItem) {
         <div class="mt-1 space-y-1">
           <router-link
             v-for="item in setupItems"
-            :key="item.path"
-            :to="item.path"
-            class="group relative min-h-9 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
-            :class="isActive(item)
-              ? 'bg-primary-soft text-primary shadow-sm'
-              : 'text-text-secondary hover:bg-bg-subtle hover:text-text-primary'"
-          >
-            <span v-if="isActive(item)" class="absolute bottom-2 left-0 top-2 w-1 rounded-r-full bg-primary" />
-            <component
-              :is="item.icon"
-              :size="17"
-              :stroke-width="isActive(item) ? 2.25 : 1.75"
-              :class="isActive(item) ? 'text-primary' : 'text-text-muted group-hover:text-text-secondary'"
-            />
-            <span class="truncate">{{ item.name }}</span>
-          </router-link>
-        </div>
-      </details>
-
-      <details class="pt-1" :open="hasActiveLedger">
-        <summary class="cursor-pointer select-none rounded-md px-3 py-2 text-[11px] text-text-muted font-semibold tracking-widest uppercase hover:bg-bg-subtle hover:text-text-secondary">
-          自动同步台账
-        </summary>
-        <p class="px-3 pb-1 text-[11px] text-text-muted leading-relaxed">
-          写作时自动抽取并更新，通常只需查看异常。
-        </p>
-        <div class="space-y-1">
-          <router-link
-            v-for="item in ledgerItems"
             :key="item.path"
             :to="item.path"
             class="group relative min-h-9 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors"

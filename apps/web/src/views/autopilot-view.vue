@@ -34,7 +34,7 @@ const {
   error,
   exceptions,
   ignoreException,
-  loadActiveRun,
+  loadLatestRun,
   loadRun,
   loading,
   resolveException,
@@ -49,7 +49,7 @@ const selectedJobId = ref<string | null>(null)
 onMounted(async () => {
   await Promise.all([
     projectStore.fetchProject(projectId),
-    loadActiveRun(),
+    loadLatestRun(),
   ])
 })
 
@@ -98,7 +98,7 @@ function handleRefresh() {
     loadRun(currentRun.value.id)
   }
   else {
-    loadActiveRun()
+    loadLatestRun()
   }
 }
 
@@ -241,7 +241,7 @@ const syncItems = [
         </aside>
 
         <main class="space-y-6">
-          <AutonomousLiveInsight :project-id="projectId" />
+          <AutonomousLiveInsight :project-id="projectId" :run-id="currentRun?.id" />
 
           <NPanel
             title="章节推进与写回状态"

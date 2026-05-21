@@ -3,7 +3,9 @@ import {
   createAutonomousRun,
   getAutonomousExceptions,
   getAutonomousRun,
+  getAutonomousRunInsight,
   getLatestActiveRun,
+  getLatestRun,
   ignoreAutonomousException,
   pauseAutonomousRun,
   resolveAutonomousException,
@@ -26,6 +28,19 @@ export function registerAutonomousRunRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
     const run = await getLatestActiveRun(projectId)
     return c.json(success(run || null))
+  })
+
+  app.get('/api/projects/:projectId/autonomous-runs/latest', async (c) => {
+    const projectId = c.req.param('projectId')
+    const run = await getLatestRun(projectId)
+    return c.json(success(run || null))
+  })
+
+  app.get('/api/projects/:projectId/autonomous-runs/:runId/insight', async (c) => {
+    const projectId = c.req.param('projectId')
+    const runId = c.req.param('runId')
+    const insight = await getAutonomousRunInsight(projectId, runId)
+    return c.json(success(insight))
   })
 
   app.post('/api/projects/:projectId/autonomous-runs', async (c) => {

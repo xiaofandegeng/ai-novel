@@ -64,7 +64,11 @@ const router = createRouter({
         },
         {
           path: 'writing-job',
-          name: 'writing-job',
+          redirect: to => `/project/${to.params.id}/autopilot`,
+        },
+        {
+          path: 'system/writing-job-debug',
+          name: 'writing-job-debug',
           component: () => import('@/views/writing-job-view.vue'),
         },
         {

@@ -40,3 +40,11 @@ export async function ignoreAutonomousException(projectId: string, runId: string
 export async function fetchAutonomousInsight(projectId: string): Promise<any> {
   return apiGet<any>(`/api/projects/${projectId}/autonomous-runs/insight`)
 }
+
+export async function fetchLatestAutonomousRun(projectId: string): Promise<(AutonomousWritingRun & { jobs: any[] }) | null> {
+  return apiGet<(AutonomousWritingRun & { jobs: any[] }) | null>(`/api/projects/${projectId}/autonomous-runs/latest`)
+}
+
+export async function fetchAutonomousRunInsight(projectId: string, runId: string): Promise<any> {
+  return apiGet<any>(`/api/projects/${projectId}/autonomous-runs/${runId}/insight`)
+}

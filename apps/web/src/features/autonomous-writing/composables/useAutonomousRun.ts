@@ -7,6 +7,7 @@ import {
   fetchActiveAutonomousRun,
   fetchAutonomousExceptions,
   fetchAutonomousRun,
+  fetchLatestAutonomousRun,
   pauseAutonomousRun,
   resumeAutonomousRun,
   startAutonomousRun,
@@ -34,6 +35,27 @@ export function useAutonomousRun(projectId: string) {
     }
     catch (err: any) {
       console.error('Failed to load active run', err)
+    }
+    finally {
+      loading.value = false
+    }
+  }
+
+  async function loadLatestRun() {
+    loading.value = true
+    error.value = null
+    try {
+      const latestRun = await fetchLatestAutonomousRun(projectId)
+      if (latestRun) {
+        currentRun.value = latestRun
+        await loadExceptions(latestRun.id)
+        if (latestRun.status === 'running') {
+          startPolling(latestRun.id)
+        }
+      }
+    }
+    catch (err: any) {
+      console.error('Failed to load latest run', err)
     }
     finally {
       loading.value = false
@@ -176,6 +198,7 @@ export function useAutonomousRun(projectId: string) {
     createRun,
     loadRun,
     loadActiveRun,
+    loadLatestRun,
     loadExceptions,
     start,
     pause,
