@@ -22,12 +22,14 @@ import AutonomousLiveInsight from '@/features/autonomous-writing/components/auto
 import AutonomousRunControlBar from '@/features/autonomous-writing/components/autonomous-run-control-bar.vue'
 import AutonomousRunLauncher from '@/features/autonomous-writing/components/autonomous-run-launcher.vue'
 import AutonomousRunTimeline from '@/features/autonomous-writing/components/autonomous-run-timeline.vue'
+import AutopilotHealthPanel from '@/features/autonomous-writing/components/autopilot-health-panel.vue'
 import { useAutonomousRun } from '@/features/autonomous-writing/composables/useAutonomousRun'
 import { useProjectStore } from '@/stores/project.store'
 
 const route = useRoute()
 const projectId = route.params.id as string
 const projectStore = useProjectStore()
+const refreshTrigger = ref(0)
 
 const {
   currentRun,
@@ -67,6 +69,7 @@ async function handleStart(input: any) {
     const run = await createRun(input)
     await start(run.id)
     await loadRun(run.id)
+    refreshTrigger.value++
   }
   catch (err) {
     console.error('Failed to start run', err)
@@ -76,20 +79,24 @@ async function handleStart(input: any) {
 async function handlePause(runId: string) {
   await pause(runId)
   await loadRun(runId)
+  refreshTrigger.value++
 }
 
 async function handleResume(runId: string) {
   await resume(runId)
   await loadRun(runId)
+  refreshTrigger.value++
 }
 
 async function handleAbandon(runId: string) {
   await abandon(runId)
   await loadRun(runId)
+  refreshTrigger.value++
 }
 
 function handleNewRun() {
   currentRun.value = null
+  refreshTrigger.value++
 }
 
 async function handleResolve(ex: any) {
@@ -98,6 +105,7 @@ async function handleResolve(ex: any) {
   const resolution = '已恢复自动运行。'
   await resolveException(currentRun.value.id, ex.id, resolution)
   await loadRun(currentRun.value.id)
+  refreshTrigger.value++
 }
 
 async function handleIgnore(ex: any) {
@@ -105,9 +113,11 @@ async function handleIgnore(ex: any) {
     return
   await ignoreException(currentRun.value.id, ex.id)
   await loadRun(currentRun.value.id)
+  refreshTrigger.value++
 }
 
 function handleRefresh() {
+  refreshTrigger.value++
   if (currentRun.value) {
     loadRun(currentRun.value.id)
   }
@@ -238,7 +248,7 @@ const syncItems = [
           />
 
           <AutonomousRunLauncher
-            v-if="!currentRun || ['completed', 'failed', 'abandoned'].includes(currentRun.status)"
+            v-else
             :project-id="projectId"
             :loading="loading"
             :current-run="currentRun"
@@ -246,20 +256,22 @@ const syncItems = [
           />
 
           <NPanel v-if="currentRun" title="待处理异常">
-            <template v-if="exceptions.filter(e => e.status === 'open').length > 0">
-              <AutonomousExceptionQueue
-                :exceptions="exceptions.filter(e => e.status === 'open')"
-                @view="handleViewException"
-                @resolve="handleResolve"
-                @ignore="handleIgnore"
-              />
-            </template>
-            <div v-else class="py-10 text-center text-sm text-text-muted">
-              <div class="mb-2 flex justify-center opacity-20">
-                <ShieldCheck :size="42" />
+            <template #default>
+              <template v-if="exceptions.filter(e => e.status === 'open').length > 0">
+                <AutonomousExceptionQueue
+                  :exceptions="exceptions.filter(e => e.status === 'open')"
+                  @view="handleViewException"
+                  @resolve="handleResolve"
+                  @ignore="handleIgnore"
+                />
+              </template>
+              <div v-else class="py-10 text-center text-sm text-text-muted">
+                <div class="mb-2 flex justify-center opacity-20">
+                  <ShieldCheck :size="42" />
+                </div>
+                <p>暂无待处理异常</p>
               </div>
-              <p>暂无待处理异常</p>
-            </div>
+            </template>
           </NPanel>
         </aside>
 
@@ -269,33 +281,41 @@ const syncItems = [
             title="章节推进与写回状态"
             description="每章会依次完成上下文构建、生成正文、一致性检查、自动修复、写回正文、章后分析和台账同步。"
           >
-            <AutonomousRunTimeline
-              v-if="currentRun"
-              :jobs="currentRun.jobs"
-              :current-job-id="currentRun.jobs.find(j => j.status === 'running')?.id"
-              @view-job="handleViewJob"
-            />
-            <div v-else class="grid gap-4 py-2 md:grid-cols-2">
-              <div class="border border-border-light rounded-lg border-dashed bg-bg-subtle p-4">
-                <div class="mb-2 flex items-center gap-2 text-sm font-semibold">
-                  <BookOpen :size="16" class="text-primary" />
-                  未启动自动驾驶
+            <template #default>
+              <AutonomousRunTimeline
+                v-if="currentRun"
+                :jobs="currentRun.jobs"
+                :current-job-id="currentRun.jobs.find(j => j.status === 'running')?.id"
+                @view-job="handleViewJob"
+              />
+              <div v-else class="grid gap-4 py-2 md:grid-cols-2">
+                <div class="border border-border-light rounded-lg border-dashed bg-bg-subtle p-4">
+                  <div class="mb-2 flex items-center gap-2 text-sm font-semibold">
+                    <BookOpen :size="16" class="text-primary" />
+                    未启动自动驾驶
+                  </div>
+                  <p class="text-sm text-text-muted leading-6">
+                    启动后，这里会显示每章从大纲、场景、正文到章后分析的完整推进状态。
+                  </p>
                 </div>
-                <p class="text-sm text-text-muted leading-6">
-                  启动后，这里会显示每章从大纲、场景、正文到章后分析的完整推进状态。
-                </p>
-              </div>
-              <div class="border border-border-light rounded-lg border-dashed bg-bg-subtle p-4">
-                <div class="mb-2 flex items-center gap-2 text-sm font-semibold">
-                  <ShieldCheck :size="16" class="text-primary" />
-                  同步不会静默污染
+                <div class="border border-border-light rounded-lg border-dashed bg-bg-subtle p-4">
+                  <div class="mb-2 flex items-center gap-2 text-sm font-semibold">
+                    <ShieldCheck :size="16" class="text-primary" />
+                    同步不会静默污染
+                  </div>
+                  <p class="text-sm text-text-muted leading-6">
+                    高置信变更自动入库，低置信和冲突变更进入待处理队列，下一次写作会读取已确认结构。
+                  </p>
                 </div>
-                <p class="text-sm text-text-muted leading-6">
-                  高置信变更自动入库，低置信和冲突变更进入待处理队列，下一次写作会读取已确认结构。
-                </p>
               </div>
-            </div>
+            </template>
           </NPanel>
+
+          <!-- Autopilot Health Panel: New! -->
+          <AutopilotHealthPanel
+            :project-id="projectId"
+            :refresh-trigger="refreshTrigger"
+          />
 
           <!-- Live Insight: supplementary stats -->
           <AutonomousLiveInsight :project-id="projectId" :run-id="currentRun?.id" />

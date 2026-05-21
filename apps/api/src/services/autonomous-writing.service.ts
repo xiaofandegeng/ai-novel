@@ -468,16 +468,27 @@ export async function runNextAutonomousStep(projectId: string, runId: string): P
   )).orderBy(asc(autonomousRunJobs.orderIndex)).limit(1)
 
   if (nextJob.length === 0) {
-    // Before marking completed, check for blocking states
-    const hasBlockers = await hasActiveBlockers(runId)
-    if (hasBlockers) {
-      // There are still running jobs or open exceptions
-      // Don't mark completed - the run will be continued when blockers resolve
+    // Check if there are still running jobs
+    const activeJobs = await db.select({ id: autonomousRunJobs.id }).from(autonomousRunJobs).where(and(
+      eq(autonomousRunJobs.runId, runId),
+      eq(autonomousRunJobs.status, 'running'),
+    )).limit(1)
+
+    if (activeJobs.length > 0) {
+      // Still active jobs running, do not finalize yet
       return
     }
 
+    // All jobs finished. Check if there are any failures to decide final status
+    const failedJobs = await db.select({ id: autonomousRunJobs.id }).from(autonomousRunJobs).where(and(
+      eq(autonomousRunJobs.runId, runId),
+      eq(autonomousRunJobs.status, 'failed'),
+    )).limit(1)
+
+    const finalStatus = failedJobs.length > 0 ? 'failed' : 'completed'
+
     await db.update(autonomousWritingRuns).set({
-      status: 'completed',
+      status: finalStatus,
       finishedAt: now(),
       updatedAt: now(),
     }).where(eq(autonomousWritingRuns.id, runId))
@@ -566,30 +577,21 @@ export async function abandonAutonomousRun(projectId: string, runId: string): Pr
     sql`${autonomousRunJobs.status} NOT IN ('completed', 'skipped', 'isolated')`,
   ))
 
+  // Mark all open exceptions of this run as ignored on abandon
+  await db.update(autonomousRunExceptions).set({
+    status: 'ignored',
+    updatedAt: now(),
+  }).where(and(
+    eq(autonomousRunExceptions.runId, runId),
+    eq(autonomousRunExceptions.status, 'open'),
+  ))
+
   await db.update(autonomousWritingRuns).set({
     status: 'abandoned',
     pausedReason: '用户放弃本轮自动驾驶',
     finishedAt: now(),
     updatedAt: now(),
   }).where(eq(autonomousWritingRuns.id, runId))
-}
-
-async function hasActiveBlockers(runId: string): Promise<boolean> {
-  const [runningJob] = await db.select({ id: autonomousRunJobs.id }).from(autonomousRunJobs).where(and(
-    eq(autonomousRunJobs.runId, runId),
-    eq(autonomousRunJobs.status, 'running'),
-  )).limit(1)
-  if (runningJob)
-    return true
-
-  const [openException] = await db.select({ id: autonomousRunExceptions.id }).from(autonomousRunExceptions).where(and(
-    eq(autonomousRunExceptions.runId, runId),
-    eq(autonomousRunExceptions.status, 'open'),
-  )).limit(1)
-  if (openException)
-    return true
-
-  return false
 }
 
 export async function handleAutonomousJobCompletion(
