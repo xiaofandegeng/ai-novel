@@ -1,6 +1,7 @@
 import type { AutonomousWritingRun, CreateAutonomousRunInput } from '@ai-novel/shared'
 import { onUnmounted, ref } from 'vue'
 import {
+  abandonAutonomousRun as apiAbandonRun,
   createAutonomousRun as apiCreateRun,
   ignoreAutonomousException as apiIgnoreException,
   resolveAutonomousException as apiResolveException,
@@ -134,6 +135,16 @@ export function useAutonomousRun(projectId: string) {
     }
   }
 
+  async function abandon(runId: string) {
+    try {
+      await apiAbandonRun(projectId, runId)
+      await loadRun(runId)
+    }
+    catch (err: any) {
+      error.value = err.message || '放弃任务失败'
+    }
+  }
+
   async function resolveException(runId: string, exceptionId: string, resolution: string) {
     try {
       await apiResolveException(projectId, runId, exceptionId, resolution)
@@ -170,7 +181,7 @@ export function useAutonomousRun(projectId: string) {
         currentRun.value = await fetchAutonomousRun(projectId, runId)
         await loadExceptions(runId)
 
-        const terminalStatuses = ['completed', 'failed', 'paused']
+        const terminalStatuses = ['completed', 'failed', 'abandoned', 'paused']
         if (currentRun.value && terminalStatuses.includes(currentRun.value.status)) {
           stopPolling()
         }
@@ -203,6 +214,7 @@ export function useAutonomousRun(projectId: string) {
     start,
     pause,
     resume,
+    abandon,
     resolveException,
     ignoreException,
   }

@@ -1,5 +1,6 @@
 import type { Hono } from 'hono'
 import {
+  abandonAutonomousRun,
   createAutonomousRun,
   getAutonomousExceptions,
   getAutonomousRun,
@@ -85,6 +86,18 @@ export function registerAutonomousRunRoutes(app: Hono) {
     const runId = c.req.param('runId')
     try {
       await resumeAutonomousRun(projectId, runId)
+      return c.json(success(true))
+    }
+    catch (err: any) {
+      return c.json(fail(err.message), 400)
+    }
+  })
+
+  app.post('/api/projects/:projectId/autonomous-runs/:runId/abandon', async (c) => {
+    const projectId = c.req.param('projectId')
+    const runId = c.req.param('runId')
+    try {
+      await abandonAutonomousRun(projectId, runId)
       return c.json(success(true))
     }
     catch (err: any) {

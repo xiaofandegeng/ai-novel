@@ -76,6 +76,7 @@ export const autonomousWritingRuns = pgTable('autonomous_writing_runs', {
     | 'paused'
     | 'completed'
     | 'failed'
+    | 'abandoned'
   >().notNull().default('idle'),
   strategy: text('strategy').$type<'safe' | 'balanced' | 'fast'>().notNull().default('balanced'),
   scopeType: text('scope_type').$type<'project' | 'volume' | 'chapter_range' | 'next_n_chapters' | 'from_current_forward' | 'continue_incomplete' | 'rewrite_selected'>().notNull(),

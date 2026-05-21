@@ -3,9 +3,9 @@ import { NAppLayout, NButton, NPanel } from '@ai-novel/ui'
 import {
   AlertCircle,
   BookOpen,
-  ChevronLeft,
   GitCompare,
   Lightbulb,
+  PenLine,
   RefreshCw,
   Rocket,
   ShieldCheck,
@@ -42,6 +42,7 @@ const {
   start,
   pause,
   resume,
+  abandon,
 } = useAutonomousRun(projectId)
 
 const selectedJobId = ref<string | null>(null)
@@ -71,6 +72,11 @@ async function handlePause(runId: string) {
 
 async function handleResume(runId: string) {
   await resume(runId)
+  await loadRun(runId)
+}
+
+async function handleAbandon(runId: string) {
+  await abandon(runId)
   await loadRun(runId)
 }
 
@@ -184,7 +190,7 @@ const syncItems = [
           </NButton>
           <router-link :to="`/project/${projectId}/write`">
             <NButton variant="secondary">
-              <ChevronLeft :size="16" class="mr-2" /> 返回编辑器
+              <PenLine :size="16" class="mr-2" /> 打开正文工作区
             </NButton>
           </router-link>
         </div>
@@ -210,12 +216,13 @@ const syncItems = [
             :loading="loading"
             @pause="handlePause"
             @resume="handleResume"
+            @abandon="handleAbandon"
             @new-run="handleNewRun"
             @refresh="handleRefresh"
           />
 
           <AutonomousRunLauncher
-            v-if="!currentRun || ['completed', 'failed'].includes(currentRun.status)"
+            v-if="!currentRun || ['completed', 'failed', 'abandoned'].includes(currentRun.status)"
             :project-id="projectId"
             :loading="loading"
             :current-run="currentRun"

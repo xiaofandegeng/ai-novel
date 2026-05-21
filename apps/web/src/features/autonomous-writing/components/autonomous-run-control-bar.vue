@@ -6,6 +6,7 @@ import {
   Play,
   RefreshCw,
   Rocket,
+  Square,
 } from 'lucide-vue-next'
 
 defineProps<{
@@ -16,6 +17,7 @@ defineProps<{
 const emit = defineEmits<{
   (e: 'pause', runId: string): void
   (e: 'resume', runId: string): void
+  (e: 'abandon', runId: string): void
   (e: 'newRun'): void
   (e: 'refresh'): void
 }>()
@@ -26,6 +28,7 @@ function getStatusColor(status: string): TagVariant {
     case 'completed': return 'success'
     case 'failed': return 'error'
     case 'paused': return 'warning'
+    case 'abandoned': return 'default'
     default: return 'default'
   }
 }
@@ -35,7 +38,8 @@ function getStatusLabel(status: string): string {
     case 'running': return '正在驾驶'
     case 'completed': return '驾驶完成'
     case 'failed': return '驾驶事故'
-    case 'paused': return '已中止'
+    case 'paused': return '已暂停'
+    case 'abandoned': return '已放弃'
     default: return status
   }
 }
@@ -51,7 +55,7 @@ function getStatusLabel(status: string): string {
         <div>
           <div class="flex items-center gap-2">
             <h3 class="text-lg font-bold">
-              {{ ['completed', 'failed'].includes(currentRun.status) ? '最近驾驶记录' : '自动驾驶中' }}
+              {{ ['completed', 'failed', 'abandoned'].includes(currentRun.status) ? '最近驾驶记录' : '自动驾驶中' }}
             </h3>
             <NTag size="sm" :variant="getStatusColor(currentRun.status) as any">
               {{ getStatusLabel(currentRun.status) }}
@@ -70,23 +74,31 @@ function getStatusLabel(status: string): string {
           :loading="loading"
           @click="emit('pause', currentRun.id)"
         >
-          <Pause :size="16" class="mr-1" /> 停止本轮
+          <Pause :size="16" class="mr-1" /> 暂停
         </NButton>
         <NButton
-          v-else-if="currentRun.status === 'paused'"
+          v-if="currentRun.status === 'running' || currentRun.status === 'paused'"
+          size="sm"
+          :loading="loading"
+          @click="emit('abandon', currentRun.id)"
+        >
+          <Square :size="16" class="mr-1" /> 放弃本轮
+        </NButton>
+        <NButton
+          v-if="currentRun.status === 'paused'"
           variant="primary"
           size="sm"
           :loading="loading"
           @click="emit('resume', currentRun.id)"
         >
-          <Play :size="16" class="mr-1" /> 重新推进
+          <Play :size="16" class="mr-1" /> 继续推进
         </NButton>
         <NButton variant="ghost" size="sm" @click="emit('refresh')">
           <RefreshCw :size="16" />
         </NButton>
 
         <NButton
-          v-if="['completed', 'failed'].includes(currentRun.status)"
+          v-if="['completed', 'failed', 'abandoned'].includes(currentRun.status)"
           variant="secondary"
           size="sm"
           @click="emit('newRun')"

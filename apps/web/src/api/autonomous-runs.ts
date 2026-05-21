@@ -25,6 +25,10 @@ export async function resumeAutonomousRun(projectId: string, runId: string): Pro
   return apiPost<void>(`/api/projects/${projectId}/autonomous-runs/${runId}/resume`, {})
 }
 
+export async function abandonAutonomousRun(projectId: string, runId: string): Promise<void> {
+  return apiPost<void>(`/api/projects/${projectId}/autonomous-runs/${runId}/abandon`, {})
+}
+
 export async function fetchAutonomousExceptions(projectId: string, runId: string): Promise<any[]> {
   return apiGet<any[]>(`/api/projects/${projectId}/autonomous-runs/${runId}/exceptions`)
 }

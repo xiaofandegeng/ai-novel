@@ -1,5 +1,5 @@
 import type { AutonomousScopeType, AutonomousWritingRun, CreateAutonomousRunInput } from '@ai-novel/shared'
-import { and, asc, desc, eq, isNull, not, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, not, or, sql } from 'drizzle-orm'
 import { db } from '../db'
 import {
   autonomousRunExceptions,
@@ -99,6 +99,7 @@ export async function createAutonomousRun(
       or(
         eq(autonomousWritingRuns.status, 'running'),
         eq(autonomousWritingRuns.status, 'paused'),
+        eq(autonomousWritingRuns.status, 'idle'),
       ),
     ))
     if (activeRuns.length > 0) {
@@ -324,6 +325,7 @@ export async function getLatestActiveRun(projectId: string): Promise<any> {
     or(
       eq(autonomousWritingRuns.status, 'running'),
       eq(autonomousWritingRuns.status, 'paused'),
+      eq(autonomousWritingRuns.status, 'idle'),
     ),
   )).orderBy(desc(autonomousWritingRuns.updatedAt)).limit(1)
 
@@ -352,6 +354,7 @@ export async function startAutonomousRun(projectId: string, runId: string): Prom
     or(
       eq(autonomousWritingRuns.status, 'running'),
       eq(autonomousWritingRuns.status, 'paused'),
+      eq(autonomousWritingRuns.status, 'idle'),
     ),
     not(eq(autonomousWritingRuns.id, runId)),
   ))
@@ -460,6 +463,34 @@ export async function resumeAutonomousRun(projectId: string, runId: string): Pro
   }).where(eq(autonomousWritingRuns.id, runId))
 
   await runNextAutonomousStep(projectId, runId)
+}
+
+export async function abandonAutonomousRun(projectId: string, runId: string): Promise<void> {
+  const [run] = await db.select().from(autonomousWritingRuns).where(and(
+    eq(autonomousWritingRuns.id, runId),
+    eq(autonomousWritingRuns.projectId, projectId),
+  ))
+
+  if (!run)
+    throw new Error('Run not found')
+  if (!['idle', 'running', 'paused'].includes(run.status))
+    throw new Error('只能放弃进行中或暂停的任务')
+
+  // Mark unfinished run jobs as skipped
+  await db.update(autonomousRunJobs).set({
+    status: 'skipped',
+    updatedAt: now(),
+  }).where(and(
+    eq(autonomousRunJobs.runId, runId),
+    sql`${autonomousRunJobs.status} NOT IN ('completed', 'skipped', 'isolated')`,
+  ))
+
+  await db.update(autonomousWritingRuns).set({
+    status: 'abandoned',
+    pausedReason: '用户放弃本轮自动驾驶',
+    finishedAt: now(),
+    updatedAt: now(),
+  }).where(eq(autonomousWritingRuns.id, runId))
 }
 
 async function hasActiveBlockers(runId: string): Promise<boolean> {
@@ -775,7 +806,7 @@ export async function getAutonomousRunInsight(projectId: string, runId: string) 
     })
       .from(chapterChangeSetItems)
       .innerJoin(chapterChangeSets, eq(chapterChangeSetItems.changeSetId, chapterChangeSets.id))
-      .where(sql`${chapterChangeSets.writingJobId} IN ${jobIds}`)
+      .where(inArray(chapterChangeSets.writingJobId, jobIds))
   }
 
   // 聚合计数
@@ -813,7 +844,14 @@ export async function getAutonomousRunInsight(projectId: string, runId: string) 
   // 进度统计
   const totalChapters = jobs.length
   const completedChapters = jobs.filter(j => j.status === 'completed').length
-  const writtenWords = run.completedChapterCount * run.targetWordsPerChapter
+
+  // 真实字数：从已完成章节的 draft 字段统计
+  const completedChapterIds = jobs.filter(j => j.status === 'completed').map(j => j.chapterId).filter(Boolean) as string[]
+  let writtenWords = 0
+  if (completedChapterIds.length > 0) {
+    const completedChaptersData = await db.select({ draft: chapters.draft }).from(chapters).where(inArray(chapters.id, completedChapterIds))
+    writtenWords = completedChaptersData.reduce((sum, ch) => sum + (ch.draft?.length || 0), 0)
+  }
   const targetWords = totalChapters * run.targetWordsPerChapter
 
   return {

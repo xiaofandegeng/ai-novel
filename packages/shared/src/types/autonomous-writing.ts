@@ -4,6 +4,7 @@ export type AutonomousRunStatus
     | 'paused'
     | 'completed'
     | 'failed'
+    | 'abandoned'
 
 export type AutonomousStrategy = 'safe' | 'balanced' | 'fast'
 
