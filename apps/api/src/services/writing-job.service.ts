@@ -9,7 +9,7 @@ import { buildProjectAIContext } from './ai-context.service'
 import { callAIJSON, getEffectiveAISettings } from './ai.service'
 import { AuthoringEventService } from './authoring-event.service'
 import { decideNextAction } from './auto-decision.service'
-import { attemptAutoRepair } from './auto-repair.service'
+import { attemptAutoRepair, attemptAutoRepairPlan } from './auto-repair.service'
 import { applyChangeSet as applyChangeSetSvc, approveChangeSet as approveChangeSetSvc, createChapterChangeSet, rejectChangeSet as rejectChangeSetSvc } from './chapter-change-set.service'
 import { extractChapterChanges, runChapterPostprocess, runScenePostprocess } from './chapter-postprocess.service'
 import { runConsistencyGuard } from './consistency-guard.service'
@@ -17,6 +17,16 @@ import { getProjectHealthMetrics } from './health-metrics.service'
 import { applyAutoSuggestions, getSuggestions } from './postprocess-suggestion.service'
 import { runGraphInference } from './story-graph-inference.service'
 import { createSnapshot } from './version.service'
+
+function mapActionToDecision(action: 'continue' | 'repair' | 'isolate' | 'skip' | 'stop_run'): 'approved' | 'medium_risk_repair' | 'isolated' | 'skipped' | 'failed' {
+  switch (action) {
+    case 'continue': return 'approved'
+    case 'repair': return 'medium_risk_repair'
+    case 'isolate': return 'isolated'
+    case 'skip': return 'skipped'
+    case 'stop_run': return 'failed'
+  }
+}
 
 type JobMode = 'outline_only' | 'draft_only' | 'outline_then_draft' | 'scene_draft'
 
@@ -686,6 +696,138 @@ function calculateHealthScore(metrics: Awaited<ReturnType<typeof getProjectHealt
   return { riskLevel: 'low', score }
 }
 
+async function executeValidatePlan(
+  projectId: string,
+  chapterId: string | null,
+  sceneId: string | null,
+  planOutput: string,
+  stepId: string,
+): Promise<string> {
+  const plan = JSON.parse(planOutput)
+
+  const context = await buildProjectAIContext({
+    projectId,
+    scene: 'outline',
+    chapterId: chapterId || undefined,
+    sceneId: sceneId || undefined,
+    userInstruction: '诊断以下大纲是否存在逻辑冲突或偏离故事设定',
+  })
+  const rendered = renderAIContext(context)
+
+  const prompt = `
+你是一位资深的网络小说主编和一致性校验专家。请根据故事背景、设定集、最近的章节摘要等上下文，校验新生成的这一章大纲是否存在逻辑冲突或设定偏差。
+
+【故事上下文】
+${rendered}
+
+【新生成的大纲】
+标题: ${plan.title || ''}
+目标: ${plan.goals || ''}
+冲突: ${plan.conflicts || ''}
+事件: ${plan.events || ''}
+详细大纲: ${plan.outline || ''}
+
+请进行严格的审查，诊断是否存在以下问题：
+1. 角色行为动机是否合理，是否与已有人物性格或设定冲突。
+2. 设定的地理位置、超凡规则或已有事实是否出现严重的矛盾与偏离。
+3. 剧情走向是否存在明显的硬伤。
+
+请返回严格的 JSON 格式：
+{
+  "status": "pass" | "warning" | "blocked",
+  "issues": [
+    {
+      "type": "character" | "plot" | "setting" | "other",
+      "severity": "warning" | "blocked",
+      "description": "具体冲突描述"
+    }
+  ],
+  "suggestions": "具体的修改意见和优化建议"
+}
+`.trim()
+
+  const report = await callAIJSON<{
+    status: 'pass' | 'warning' | 'blocked'
+    issues: Array<{ type: string, severity: 'warning' | 'blocked', description: string }>
+    suggestions: string
+  }>([
+    { role: 'user', content: prompt },
+  ], {
+    temperature: 30, // 0.3
+    metadata: {
+      projectId,
+      taskType: 'validate_plan',
+    },
+  })
+
+  const output = JSON.stringify(report)
+  await updateStep(stepId, { output, updatedAt: now() })
+  return output
+}
+
+async function executeEvaluateChangeSet(
+  projectId: string,
+  changeSetId: string | null,
+  stepId: string,
+  previousOutputs: Map<string, string>,
+): Promise<string> {
+  if (!changeSetId) {
+    throw new Error('Change set ID is required for evaluation')
+  }
+
+  const buildOutputStr = previousOutputs.get('build_change_set') || '{}'
+  const buildOutput = JSON.parse(buildOutputStr)
+  const riskLevel = buildOutput.riskLevel || 'low'
+
+  const report = {
+    riskLevel,
+    reason: buildOutput.consistencyReport?.overallStatus === 'warning' ? '一致性检查发现警告' : '基本通过',
+    consistencyReport: buildOutput.consistencyReport,
+  }
+
+  if (riskLevel === 'medium' || riskLevel === 'high') {
+    const prompt = `
+你是一位资深的小说审校主编。请评估以下变更集对小说的一致性风险。
+
+【一致性检查结果】
+得分: ${buildOutput.consistencyReport?.score || 100}
+状态: ${buildOutput.consistencyReport?.overallStatus || 'pass'}
+
+请审阅当前变更集，给出一个具体的风险评估报告：
+请返回 JSON 格式：
+{
+  "riskLevel": "low" | "medium" | "high" | "critical",
+  "reason": "具体的评估理由说明",
+  "detail": "具体的评估细则"
+}
+`.trim()
+    try {
+      const aiReport = await callAIJSON<{ riskLevel: string, reason: string, detail: string }>([
+        { role: 'user', content: prompt },
+      ], {
+        temperature: 20,
+        metadata: { projectId, taskType: 'evaluate_change_set' },
+      })
+
+      const output = JSON.stringify({
+        riskLevel: aiReport.riskLevel,
+        reason: aiReport.reason,
+        detail: aiReport.detail,
+        consistencyReport: buildOutput.consistencyReport,
+      })
+      await updateStep(stepId, { output, changeSetId, updatedAt: now() })
+      return output
+    }
+    catch {
+      // fallback
+    }
+  }
+
+  const output = JSON.stringify(report)
+  await updateStep(stepId, { output, changeSetId, updatedAt: now() })
+  return output
+}
+
 async function executeBuildChangeSet(
   projectId: string,
   chapterId: string | null,
@@ -794,9 +936,13 @@ async function executeStep(
         break
       }
 
-      case 'validate_plan':
-        // Always auto — no pause point
+      case 'validate_plan': {
+        const planOutput = job.mode === 'scene_draft'
+          ? previousStepOutputs.get('generate_scene_draft') || '{}'
+          : previousStepOutputs.get('generate_plan') || '{}'
+        await executeValidatePlan(projectId, chapterId, sceneId, planOutput, step.id)
         return false
+      }
 
       case 'generate_draft': {
         const contextOutput = previousStepOutputs.get('prepare_context') || '{}'
@@ -849,8 +995,12 @@ async function executeStep(
         break
       }
 
-      case 'evaluate_change_set':
+      case 'evaluate_change_set': {
+        const buildOutput = previousStepOutputs.get('build_change_set') || '{}'
+        const { changeSetId } = JSON.parse(buildOutput)
+        await executeEvaluateChangeSet(projectId, changeSetId, step.id, previousStepOutputs)
         return false
+      }
 
       case 'apply_change_set': {
         // Find changeSetId from previous build_change_set step
@@ -861,68 +1011,110 @@ async function executeStep(
       }
 
       case 'auto_repair': {
-        // Only attempt repair when evaluate_change_set detected medium risk
         const reviewSteps = await getJobSteps(job.id)
-        const needsRepair = reviewSteps.some(
-          s => s.stepType === 'evaluate_change_set' && s.autoDecision === 'medium_risk_repair',
-        )
+        const validatePlanStep = reviewSteps.find(s => s.stepType === 'validate_plan')
+        const evaluateChangeSetStep = reviewSteps.find(s => s.stepType === 'evaluate_change_set')
+
+        const isPlanRepair = validatePlanStep && validatePlanStep.autoDecision === 'medium_risk_repair'
+        const isChangeSetRepair = evaluateChangeSetStep && evaluateChangeSetStep.autoDecision === 'medium_risk_repair'
+
+        const needsRepair = isPlanRepair || isChangeSetRepair
 
         if (!needsRepair) {
           await updateStep(step.id, { status: 'skipped', autoDecisionReason: 'No repair needed - checks passed' })
           return true
         }
 
-        const draftOutputStr = previousStepOutputs.get('generate_draft') || '{}'
-        const draftOutput = JSON.parse(draftOutputStr)
-        const buildOutputStr = previousStepOutputs.get('build_change_set') || '{}'
-        const buildOutput = JSON.parse(buildOutputStr)
+        if (isPlanRepair) {
+          const planOutputStr = job.mode === 'scene_draft'
+            ? previousStepOutputs.get('generate_scene_draft') || '{}'
+            : previousStepOutputs.get('generate_plan') || '{}'
 
-        if (!buildOutput.consistencyReport) {
-          await updateStep(step.id, { status: 'skipped', autoDecisionReason: 'No consistency report found' })
-          return true
-        }
+          const validateReportStr = validatePlanStep.output || '{}'
+          const validateReport = JSON.parse(validateReportStr)
 
-        const repairResult = await attemptAutoRepair({
-          projectId,
-          chapterId: chapterId!,
-          draftContent: draftOutput.draft,
-          consistencyReport: buildOutput.consistencyReport,
-          strategy: (job as any).strategy || 'balanced', // Autonomous run strategy if available
-        })
+          const repairResult = await attemptAutoRepairPlan({
+            projectId,
+            planContent: planOutputStr,
+            validateReport,
+          })
 
-        if (repairResult.repaired) {
-          // Update generate_draft output with repaired content
-          const updatedDraftOutput = { ...draftOutput, draft: repairResult.draftContent }
-          const generateDraftStep = reviewSteps.find(s => s.stepType === 'generate_draft')
-          if (generateDraftStep) {
-            await updateStep(generateDraftStep.id, { output: JSON.stringify(updatedDraftOutput) })
+          if (repairResult.repaired) {
+            const targetStepType = job.mode === 'scene_draft' ? 'generate_scene_draft' : 'generate_plan'
+            const generateStep = reviewSteps.find(s => s.stepType === targetStepType)
+            if (generateStep) {
+              await updateStep(generateStep.id, { output: repairResult.planContent })
+            }
+
+            await db.update(writingJobSteps).set({
+              status: 'pending',
+              output: null,
+              finishedAt: null,
+              autoDecision: null,
+              autoDecisionReason: null,
+              updatedAt: now(),
+            }).where(and(
+              eq(writingJobSteps.jobId, job.id),
+              eq(writingJobSteps.stepType, 'validate_plan'),
+            ))
+
+            await updateStep(step.id, { status: 'completed', output: JSON.stringify(repairResult.repairReport) })
           }
-
-          // Reject old change set before resetting steps
-          const oldBuildStep = reviewSteps.find(s => s.stepType === 'build_change_set' && s.changeSetId)
-          if (oldBuildStep?.changeSetId) {
-            await rejectChangeSetSvc(projectId, oldBuildStep.changeSetId)
+          else {
+            await updateStep(step.id, { status: 'failed', error: typeof repairResult.repairReport === 'string' ? repairResult.repairReport : JSON.stringify(repairResult.repairReport) })
+            throw new Error(`Auto-repair plan failed: ${JSON.stringify(repairResult.repairReport)}`)
           }
-
-          // Reset build_change_set and evaluate_change_set so they re-run with repaired content
-          await db.update(writingJobSteps).set({
-            status: 'pending',
-            output: null,
-            changeSetId: null,
-            finishedAt: null,
-            autoDecision: null,
-            autoDecisionReason: null,
-            updatedAt: now(),
-          }).where(and(
-            eq(writingJobSteps.jobId, job.id),
-            or(eq(writingJobSteps.stepType, 'build_change_set'), eq(writingJobSteps.stepType, 'evaluate_change_set')),
-          ))
-
-          await updateStep(step.id, { status: 'completed', output: JSON.stringify(repairResult.repairReport) })
         }
         else {
-          await updateStep(step.id, { status: 'failed', error: repairResult.repairReport })
-          throw new Error(`Auto-repair failed: ${repairResult.repairReport}`)
+          const draftOutputStr = previousStepOutputs.get('generate_draft') || '{}'
+          const draftOutput = JSON.parse(draftOutputStr)
+          const buildOutputStr = previousStepOutputs.get('build_change_set') || '{}'
+          const buildOutput = JSON.parse(buildOutputStr)
+
+          if (!buildOutput.consistencyReport) {
+            await updateStep(step.id, { status: 'skipped', autoDecisionReason: 'No consistency report found' })
+            return true
+          }
+
+          const repairResult = await attemptAutoRepair({
+            projectId,
+            chapterId: chapterId!,
+            draftContent: draftOutput.draft,
+            consistencyReport: buildOutput.consistencyReport,
+            strategy: (job as any).strategy || 'balanced',
+          })
+
+          if (repairResult.repaired) {
+            const updatedDraftOutput = { ...draftOutput, draft: repairResult.draftContent }
+            const generateDraftStep = reviewSteps.find(s => s.stepType === 'generate_draft')
+            if (generateDraftStep) {
+              await updateStep(generateDraftStep.id, { output: JSON.stringify(updatedDraftOutput) })
+            }
+
+            const oldBuildStep = reviewSteps.find(s => s.stepType === 'build_change_set' && s.changeSetId)
+            if (oldBuildStep?.changeSetId) {
+              await rejectChangeSetSvc(projectId, oldBuildStep.changeSetId)
+            }
+
+            await db.update(writingJobSteps).set({
+              status: 'pending',
+              output: null,
+              changeSetId: null,
+              finishedAt: null,
+              autoDecision: null,
+              autoDecisionReason: null,
+              updatedAt: now(),
+            }).where(and(
+              eq(writingJobSteps.jobId, job.id),
+              or(eq(writingJobSteps.stepType, 'build_change_set'), eq(writingJobSteps.stepType, 'evaluate_change_set')),
+            ))
+
+            await updateStep(step.id, { status: 'completed', output: JSON.stringify(repairResult.repairReport) })
+          }
+          else {
+            await updateStep(step.id, { status: 'failed', error: repairResult.repairReport })
+            throw new Error(`Auto-repair failed: ${repairResult.repairReport}`)
+          }
         }
         break
       }
@@ -1003,7 +1195,7 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
       })
 
       await db.update(writingJobSteps).set({
-        autoDecision: decision.action as any,
+        autoDecision: mapActionToDecision(decision.action),
         autoRiskLevel: decision.riskLevel as any,
         autoDecisionReason: decision.reason,
         autoDecisionReport: decision.report,
@@ -1059,7 +1251,7 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
 
       // 更新步骤决策信息
       await db.update(writingJobSteps).set({
-        autoDecision: decision.action === 'continue' ? 'approved' : (decision.action as any),
+        autoDecision: mapActionToDecision(decision.action),
         autoRiskLevel: decision.riskLevel as any,
         autoDecisionReason: decision.reason,
         autoDecisionReport: decision.report,

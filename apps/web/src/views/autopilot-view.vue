@@ -6,7 +6,6 @@ import {
   ChevronDown,
   GitCompare,
   Lightbulb,
-  PenLine,
   RefreshCw,
   Rocket,
   ShieldCheck,
@@ -199,7 +198,7 @@ const syncItems = [
           </NButton>
           <router-link :to="`/project/${projectId}/write`">
             <NButton variant="secondary">
-              <PenLine :size="16" class="mr-2" /> 打开正文工作区
+              <BookOpen :size="16" class="mr-2" /> 打开正文工作区
             </NButton>
           </router-link>
         </div>
@@ -321,7 +320,7 @@ const syncItems = [
               </div>
             </NPanel>
           </template>
-          <details v-else class="group rounded-lg border border-border-light">
+          <details v-else class="group border border-border-light rounded-lg">
             <summary class="flex cursor-pointer items-center gap-1 p-3 text-xs text-text-muted hover:text-text-secondary">
               <ChevronDown :size="12" class="transition-transform group-open:rotate-180" />
               查看自动同步范围说明

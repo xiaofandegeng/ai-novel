@@ -265,27 +265,37 @@ function getStepOutput(step: WritingJobStep): any | null {
 
             <!-- Toggle decision report for checkpoint steps -->
             <NButton
-              v-if="step.autoDecision && CHECKPOINT_STEP_TYPES.has(step.stepType) && expandedReportStepId !== step.id"
+              v-if="expandedReportStepId !== step.id && (
+                (step.autoDecision && CHECKPOINT_STEP_TYPES.has(step.stepType))
+                || (step.stepType === 'auto_repair' && step.status === 'completed' && step.output)
+              )"
               size="sm"
               variant="ghost"
               class="mt-1"
               @click="expandedReportStepId = step.id"
             >
-              <BookOpen :size="12" class="mr-1" /> 查看决策报告
+              <BookOpen :size="12" class="mr-1" /> {{ step.stepType === 'auto_repair' ? '查看修复记录' : '查看决策报告' }}
             </NButton>
 
             <!-- Automated decision report panel -->
             <div
-              v-if="expandedReportStepId === step.id && CHECKPOINT_STEP_TYPES.has(step.stepType)"
+              v-if="expandedReportStepId === step.id && (
+                CHECKPOINT_STEP_TYPES.has(step.stepType)
+                || (step.stepType === 'auto_repair' && step.status === 'completed')
+              )"
               class="mt-3"
             >
               <div class="bg-bg-base border border-border-light rounded-md p-3">
                 <div class="mb-2 text-xs text-text-muted font-semibold">
-                  AI 生成内容预览
+                  {{ step.stepType === 'auto_repair' ? '修复记录详情' : 'AI 生成内容与决策' }}
                 </div>
 
                 <template v-if="step.stepType === 'validate_plan'">
-                  <div v-if="getReviewOutput(step, steps)" class="text-xs text-text-secondary space-y-2">
+                  <!-- 大纲生成内容预览 -->
+                  <div v-if="getReviewOutput(step, steps)" class="mb-3 border-b border-border-light pb-3 text-xs text-text-secondary space-y-2">
+                    <div class="text-text-primary font-bold">
+                      生成的大纲：
+                    </div>
                     <div v-if="getReviewOutput(step, steps).title" class="text-text-primary font-medium">
                       {{ getReviewOutput(step, steps).title }}
                     </div>
@@ -299,8 +309,43 @@ function getStepOutput(step: WritingJobStep): any | null {
                       <span class="text-text-muted">大纲：</span>{{ getReviewOutput(step, steps).outline }}
                     </div>
                   </div>
-                  <div v-else class="text-xs text-text-muted">
-                    暂无预览内容
+
+                  <!-- 大纲 AI 校验结果报告 -->
+                  <div v-if="step.output" class="text-xs text-text-secondary space-y-2">
+                    <div class="text-text-primary font-bold">
+                      AI 校验诊断报告：
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-text-muted">评估状态：</span>
+                      <NTag
+                        size="sm"
+                        :variant="JSON.parse(step.output).status === 'blocked' ? 'error' : (JSON.parse(step.output).status === 'warning' ? 'warning' : 'success')"
+                      >
+                        {{ JSON.parse(step.output).status === 'blocked' ? '存在阻碍 (Blocked)' : (JSON.parse(step.output).status === 'warning' ? '存在警告 (Warning)' : '通过 (Pass)') }}
+                      </NTag>
+                    </div>
+                    <div v-if="JSON.parse(step.output).issues?.length" class="space-y-1">
+                      <div class="text-text-muted font-medium">
+                        诊断出的问题：
+                      </div>
+                      <ul class="list-disc list-inside pl-1 space-y-1">
+                        <li v-for="(issue, index) in JSON.parse(step.output).issues" :key="index" class="text-red-600">
+                          [{{ issue.type === 'character' ? '角色' : (issue.type === 'plot' ? '剧情' : (issue.type === 'setting' ? '设定' : '其他')) }}]
+                          {{ issue.description }}
+                        </li>
+                      </ul>
+                    </div>
+                    <div v-if="JSON.parse(step.output).suggestions">
+                      <div class="text-text-muted font-medium">
+                        优化建议：
+                      </div>
+                      <div class="mt-1 whitespace-pre-wrap border border-border-light rounded bg-bg-subtle p-2 text-text-secondary leading-relaxed">
+                        {{ JSON.parse(step.output).suggestions }}
+                      </div>
+                    </div>
+                  </div>
+                  <div v-else-if="!getReviewOutput(step, steps)" class="text-xs text-text-muted">
+                    暂无预览内容与诊断报告
                   </div>
                 </template>
 
@@ -332,12 +377,39 @@ function getStepOutput(step: WritingJobStep): any | null {
                   </div>
                 </template>
 
+                <template v-else-if="step.stepType === 'auto_repair'">
+                  <div v-if="getStepOutput(step)" class="text-xs text-text-secondary space-y-2">
+                    <div class="flex items-center gap-1.5 text-blue-600 text-text-primary font-bold">
+                      <RefreshCw :size="12" /> 自动修复记录报告
+                    </div>
+                    <div v-if="getStepOutput(step).repairedAt" class="text-text-muted">
+                      修复时间：{{ new Date(getStepOutput(step).repairedAt).toLocaleString() }}
+                    </div>
+                    <div v-if="getStepOutput(step).originalWarnings?.length" class="space-y-1">
+                      <div class="text-text-muted">
+                        针对以下被诊断的问题进行了微调与一致性矫正：
+                      </div>
+                      <ul class="list-disc list-inside pl-1 text-amber-600 space-y-1">
+                        <li v-for="(warn, warnIdx) in getStepOutput(step).originalWarnings" :key="warnIdx">
+                          [{{ warn.type }}] {{ warn.description }}
+                        </li>
+                      </ul>
+                    </div>
+                    <div v-else class="text-text-muted">
+                      大纲或正文已自动修缮完毕，重新校验通过。
+                    </div>
+                  </div>
+                  <div v-else class="text-xs text-text-muted">
+                    暂无修复记录详情
+                  </div>
+                </template>
+
                 <div class="mt-3 flex gap-2">
                   <NButton
                     size="sm"
                     @click="expandedReportStepId = expandedReportStepId === step.id ? null : step.id"
                   >
-                    <BookOpen :size="12" class="mr-1" /> 关闭报告
+                    <BookOpen :size="12" class="mr-1" /> 关闭
                   </NButton>
                 </div>
               </div>

@@ -51,6 +51,16 @@ export async function decideNextAction(input: {
       break
     }
 
+    case 'validate_plan': {
+      const validateData = tryParseJson(step.output)
+      if (validateData) {
+        riskLevel = validateData.status === 'blocked' ? 'high' : (validateData.status === 'warning' ? 'medium' : 'low')
+        report = validateData
+        reason = `大纲校验结果: ${validateData.status}，包含 ${validateData.issues?.length || 0} 个问题`
+      }
+      break
+    }
+
     case 'evaluate_change_set': {
       // 变更集审查通常由 LLM 或规则给出风险评分
       const reviewData = tryParseJson(step.output)

@@ -150,7 +150,7 @@ function formatDuration(ms: number): string {
     </div>
 
     <!-- Time Stats -->
-    <div class="mt-3 grid grid-cols-3 gap-3">
+    <div class="grid grid-cols-3 mt-3 gap-3">
       <div class="rounded-md bg-bg-subtle p-2 text-center">
         <div class="mb-0.5 flex items-center justify-center gap-1 text-[10px] text-text-muted">
           <Clock :size="10" /> 已用时间
@@ -178,7 +178,7 @@ function formatDuration(ms: number): string {
     </div>
 
     <!-- Current Activity -->
-    <div v-if="runningJob" class="mt-3 rounded-md border border-primary/20 bg-primary/5 p-3">
+    <div v-if="runningJob" class="mt-3 border border-primary/20 rounded-md bg-primary/5 p-3">
       <div class="mb-1 text-[10px] text-text-muted">
         正在处理
       </div>
