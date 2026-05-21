@@ -3,15 +3,10 @@ import {
   Activity,
   BookOpen,
   Bot,
-  Bug,
-  Calendar,
-  ClipboardList,
-  History,
   LayoutDashboard,
   Lightbulb,
   ListTree,
   PenLine,
-  Search,
   Settings,
   Share2,
   Users,
@@ -73,12 +68,6 @@ const setupItems = [
     activeMatch: /outline/,
   },
   {
-    name: '知识库',
-    path: `/project/${props.projectId}/knowledge`,
-    icon: Search,
-    activeMatch: /knowledge/,
-  },
-  {
     name: '角色档案',
     path: `/project/${props.projectId}/characters`,
     icon: Users,
@@ -104,43 +93,9 @@ const setupItems = [
   },
 ]
 
-const systemItems = [
-  {
-    name: '版本历史',
-    path: `/project/${props.projectId}/versions`,
-    icon: History,
-    activeMatch: /versions/,
-  },
-  {
-    name: '创作周报',
-    path: `/project/${props.projectId}/weekly-report`,
-    icon: Calendar,
-    activeMatch: /weekly-report/,
-  },
-  {
-    name: '章后建议',
-    path: `/project/${props.projectId}/suggestions`,
-    icon: ClipboardList,
-    activeMatch: /suggestions/,
-  },
-  {
-    name: '上下文调试',
-    path: `/project/${props.projectId}/context-snapshots`,
-    icon: Bug,
-    activeMatch: /context-snapshots/,
-  },
-  {
-    name: '写作任务调试',
-    path: `/project/${props.projectId}/system/writing-job-debug`,
-    icon: Bug,
-    activeMatch: /writing-job-debug/,
-  },
-]
-
 type SidebarItem = typeof primaryMenuItems[number]
 
 const hasActiveSetup = computed(() => setupItems.some(isActive))
-const hasActiveSystem = computed(() => systemItems.some(isActive))
 
 function isActive(item: SidebarItem) {
   return item.activeMatch.test(route.path)
@@ -194,32 +149,6 @@ function isActive(item: SidebarItem) {
         <div class="mt-1 space-y-1">
           <router-link
             v-for="item in setupItems"
-            :key="item.path"
-            :to="item.path"
-            class="group relative min-h-9 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
-            :class="isActive(item)
-              ? 'bg-primary-soft text-primary shadow-sm'
-              : 'text-text-secondary hover:bg-bg-subtle hover:text-text-primary'"
-          >
-            <span v-if="isActive(item)" class="absolute bottom-2 left-0 top-2 w-1 rounded-r-full bg-primary" />
-            <component
-              :is="item.icon"
-              :size="17"
-              :stroke-width="isActive(item) ? 2.25 : 1.75"
-              :class="isActive(item) ? 'text-primary' : 'text-text-muted group-hover:text-text-secondary'"
-            />
-            <span class="truncate">{{ item.name }}</span>
-          </router-link>
-        </div>
-      </details>
-
-      <details class="pt-1" :open="hasActiveSystem">
-        <summary class="cursor-pointer select-none rounded-md px-3 py-2 text-[11px] text-text-muted font-semibold tracking-widest uppercase hover:bg-bg-subtle hover:text-text-secondary">
-          系统工具
-        </summary>
-        <div class="mt-1 space-y-1">
-          <router-link
-            v-for="item in systemItems"
             :key="item.path"
             :to="item.path"
             class="group relative min-h-9 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors"

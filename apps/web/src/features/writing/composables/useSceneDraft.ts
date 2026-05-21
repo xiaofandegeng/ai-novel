@@ -2,7 +2,6 @@ import type { ChapterScene } from '@ai-novel/shared'
 import type { ComputedRef } from 'vue'
 import type { useSceneStore } from '../../../stores/scene.store'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { recordWritingActivity } from '../../../api/writing-goals'
 
 export function useSceneDraft(
   projectId: string,
@@ -44,14 +43,6 @@ export function useSceneDraft(
         status: 'drafting',
       })
       lastSavedContent.value = sceneContent.value
-      const wordsAdded = Math.max(0, sceneContent.value.length - previousLength)
-      if (wordsAdded > 0) {
-        await recordWritingActivity(projectId, {
-          date: new Date().toISOString().slice(0, 10),
-          wordsAdded,
-          manualWordsAdded: wordsAdded,
-        })
-      }
       saveError.value = null
       return true
     }

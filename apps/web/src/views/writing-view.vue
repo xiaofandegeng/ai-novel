@@ -3,8 +3,7 @@ import { NAppLayout, useToast } from '@ai-novel/ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { triggerChapterPostprocess, triggerScenePostprocess } from '../api/ai'
-import { recordWritingActivity } from '../api/writing-goals'
-import AIQualityFeedbackPanel from '../features/operations/components/ai-quality-feedback-panel.vue'
+// AIQualityFeedbackPanel已被移除
 import AIMultiCandidatePanel from '../features/writing/components/ai-multi-candidate-panel.vue'
 import AIPendingResultPanel from '../features/writing/components/ai-pending-result-panel.vue'
 import AssemblePreviewOverlay from '../features/writing/components/assemble-preview-overlay.vue'
@@ -23,7 +22,6 @@ import { useCharacterStore } from '../stores/character.store'
 import { useProjectStore } from '../stores/project.store'
 import { useSceneStore } from '../stores/scene.store'
 import { useStoryBibleStore } from '../stores/story-bible.store'
-import { useVersionStore } from '../stores/version.store'
 
 const route = useRoute()
 const router = useRouter()
@@ -34,7 +32,6 @@ const projectStore = useProjectStore()
 const characterStore = useCharacterStore()
 const chapterStore = useChapterStore()
 const bibleStore = useStoryBibleStore()
-const versionStore = useVersionStore()
 const chapterElementStore = useChapterElementStore()
 const sceneStore = useSceneStore()
 
@@ -147,13 +144,7 @@ function closeMultiCandidatePanel() {
   showMultiCandidate.value = false
 }
 
-const showFeedback = ref(false)
-const feedbackData = ref<any>(null)
-
-function openFeedback(data: any) {
-  feedbackData.value = data
-  showFeedback.value = true
-}
+// 反览反馈组件已被删除
 
 async function handleSelectCandidate(candidateId: string) {
   const candidate = await selectMultiCandidate(candidateId)
@@ -300,20 +291,7 @@ async function confirmAssemble(mode: 'replace' | 'append') {
 }
 
 async function handleSnapshot() {
-  if (!currentChapterId.value || !draft.value)
-    return
-  try {
-    await versionStore.createSnapshot(
-      projectId,
-      currentChapterId.value,
-      draft.value,
-      `快照 ${new Date().toLocaleTimeString()}`,
-    )
-    toast.add('快照已保存到版本历史', 'success')
-  }
-  catch {
-    toast.add('快照保存失败', 'error')
-  }
+  toast.add('版本历史快照功能已停用', 'info')
 }
 
 function handleSelection(payload: { text: string, start: number, end: number }) {
@@ -361,7 +339,7 @@ async function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discar
   confirmAIResult(action, {
     projectId,
     currentChapterId: currentChapterId.value,
-    versionStore,
+    versionStore: { createSnapshot: async () => {} },
     toast,
     onExtractTitle: (title) => {
       if (currentChapterId.value) {
@@ -378,23 +356,7 @@ async function handleConfirmAI(action: 'insert' | 'replace' | 'backup' | 'discar
   if (!sceneMode.value && (action === 'insert' || action === 'replace'))
     await runPostApplyExtraction(activeContent.value)
 
-  if (acceptedAiWords > 0) {
-    await recordWritingActivity(projectId, {
-      date: new Date().toISOString().slice(0, 10),
-      aiWordsAccepted: acceptedAiWords,
-    })
-
-    // Open feedback panel
-    const res = resultBeforeConfirm
-    if (res && (action === 'insert' || action === 'replace')) {
-      openFeedback({
-        modelProvider: res.modelProvider || 'unknown',
-        modelName: res.modelName || 'unknown',
-        taskType: res.source || 'generation',
-        contextSnapshotId: res.contextSnapshotId,
-      })
-    }
-  }
+  // 移除了 AIQualityFeedbackPanel 的打开逻辑
 }
 
 async function handleInsertAI(content: string) {
@@ -415,13 +377,6 @@ async function handleInsertAI(content: string) {
   }
   if (!sceneMode.value)
     await runPostApplyExtraction(activeContent.value)
-
-  if (content.length > 0) {
-    await recordWritingActivity(projectId, {
-      date: new Date().toISOString().slice(0, 10),
-      aiWordsAccepted: content.length,
-    })
-  }
 }
 
 const updatingMemory = ref(false)
@@ -562,14 +517,6 @@ async function handleUpdateMemory() {
             variant="ghost"
             size="sm"
             class="text-text-muted hover:text-primary"
-            @click="router.push({ path: `/project/${projectId}/versions`, query: { chapter: currentChapterId } })"
-          >
-            <History :size="12" class="mr-1" /> 查看版本历史
-          </NButton>
-          <NButton
-            variant="ghost"
-            size="sm"
-            class="text-text-muted hover:text-primary"
             @click="openMultiCandidatePanel"
           >
             <Columns :size="12" class="mr-1" /> 多模型对比
@@ -613,16 +560,6 @@ async function handleUpdateMemory() {
       @select="handleSelectCandidate"
       @rate="handleRateCandidate"
     />
-    <!-- AI Quality Feedback Panel -->
-    <div v-if="showFeedback && feedbackData" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-      <div class="max-w-md w-full">
-        <AIQualityFeedbackPanel
-          v-bind="feedbackData"
-          :project-id="projectId"
-          :chapter-id="currentChapterId"
-          @close="showFeedback = false"
-        />
-      </div>
-    </div>
+    <!-- AI Quality Feedback Panel 已被移除 -->
   </NAppLayout>
 </template>

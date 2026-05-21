@@ -7,10 +7,8 @@ import { registerActRoutes } from './routes/acts'
 import { registerAiRoutes } from './routes/ai'
 import { registerAICandidateRoutes } from './routes/ai-candidates'
 import { registerAIContextSnapshotRoutes } from './routes/ai-context-snapshots'
-import { registerAIQualityFeedbackRoutes } from './routes/ai-quality-feedback'
 import { registerAIUsageRoutes } from './routes/ai-usage'
 import { registerAuthoringEventRoutes } from './routes/authoring-events'
-import { registerAuthoringReportRoutes } from './routes/authoring-reports'
 import { registerAutonomousRunRoutes } from './routes/autonomous-runs'
 import { registerChapterChangeSetRoutes } from './routes/chapter-change-sets'
 import { registerChapterElementRoutes } from './routes/chapter-elements'
@@ -19,29 +17,18 @@ import { registerCharacterArcRoutes } from './routes/character-arc'
 import { registerCharacterRoutes } from './routes/characters'
 import { registerConflictTimelineRoutes } from './routes/conflict-timeline'
 import { registerConflictRoutes } from './routes/conflicts'
-import { registerContinuityRoutes } from './routes/continuity'
-import { registerDataPortabilityRoutes } from './routes/data-portability'
 import { registerForeshadowingRoutes } from './routes/foreshadowing'
-import { registerForeshadowingAnalysisRoutes } from './routes/foreshadowing-analysis'
-import { registerHealthRoutes } from './routes/health'
 import { registerHealthMetricsRoutes } from './routes/health-metrics'
-import { registerKnowledgeRoutes } from './routes/knowledge'
-import { registerPersonaRoutes } from './routes/persona'
-import { registerPersonaMemoryRoutes } from './routes/persona-memory'
 import { registerPostprocessSuggestionRoutes } from './routes/postprocess-suggestions'
 import { registerProjectRoutes } from './routes/projects'
 import { registerPromptTemplateRoutes } from './routes/prompt-templates'
-import { registerQualityRoutes } from './routes/quality'
 import { registerRelationshipRoutes } from './routes/relationships'
-import { registerRetrievalRoutes } from './routes/retrieval'
 import { registerSceneRoutes } from './routes/scenes'
 import { registerSettingsRoutes } from './routes/settings'
 import { registerStoryBibleRoutes } from './routes/story-bibles'
 import { registerStoryStructureRoutes } from './routes/story-structure'
-import { registerTripleRoutes } from './routes/triples'
 import { registerVersionRoutes } from './routes/versions'
 import { registerVolumeRoutes } from './routes/volumes'
-import { registerWritingGoalRoutes } from './routes/writing-goals'
 import { registerWritingJobRoutes } from './routes/writing-jobs'
 
 const app = new Hono()
@@ -52,10 +39,10 @@ app.use('*', cors({
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
 }))
 
-registerHealthRoutes(app)
 registerProjectRoutes(app)
 registerStoryBibleRoutes(app)
 registerCharacterRoutes(app)
+registerCharacterArcRoutes(app)
 registerVolumeRoutes(app)
 registerActRoutes(app)
 registerChapterRoutes(app)
@@ -64,33 +51,20 @@ registerSceneRoutes(app)
 registerAiRoutes(app)
 registerRelationshipRoutes(app)
 registerConflictRoutes(app)
+registerConflictTimelineRoutes(app)
 registerForeshadowingRoutes(app)
-registerTripleRoutes(app)
 registerVersionRoutes(app)
-registerKnowledgeRoutes(app)
-registerQualityRoutes(app)
 registerHealthMetricsRoutes(app)
 registerSettingsRoutes(app)
-registerPersonaRoutes(app)
 registerWritingJobRoutes(app)
 registerChapterChangeSetRoutes(app)
 registerPostprocessSuggestionRoutes(app)
 registerAIContextSnapshotRoutes(app)
 registerStoryStructureRoutes(app)
-registerContinuityRoutes(app)
-registerPersonaMemoryRoutes(app)
-registerDataPortabilityRoutes(app)
 registerAuthoringEventRoutes(app)
-registerAIQualityFeedbackRoutes(app)
 registerAIUsageRoutes(app)
 registerPromptTemplateRoutes(app)
-registerAuthoringReportRoutes(app)
-registerCharacterArcRoutes(app)
-registerConflictTimelineRoutes(app)
-registerForeshadowingAnalysisRoutes(app)
-registerWritingGoalRoutes(app)
 registerAICandidateRoutes(app)
-registerRetrievalRoutes(app)
 registerAutonomousRunRoutes(app)
 
 app.notFound((c) => {

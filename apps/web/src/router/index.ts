@@ -67,81 +67,11 @@ const router = createRouter({
           redirect: to => `/project/${to.params.id}/autopilot`,
         },
         {
-          path: 'system/writing-job-debug',
-          name: 'writing-job-debug',
-          component: () => import('@/views/writing-job-view.vue'),
-        },
-        {
-          path: 'suggestions',
-          name: 'postprocess-suggestions',
-          component: () => import('@/views/post-chapter-analysis-view.vue'),
-        },
-        {
-          path: 'context-snapshots',
-          name: 'context-snapshots',
-          component: () => import('@/views/ai-context-snapshots-view.vue'),
-        },
-        {
-          path: 'knowledge',
-          name: 'knowledge',
-          component: () => import('@/views/knowledge-base-view.vue'),
-        },
-        {
-          path: 'versions',
-          name: 'versions',
-          component: () => import('@/views/version-history-view.vue'),
-        },
-        {
-          path: 'quality',
-          name: 'quality',
-          component: () => import('@/views/quality-review-view.vue'),
-        },
-        {
           path: 'settings',
           name: 'project-settings',
           component: () => import('@/views/project-settings-view.vue'),
         },
-        {
-          path: 'weekly-report',
-          name: 'weekly-report',
-          component: () => import('@/views/authoring-weekly-report-view.vue'),
-        },
       ],
-    },
-    {
-      path: '/persona',
-      name: 'persona-library',
-      component: () => import('@/views/persona-library-view.vue'),
-    },
-    {
-      path: '/persona/training-set/:id',
-      name: 'training-set-detail',
-      component: () => import('@/views/training-set-detail-view.vue'),
-    },
-    {
-      path: '/persona/work/:workId',
-      name: 'reference-work-detail',
-      component: () => import('@/views/reference-work-detail-view.vue'),
-    },
-    {
-      path: '/persona/:id',
-      name: 'persona-detail',
-      component: () => import('@/views/persona-detail-view.vue'),
-    },
-    {
-      path: '/debug',
-      name: 'debug',
-      component: () => import('@/features/devtools/components/data-viewer-page.vue'),
-    },
-    {
-      path: '/health',
-      name: 'health',
-      component: () => import('@/views/health-check.vue'),
-    },
-    {
-      path: '/design-system',
-      name: 'design-system',
-      component: () => import('@/views/design-system-preview.vue'),
     },
   ],
 })

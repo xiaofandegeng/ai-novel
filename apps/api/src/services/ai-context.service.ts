@@ -227,9 +227,10 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     : []
 
   // 6b. Project-level accumulated writing memory (Scene-aware)
-  const personaMemory = scene !== 'chat'
+  const personaMemoryRes = scene !== 'chat'
     ? await buildPersonaMemoryContext(projectId, scene, userInstruction)
-    : []
+    : null
+  const personaMemory = personaMemoryRes ? [personaMemoryRes] : []
 
   // 7. Assemble Nearby Chapters
   // ... (lines 235-324 skipped) ...

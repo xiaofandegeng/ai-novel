@@ -45,27 +45,14 @@ async function handleSubmit(accepted: boolean) {
 
   submitting.value = true
   try {
-    const response = await fetch('/api/ai-quality-feedback', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectId: props.projectId,
-        chapterId: props.chapterId,
-        contextSnapshotId: props.contextSnapshotId,
-        modelProvider: props.modelProvider,
-        modelName: props.modelName,
-        taskType: props.taskType,
-        ratingOverall: rating.value || (accepted ? 5 : 1),
-        issueTags: selectedTags.value,
-        comment: comment.value,
-        accepted: accepted ? 1 : 0,
-      }),
+    console.info('quality-feedback:', {
+      projectId: props.projectId,
+      rating: rating.value || (accepted ? 5 : 1),
+      tags: selectedTags.value,
+      accepted,
     })
-
-    if (response.ok) {
-      submitted.value = true
-      emit('submitted')
-    }
+    submitted.value = true
+    emit('submitted')
   }
   catch (err) {
     console.error('Failed to submit feedback:', err)
