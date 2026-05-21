@@ -93,7 +93,6 @@ export async function createAutonomousRun(
   } = input
 
   return await db.transaction(async (tx) => {
-    // P2: 实现项目锁，同一时间只能有一个运行中的任务
     const activeRuns = await tx.select().from(autonomousWritingRuns).where(and(
       eq(autonomousWritingRuns.projectId, projectId),
       or(
@@ -102,7 +101,27 @@ export async function createAutonomousRun(
         eq(autonomousWritingRuns.status, 'idle'),
       ),
     ))
-    if (activeRuns.length > 0) {
+
+    // Auto-cleanup stale idle runs (idle for >10 minutes = never started)
+    const STALE_IDLE_MS = 10 * 60 * 1000
+    const trulyActive = activeRuns.filter((r) => {
+      if (r.status !== 'idle')
+        return true
+      const created = r.createdAt ? new Date(r.createdAt).getTime() : 0
+      return Date.now() - created < STALE_IDLE_MS
+    })
+
+    for (const r of activeRuns) {
+      if (r.status === 'idle' && !trulyActive.includes(r)) {
+        await tx.update(autonomousWritingRuns).set({ status: 'abandoned', updatedAt: now() }).where(eq(autonomousWritingRuns.id, r.id))
+        await tx.update(autonomousRunJobs).set({ status: 'skipped', updatedAt: now() }).where(and(
+          eq(autonomousRunJobs.runId, r.id),
+          not(eq(autonomousRunJobs.status, 'completed')),
+        ))
+      }
+    }
+
+    if (trulyActive.length > 0) {
       throw new Error('该项目已有正在进行或待处理的自动驾驶任务，请先暂停或完成后再开启新任务。')
     }
 
@@ -348,7 +367,8 @@ export async function startAutonomousRun(projectId: string, runId: string): Prom
   if (run.status === 'running')
     return
 
-  // 检查是否有其他活跃的自动驾驶任务
+  // Auto-cleanup stale idle runs before checking
+  const STALE_IDLE_MS = 10 * 60 * 1000
   const otherActive = await db.select().from(autonomousWritingRuns).where(and(
     eq(autonomousWritingRuns.projectId, projectId),
     or(
@@ -358,7 +378,18 @@ export async function startAutonomousRun(projectId: string, runId: string): Prom
     ),
     not(eq(autonomousWritingRuns.id, runId)),
   ))
-  if (otherActive.length > 0)
+  const trulyActiveOther = otherActive.filter((r) => {
+    if (r.status !== 'idle')
+      return true
+    const created = r.createdAt ? new Date(r.createdAt).getTime() : 0
+    return Date.now() - created < STALE_IDLE_MS
+  })
+  for (const r of otherActive) {
+    if (r.status === 'idle' && !trulyActiveOther.includes(r)) {
+      await db.update(autonomousWritingRuns).set({ status: 'abandoned', updatedAt: now() }).where(eq(autonomousWritingRuns.id, r.id))
+    }
+  }
+  if (trulyActiveOther.length > 0)
     throw new Error('该项目已有其他正在进行或待处理的自动驾驶任务')
 
   await db.update(autonomousWritingRuns).set({

@@ -2,6 +2,7 @@ import type { ChapterMemory, ChapterPostprocessResult } from '@ai-novel/shared'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, chapterStyleFingerprints, characters, conflicts, foreshadowingItems, novelProjects } from '../db/schema'
+import { generateId } from '../utils'
 import { callAIJSON } from './ai.service'
 import { getOrCreateEmbedding } from './embedding.service'
 import { createSuggestion } from './postprocess-suggestion.service'
@@ -195,7 +196,7 @@ export async function runChapterPostprocess(input: {
   if (!chapter)
     throw new Error('章节不存在')
 
-  const runId = crypto.randomUUID()
+  const runId = generateId()
   const now = new Date().toISOString()
   await db.insert(chapterPostprocessRuns).values({
     id: runId,
@@ -482,7 +483,7 @@ export async function runChapterPostprocess(input: {
     const [memory] = await db
       .insert(chapterMemories)
       .values({
-        id: crypto.randomUUID(),
+        id: generateId(),
         projectId,
         chapterId,
         ...fields,
@@ -512,7 +513,7 @@ export async function runChapterPostprocess(input: {
       eq(chapterStyleFingerprints.chapterId, chapterId),
     ))
     const [fingerprint] = await db.insert(chapterStyleFingerprints).values({
-      id: crypto.randomUUID(),
+      id: generateId(),
       projectId,
       chapterId,
       sceneId: null,
@@ -858,7 +859,7 @@ ${truncatedContent}
     : null
   const styleFingerprint = buildStyleFingerprint(content, styleNotesStr)
   const [fingerprint] = await db.insert(chapterStyleFingerprints).values({
-    id: crypto.randomUUID(),
+    id: generateId(),
     projectId,
     chapterId,
     sceneId,

@@ -35,7 +35,7 @@ export function useAutonomousRun(projectId: string) {
       }
     }
     catch (err: any) {
-      console.error('Failed to load active run', err)
+      error.value = err.message || '加载活跃自动驾驶任务失败'
     }
     finally {
       loading.value = false
@@ -48,6 +48,15 @@ export function useAutonomousRun(projectId: string) {
     try {
       const latestRun = await fetchLatestAutonomousRun(projectId)
       if (latestRun) {
+        // Auto-cleanup stale idle runs (idle >5 min = never started)
+        if (latestRun.status === 'idle') {
+          const created = latestRun.createdAt ? new Date(latestRun.createdAt).getTime() : 0
+          if (Date.now() - created > 5 * 60 * 1000) {
+            await apiAbandonRun(projectId, latestRun.id)
+            currentRun.value = null
+            return
+          }
+        }
         currentRun.value = latestRun
         await loadExceptions(latestRun.id)
         if (latestRun.status === 'running') {
@@ -56,7 +65,7 @@ export function useAutonomousRun(projectId: string) {
       }
     }
     catch (err: any) {
-      console.error('Failed to load latest run', err)
+      error.value = err.message || '加载自动驾驶任务失败'
     }
     finally {
       loading.value = false
@@ -186,8 +195,8 @@ export function useAutonomousRun(projectId: string) {
           stopPolling()
         }
       }
-      catch (e) {
-        console.error('Polling error', e)
+      catch (e: any) {
+        error.value = e.message || '轮询更新失败'
       }
     }, 3000)
   }

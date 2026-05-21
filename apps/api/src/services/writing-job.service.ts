@@ -931,6 +931,10 @@ async function executeStep(
         await executeUpdateHealth(projectId, step.id)
         break
 
+      case 'done':
+        await updateStep(step.id, { output: JSON.stringify({ finished: true }), finishedAt: now() })
+        return true
+
       default:
         await updateStep(step.id, { status: 'skipped', finishedAt: now() })
         return true

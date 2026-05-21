@@ -93,10 +93,10 @@ function getExceptionIcon(type: string) {
             <NButton size="sm" variant="primary" @click="emit('view', ex)">
               <Eye :size="12" class="mr-1" /> 查看详情
             </NButton>
-            <NButton size="sm" outline @click="emit('resolve', ex)">
+            <NButton size="sm" variant="ghost" @click="emit('resolve', ex)">
               <CheckCircle :size="12" class="mr-1" /> 恢复自动运行
             </NButton>
-            <NButton size="sm" outline class="ml-auto">
+            <NButton size="sm" variant="ghost" class="ml-auto">
               <MoreVertical :size="12" />
             </NButton>
           </div>
