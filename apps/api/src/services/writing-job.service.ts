@@ -1058,11 +1058,11 @@ async function executeStep(
               eq(writingJobSteps.stepType, 'validate_plan'),
             ))
 
-            await updateStep(step.id, { status: 'completed', output: JSON.stringify(repairResult.repairReport) })
+            await updateStep(step.id, { status: 'completed', output: JSON.stringify({ success: true, report: repairResult.repairReport }) })
           }
           else {
-            await updateStep(step.id, { status: 'failed', error: typeof repairResult.repairReport === 'string' ? repairResult.repairReport : JSON.stringify(repairResult.repairReport) })
-            throw new Error(`Auto-repair plan failed: ${JSON.stringify(repairResult.repairReport)}`)
+            await updateStep(step.id, { status: 'completed', output: JSON.stringify({ success: false, error: typeof repairResult.repairReport === 'string' ? repairResult.repairReport : JSON.stringify(repairResult.repairReport) }) })
+            return false
           }
         }
         else {
@@ -1109,11 +1109,11 @@ async function executeStep(
               or(eq(writingJobSteps.stepType, 'build_change_set'), eq(writingJobSteps.stepType, 'evaluate_change_set')),
             ))
 
-            await updateStep(step.id, { status: 'completed', output: JSON.stringify(repairResult.repairReport) })
+            await updateStep(step.id, { status: 'completed', output: JSON.stringify({ success: true, report: repairResult.repairReport }) })
           }
           else {
-            await updateStep(step.id, { status: 'failed', error: repairResult.repairReport })
-            throw new Error(`Auto-repair failed: ${repairResult.repairReport}`)
+            await updateStep(step.id, { status: 'completed', output: JSON.stringify({ success: false, error: repairResult.repairReport }) })
+            return false
           }
         }
         break

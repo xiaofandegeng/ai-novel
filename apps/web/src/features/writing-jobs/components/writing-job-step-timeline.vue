@@ -105,6 +105,16 @@ function getStepOutput(step: WritingJobStep): any | null {
     return null
   }
 }
+
+function getRepairReport(step: WritingJobStep): any | null {
+  const output = getStepOutput(step)
+  if (!output)
+    return null
+  if (output && typeof output === 'object' && 'success' in output) {
+    return output.report || output
+  }
+  return output
+}
 </script>
 
 <template>
@@ -378,19 +388,19 @@ function getStepOutput(step: WritingJobStep): any | null {
                 </template>
 
                 <template v-else-if="step.stepType === 'auto_repair'">
-                  <div v-if="getStepOutput(step)" class="text-xs text-text-secondary space-y-2">
+                  <div v-if="getRepairReport(step)" class="text-xs text-text-secondary space-y-2">
                     <div class="flex items-center gap-1.5 text-blue-600 text-text-primary font-bold">
                       <RefreshCw :size="12" /> 自动修复记录报告
                     </div>
-                    <div v-if="getStepOutput(step).repairedAt" class="text-text-muted">
-                      修复时间：{{ new Date(getStepOutput(step).repairedAt).toLocaleString() }}
+                    <div v-if="getRepairReport(step).repairedAt" class="text-text-muted">
+                      修复时间：{{ new Date(getRepairReport(step).repairedAt).toLocaleString() }}
                     </div>
-                    <div v-if="getStepOutput(step).originalWarnings?.length" class="space-y-1">
+                    <div v-if="getRepairReport(step).originalWarnings?.length" class="space-y-1">
                       <div class="text-text-muted">
                         针对以下被诊断的问题进行了微调与一致性矫正：
                       </div>
                       <ul class="list-disc list-inside pl-1 text-amber-600 space-y-1">
-                        <li v-for="(warn, warnIdx) in getStepOutput(step).originalWarnings" :key="warnIdx">
+                        <li v-for="(warn, warnIdx) in getRepairReport(step).originalWarnings" :key="warnIdx">
                           [{{ warn.type }}] {{ warn.description }}
                         </li>
                       </ul>

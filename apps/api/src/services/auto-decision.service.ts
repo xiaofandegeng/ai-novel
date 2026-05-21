@@ -88,7 +88,12 @@ export async function decideNextAction(input: {
   }
 
   // 3. 根据策略和风险等级决定 Action
-  const action = getActionByStrategy(runStrategy, riskLevel)
+  let action = getActionByStrategy(runStrategy, riskLevel)
+
+  // 如果是修复步骤自身失败（高风险），不能再次触发修复，强制隔离（isolate）以跳过推进
+  if (step.stepType === 'auto_repair' && action === 'repair') {
+    action = 'isolate'
+  }
 
   return {
     action,
