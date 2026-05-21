@@ -6,8 +6,8 @@ import {
 } from '@ai-novel/ui'
 import { useRoute } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
-import WritingJobLauncher from '../features/writing-jobs/components/WritingJobLauncher.vue'
-import WritingJobStepTimeline from '../features/writing-jobs/components/WritingJobStepTimeline.vue'
+import WritingJobLauncher from '../features/writing-jobs/components/writing-job-launcher.vue'
+import WritingJobStepTimeline from '../features/writing-jobs/components/writing-job-step-timeline.vue'
 import {
   JOB_STATUS_LABEL,
   JOB_STATUS_VARIANT,

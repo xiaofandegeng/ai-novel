@@ -168,8 +168,7 @@ function polylinePoints(points: CurvePoint[]): string {
         :x="PADDING_LEFT - 8"
         :y="tick.y + 4"
         text-anchor="end"
-        class="fill-text-muted"
-        style="font-size: 10px"
+        class="tick-text fill-text-muted"
       >
         {{ tick.label }}
       </text>
@@ -181,8 +180,7 @@ function polylinePoints(points: CurvePoint[]): string {
         :x="tick.x"
         :y="HEIGHT - 6"
         text-anchor="middle"
-        class="fill-text-muted"
-        style="font-size: 10px"
+        class="tick-text fill-text-muted"
       >
         {{ tick.label }}
       </text>
@@ -250,8 +248,12 @@ function polylinePoints(points: CurvePoint[]): string {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .conflict-intensity-curve {
   font-variant-numeric: tabular-nums;
+}
+
+.tick-text {
+  font-size: 10px;
 }
 </style>

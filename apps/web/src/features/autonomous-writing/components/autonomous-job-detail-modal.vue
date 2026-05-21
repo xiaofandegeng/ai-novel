@@ -7,7 +7,7 @@ import {
 import { AlertCircle, X } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { fetchJobSteps, fetchWritingJobById, retryStep, startWritingJob } from '@/api/writing-jobs'
-import WritingJobStepTimeline from '@/features/writing-jobs/components/WritingJobStepTimeline.vue'
+import WritingJobStepTimeline from '@/features/writing-jobs/components/writing-job-step-timeline.vue'
 
 const props = defineProps<{
   projectId: string

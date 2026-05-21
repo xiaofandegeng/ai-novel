@@ -24,7 +24,7 @@ import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ProjectBreadcrumb from '@/components/ProjectBreadcrumb.vue'
 import AppSidebar from '../components/AppSidebar.vue'
-import CharacterArcTimeline from '../features/characters/components/CharacterArcTimeline.vue'
+import CharacterArcTimeline from '../features/characters/components/character-arc-timeline.vue'
 import { useCharacterArcTimeline } from '../features/characters/composables/useCharacterArcTimeline'
 import { useCharacterWorkspace } from '../features/characters/composables/useCharacterWorkspace'
 import { characterRoleOptions, getCharacterRoleLabel } from '../utils/character-labels'
@@ -481,7 +481,7 @@ watch(activeTab, (tab) => {
   </NAppLayout>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .animate-in {
   animation: animate-in 0.3s ease-out;
 }

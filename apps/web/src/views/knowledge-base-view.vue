@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Character, Conflict, KnowledgeSource, KnowledgeSourceDetail } from '@ai-novel/shared'
-import type { KnowledgeEntry } from '../features/knowledge/components/KnowledgeSearchResults.vue'
+import type { KnowledgeEntry } from '../features/knowledge/components/knowledge-search-results.vue'
 import {
   NAppLayout,
   NInput,
@@ -21,11 +21,11 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ProjectBreadcrumb from '@/components/ProjectBreadcrumb.vue'
 import AppSidebar from '../components/AppSidebar.vue'
-import KnowledgeRetrievalTest from '../features/knowledge/components/KnowledgeRetrievalTest.vue'
-import KnowledgeSearchResults from '../features/knowledge/components/KnowledgeSearchResults.vue'
-import KnowledgeSourceDrawer from '../features/knowledge/components/KnowledgeSourceDrawer.vue'
-import KnowledgeSourceList from '../features/knowledge/components/KnowledgeSourceList.vue'
-import KnowledgeUploadPanel from '../features/knowledge/components/KnowledgeUploadPanel.vue'
+import KnowledgeRetrievalTest from '../features/knowledge/components/knowledge-retrieval-test.vue'
+import KnowledgeSearchResults from '../features/knowledge/components/knowledge-search-results.vue'
+import KnowledgeSourceDrawer from '../features/knowledge/components/knowledge-source-drawer.vue'
+import KnowledgeSourceList from '../features/knowledge/components/knowledge-source-list.vue'
+import KnowledgeUploadPanel from '../features/knowledge/components/knowledge-upload-panel.vue'
 import { useKnowledgeUpload } from '../features/knowledge/composables/useKnowledgeUpload'
 import { useCharacterStore } from '../stores/character.store'
 import { useConflictStore } from '../stores/conflict.store'

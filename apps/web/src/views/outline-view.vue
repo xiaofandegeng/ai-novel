@@ -12,12 +12,12 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 import ProjectBreadcrumb from '@/components/ProjectBreadcrumb.vue'
 import AppSidebar from '../components/AppSidebar.vue'
-import ChapterOutlineEditor from '../features/outline/components/ChapterOutlineEditor.vue'
-import OutlineAIPanel from '../features/outline/components/OutlineAIPanel.vue'
-import ProjectOutlineEditor from '../features/outline/components/ProjectOutlineEditor.vue'
-import ScenePlanner from '../features/outline/components/ScenePlanner.vue'
-import VolumeChapterTree from '../features/outline/components/VolumeChapterTree.vue'
-import VolumeOutlineEditor from '../features/outline/components/VolumeOutlineEditor.vue'
+import ChapterOutlineEditor from '../features/outline/components/chapter-outline-editor.vue'
+import OutlineAIPanel from '../features/outline/components/outline-ai-panel.vue'
+import ProjectOutlineEditor from '../features/outline/components/project-outline-editor.vue'
+import ScenePlanner from '../features/outline/components/scene-planner.vue'
+import VolumeChapterTree from '../features/outline/components/volume-chapter-tree.vue'
+import VolumeOutlineEditor from '../features/outline/components/volume-outline-editor.vue'
 import { useOutlineWorkspace } from '../features/outline/composables/useOutlineWorkspace'
 
 const route = useRoute()

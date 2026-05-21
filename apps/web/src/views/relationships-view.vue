@@ -290,7 +290,7 @@ const relationshipOptions = computed(() => {
   </NAppLayout>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .animate-in {
   animation: animate-in 0.3s ease-out;
 }

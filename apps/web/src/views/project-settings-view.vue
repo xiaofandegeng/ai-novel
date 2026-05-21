@@ -28,9 +28,9 @@ import {
 } from '../api/persona'
 
 import { deleteProject, fetchProject, updateProject } from '../api/projects'
-import AIPromptSettings from '../features/settings/components/AIPromptSettings.vue'
-import ProjectAIProviderSettings from '../features/settings/components/ProjectAIProviderSettings.vue'
-import ProjectExportPanel from '../features/settings/components/ProjectExportPanel.vue'
+import AIPromptSettings from '../features/settings/components/ai-prompt-settings.vue'
+import ProjectAIProviderSettings from '../features/settings/components/project-ai-provider-settings.vue'
+import ProjectExportPanel from '../features/settings/components/project-export-panel.vue'
 import { useAIProviderSettings } from '../features/settings/composables/useAIProviderSettings'
 
 const route = useRoute()

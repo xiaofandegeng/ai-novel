@@ -28,7 +28,7 @@ import {
   STEP_LABEL,
   STEP_STATUS_CONFIG,
 } from '../composables/useWritingJobController'
-import ChapterChangeSetReviewPanel from './ChapterChangeSetReviewPanel.vue'
+import ChapterChangeSetReviewPanel from './chapter-change-set-review-panel.vue'
 
 const props = defineProps<{
   job: WritingJob

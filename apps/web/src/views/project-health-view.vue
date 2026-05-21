@@ -20,7 +20,7 @@ import {
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchHealthMetrics } from '../api/health-metrics'
-import HealthRadarChart from '../features/health/components/HealthRadarChart.vue'
+import HealthRadarChart from '../features/health/components/health-radar-chart.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -245,13 +245,13 @@ onMounted(() => {
               <div v-if="metrics.tensionTrend.length === 0" class="py-6 text-center text-sm text-text-muted italic">
                 暂无张力指纹数据，完成章后分析后会自动生成。
               </div>
-              <div v-else class="flex items-end gap-2" style="height: 120px">
+              <div v-else class="tension-trend-container flex items-end gap-2">
                 <div
                   v-for="item in metrics.tensionTrend"
                   :key="item.chapter"
                   class="flex flex-1 flex-col items-center gap-2"
                 >
-                  <div class="w-full flex items-end rounded-t bg-bg-subtle" style="height: 96px">
+                  <div class="tension-trend-bar-wrapper w-full flex items-end rounded-t bg-bg-subtle">
                     <div
                       class="w-full rounded-t bg-primary/80 transition-all"
                       :style="{ height: `${Math.max(4, item.tension)}%` }"
@@ -323,7 +323,15 @@ onMounted(() => {
   </div>
 </template>
 
-<style scoped lang="scss">
+<style lang="scss" scoped>
+.tension-trend-container {
+  height: 120px;
+}
+
+.tension-trend-bar-wrapper {
+  height: 96px;
+}
+
 .animate-spin {
   animation: spin 2s linear infinite;
 }

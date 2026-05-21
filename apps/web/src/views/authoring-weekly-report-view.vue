@@ -217,7 +217,7 @@ function formatDate(dateStr: string) {
               <TrendingUp :size="20" class="text-primary" />
               每日字数统计
             </h2>
-            <div class="flex items-end gap-2" style="height: 120px">
+            <div class="daily-chart-container flex items-end gap-2">
               <div
                 v-for="stat in dailyStats"
                 :key="stat.id"
@@ -238,3 +238,9 @@ function formatDate(dateStr: string) {
     </div>
   </NAppLayout>
 </template>
+
+<style lang="scss" scoped>
+.daily-chart-container {
+  height: 120px;
+}
+</style>

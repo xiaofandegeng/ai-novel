@@ -21,6 +21,11 @@ const emit = defineEmits<{
   (e: 'runAi', type: 'continue' | 'polish' | 'expand' | 'shorten' | 'draft'): void
 }>()
 
+defineSlots<{
+  'version-history'?: (props: Record<string, never>) => any
+  'ai-pending-result'?: (props: Record<string, never>) => any
+}>()
+
 const draft = defineModel<string>({ required: true })
 
 const editorRef = ref<HTMLTextAreaElement | null>(null)

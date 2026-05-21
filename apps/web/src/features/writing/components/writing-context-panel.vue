@@ -4,7 +4,7 @@ import { NTag } from '@ai-novel/ui'
 import { BookOpen, ChevronRight, ScrollText, Sparkles, Users } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { getCharacterRoleLabel } from '../../../utils/character-labels'
-import AIAssistantSidebar from '../../ai-assistant/components/AIAssistantSidebar.vue'
+import AIAssistantSidebar from '../../ai-assistant/components/ai-assistant-sidebar.vue'
 
 type AIScene = 'outline' | 'draft' | 'polish' | 'quality' | 'chat'
 

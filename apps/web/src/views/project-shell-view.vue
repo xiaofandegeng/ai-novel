@@ -5,7 +5,7 @@ import { useRoute } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import ProjectBreadcrumb from '@/components/ProjectBreadcrumb.vue'
 import { useProjectStore } from '@/stores/project.store'
-import ProjectShellOutlet from './ProjectShellOutlet.vue'
+import ProjectShellOutlet from './project-shell-outlet.vue'
 
 const route = useRoute()
 const projectStore = useProjectStore()

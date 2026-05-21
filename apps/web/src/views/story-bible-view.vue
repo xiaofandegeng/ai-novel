@@ -235,7 +235,7 @@ const {
   </NAppLayout>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .font-writing {
   font-family: serif;
 }

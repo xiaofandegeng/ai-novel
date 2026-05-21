@@ -12,7 +12,7 @@ import {
   Users,
   X,
 } from 'lucide-vue-next'
-import ChapterTitleField from './ChapterTitleField.vue'
+import ChapterTitleField from './chapter-title-field.vue'
 
 defineProps<{
   characters: Character[]

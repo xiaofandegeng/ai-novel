@@ -18,7 +18,7 @@ import {
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from '../components/AppSidebar.vue'
-import ForeshadowingGanttChart from '../features/foreshadowing/components/ForeshadowingGanttChart.vue'
+import ForeshadowingGanttChart from '../features/foreshadowing/components/foreshadowing-gantt-chart.vue'
 import { useForeshadowingGantt } from '../features/foreshadowing/composables/useForeshadowingGantt'
 import {
   FORESHADOWING_STATUS_LABEL,

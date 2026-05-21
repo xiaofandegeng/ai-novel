@@ -391,6 +391,6 @@ function clearError() {
   </NModal>
 </template>
 
-<style>
+<style lang="scss" scoped>
 /* Inline toast render since NToast is a separate component */
 </style>

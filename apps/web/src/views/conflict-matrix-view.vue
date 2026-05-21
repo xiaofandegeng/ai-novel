@@ -28,7 +28,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ProjectBreadcrumb from '@/components/ProjectBreadcrumb.vue'
 import { useChapterStore } from '@/stores/chapter.store'
 import AppSidebar from '../components/AppSidebar.vue'
-import ConflictIntensityCurve from '../features/conflicts/components/ConflictIntensityCurve.vue'
+import ConflictIntensityCurve from '../features/conflicts/components/conflict-intensity-curve.vue'
 import { useConflictTimeline } from '../features/conflicts/composables/useConflictTimeline'
 import { CONFLICT_STATUS_OPTIONS, CONFLICT_TYPES, useConflictWorkspace } from '../features/conflicts/composables/useConflictWorkspace'
 
@@ -312,7 +312,7 @@ onMounted(async () => {
   </NAppLayout>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .animate-in {
   animation: animate-in 0.3s ease-out;
 }
