@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import type { AutonomousRunJob } from '@ai-novel/shared'
-import type { Chapter } from '@ai-novel/shared'
+import type { AutonomousRunJob, Chapter } from '@ai-novel/shared'
 import { CheckCircle2, Circle, Loader2, XCircle } from 'lucide-vue-next'
 import { computed } from 'vue'
 
@@ -18,8 +17,17 @@ const sortedChapters = computed(() =>
   [...props.chapters].sort((a, b) => a.chapterNumber - b.chapterNumber),
 )
 
-function getJobForChapter(chapterId: string): AutonomousRunJob | undefined {
-  return props.jobs.find(j => j.chapterId === chapterId)
+const jobMap = computed(() => new Map(props.jobs.map(j => [j.chapterId, j])))
+
+const completedCount = computed(() => props.jobs.filter(j => j.status === 'completed').length)
+
+function getStepBarColor(status: string | undefined) {
+  switch (status) {
+    case 'running': return 'bg-primary'
+    case 'completed': return 'bg-green-500'
+    case 'failed': return 'bg-red-400'
+    default: return 'bg-border-light'
+  }
 }
 
 function getStatusIcon(status: string | undefined) {
@@ -40,10 +48,6 @@ function getStatusColor(status: string | undefined) {
     default: return 'text-text-muted/30'
   }
 }
-
-function getJobStatus(job: AutonomousRunJob | undefined): string | undefined {
-  return job?.status
-}
 </script>
 
 <template>
@@ -53,7 +57,7 @@ function getJobStatus(job: AutonomousRunJob | undefined): string | undefined {
         章节列表
       </h3>
       <span class="text-[10px] text-text-muted">
-        {{ jobs.filter(j => j.status === 'completed').length }} / {{ jobs.length }}
+        {{ completedCount }} / {{ jobs.length }}
       </span>
     </div>
 
@@ -66,30 +70,29 @@ function getJobStatus(job: AutonomousRunJob | undefined): string | undefined {
         @click="$emit('switch', ch.id)"
       >
         <component
-          :is="getStatusIcon(getJobStatus(getJobForChapter(ch.id)))"
+          :is="getStatusIcon(jobMap.get(ch.id)?.status)"
           :size="14"
-          :class="[getStatusColor(getJobStatus(getJobForChapter(ch.id))), getJobStatus(getJobForChapter(ch.id)) === 'running' ? 'animate-spin' : '']"
+          :class="[getStatusColor(jobMap.get(ch.id)?.status), jobMap.get(ch.id)?.status === 'running' ? 'animate-spin' : '']"
         />
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-1.5">
             <span class="text-[10px] font-mono opacity-50">{{ ch.chapterNumber }}</span>
             <span class="truncate text-xs">{{ ch.title }}</span>
           </div>
-          <div
-            v-if="getJobForChapter(ch.id)?.stepSummary && getJobForChapter(ch.id)!.stepSummary!.totalSteps > 0"
-            class="mt-1"
-          >
-            <div class="h-0.5 w-full overflow-hidden rounded-full bg-bg-subtle">
-              <div
-                class="h-full transition-all duration-300"
-                :class="getJobStatus(getJobForChapter(ch.id)) === 'running' ? 'bg-primary' : getJobStatus(getJobForChapter(ch.id)) === 'completed' ? 'bg-green-500' : 'bg-border-light'"
-                :style="{ width: `${(getJobForChapter(ch.id)!.stepSummary!.completedSteps / getJobForChapter(ch.id)!.stepSummary!.totalSteps) * 100}%` }"
-              />
+          <template v-if="jobMap.get(ch.id)?.stepSummary && jobMap.get(ch.id)!.stepSummary!.totalSteps > 0">
+            <div class="mt-1">
+              <div class="h-0.5 w-full overflow-hidden rounded-full bg-bg-subtle">
+                <div
+                  class="h-full transition-all duration-300"
+                  :class="getStepBarColor(jobMap.get(ch.id)?.status)"
+                  :style="{ width: `${(jobMap.get(ch.id)!.stepSummary!.completedSteps / jobMap.get(ch.id)!.stepSummary!.totalSteps) * 100}%` }"
+                />
+              </div>
+              <div v-if="jobMap.get(ch.id)?.stepSummary?.currentStepLabel" class="mt-0.5 text-[9px] text-text-muted truncate">
+                {{ jobMap.get(ch.id)!.stepSummary!.currentStepLabel }}
+              </div>
             </div>
-            <div v-if="getJobForChapter(ch.id)?.stepSummary?.currentStepLabel" class="mt-0.5 text-[9px] text-text-muted truncate">
-              {{ getJobForChapter(ch.id)!.stepSummary!.currentStepLabel }}
-            </div>
-          </div>
+          </template>
         </div>
       </button>
 

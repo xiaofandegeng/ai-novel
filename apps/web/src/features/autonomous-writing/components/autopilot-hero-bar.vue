@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AutonomousRunJob, AutonomousWritingRun } from '@ai-novel/shared'
 import type { TagVariant } from '@ai-novel/ui'
 import { NButton, NTag } from '@ai-novel/ui'
 import {
@@ -9,12 +10,11 @@ import {
   RefreshCw,
   Rocket,
   Square,
-  Timer,
 } from 'lucide-vue-next'
 import { ref } from 'vue'
 
 defineProps<{
-  currentRun: any
+  currentRun: AutonomousWritingRun & { jobs: AutonomousRunJob[] }
   loading?: boolean
   totalJobs: number
   completedJobs: number
@@ -23,7 +23,7 @@ defineProps<{
   elapsedMs: number
   estimatedRemainingMs: number
   averageMsPerChapter: number
-  runningJob: any | null
+  runningJob: AutonomousRunJob | null
 }>()
 
 const emit = defineEmits<{

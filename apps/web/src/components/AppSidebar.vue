@@ -26,13 +26,13 @@ const primaryMenuItems = [
     name: '正文工作区',
     path: `/project/${props.projectId}/write`,
     icon: PenLine,
-    activeMatch: /write/,
+    activeMatch: (path: string, query: Record<string, any>) => path.includes('/write') && query.mode !== 'autopilot',
   },
   {
     name: '自动驾驶',
     path: `/project/${props.projectId}/write?mode=autopilot`,
     icon: Bot,
-    activeMatch: (path: string) => path.includes('/write') && new URLSearchParams(window.location.search).get('mode') === 'autopilot',
+    activeMatch: (path: string, query: Record<string, any>) => path.includes('/write') && query.mode === 'autopilot',
   },
   {
     name: '项目总览',
@@ -99,7 +99,7 @@ const hasActiveSetup = computed(() => setupItems.some(isActive))
 
 function isActive(item: SidebarItem) {
   if (typeof item.activeMatch === 'function') {
-    return item.activeMatch(route.path)
+    return item.activeMatch(route.path, route.query)
   }
   return item.activeMatch.test(route.path)
 }

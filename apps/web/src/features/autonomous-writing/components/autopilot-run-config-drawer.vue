@@ -2,7 +2,7 @@
 import type { AutonomousScopeType, AutonomousStrategy, Chapter } from '@ai-novel/shared'
 import { NDrawer, NInput, NSelect } from '@ai-novel/ui'
 import { Rocket } from 'lucide-vue-next'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { fetchChapters } from '@/api/chapters'
 
 const props = defineProps<{
@@ -49,7 +49,7 @@ const chapterOptions = computed(() =>
 )
 
 watch(() => props.open, async (isOpen) => {
-  if (isOpen && chapters.value.length === 0) {
+  if (isOpen) {
     try {
       chapters.value = await fetchChapters(props.projectId)
     }
@@ -59,20 +59,13 @@ watch(() => props.open, async (isOpen) => {
   }
 })
 
-onMounted(async () => {
-  try {
-    chapters.value = await fetchChapters(props.projectId)
-  }
-  catch (err) {
-    console.error('Failed to fetch chapters', err)
-  }
-})
-
 function handleStart() {
+  const chapterCount = Number.parseInt(form.value.targetChapterCount)
+  const wordsPerChapter = Number.parseInt(form.value.targetWordsPerChapter)
   emit('start', {
     ...form.value,
-    targetChapterCount: form.value.scopeType === 'next_n_chapters' ? Number.parseInt(form.value.targetChapterCount) : undefined,
-    targetWordsPerChapter: Number.parseInt(form.value.targetWordsPerChapter),
+    targetChapterCount: form.value.scopeType === 'next_n_chapters' && !Number.isNaN(chapterCount) ? chapterCount : undefined,
+    targetWordsPerChapter: !Number.isNaN(wordsPerChapter) ? wordsPerChapter : 3000,
     startChapterId: form.value.startChapterId || undefined,
     endChapterId: form.value.endChapterId || undefined,
   })

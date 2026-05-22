@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { NAppLayout, useToast } from '@ai-novel/ui'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import type { CreateAutonomousRunInput } from '@ai-novel/shared'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { triggerChapterPostprocess, triggerScenePostprocess } from '../api/ai'
 import AutopilotChapterNavigator from '../features/autonomous-writing/components/autopilot-chapter-navigator.vue'
@@ -77,12 +78,10 @@ const autopilotCurrentJob = computed(() =>
   autopilotJobs.value.find((j: any) => j.chapterId === currentChapterId.value) ?? null,
 )
 
-let prevCompletedCount = 0
-watch(autopilotCompletedJobs, (count) => {
-  if (count > prevCompletedCount && mode.value === 'autopilot') {
+watch(autopilotCompletedJobs, (count, prevCount) => {
+  if (count > prevCount && mode.value === 'autopilot') {
     chapterStore.fetchChapters(projectId)
   }
-  prevCompletedCount = count
 })
 
 watch(mode, (newMode) => {
@@ -95,11 +94,10 @@ watch(mode, (newMode) => {
   }
 })
 
-async function handleAutopilotStart(input: any) {
+async function handleAutopilotStart(input: CreateAutonomousRunInput) {
   try {
     const run = await createAutopilotRun(input)
     await startAutopilotRun(run.id)
-    await loadAutopilotRun(run.id)
     showRunConfigDrawer.value = false
   }
   catch (err) {
@@ -109,17 +107,14 @@ async function handleAutopilotStart(input: any) {
 
 async function handleAutopilotPause(runId: string) {
   await pauseAutopilotRun(runId)
-  await loadAutopilotRun(runId)
 }
 
 async function handleAutopilotResume(runId: string) {
   await resumeAutopilotRun(runId)
-  await loadAutopilotRun(runId)
 }
 
 async function handleAutopilotAbandon(runId: string) {
   await abandonAutopilotRun(runId)
-  await loadAutopilotRun(runId)
 }
 
 function handleAutopilotNewRun() {
@@ -608,13 +603,27 @@ async function handleUpdateMemory() {
 
         <!-- No active run banner -->
         <div v-else class="flex items-center justify-center gap-3 border-b border-border-light bg-bg-surface px-4 py-6">
-          <p class="text-sm text-text-muted">暂无自动驾驶任务</p>
-          <button
-            class="rounded-md bg-primary px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-hover"
-            @click="showRunConfigDrawer = true"
-          >
-            启动自动驾驶
-          </button>
+          <template v-if="autopilotLoading">
+            <span class="text-sm text-text-muted">加载中...</span>
+          </template>
+          <template v-else-if="autopilotError">
+            <span class="text-sm text-red-500">{{ autopilotError }}</span>
+            <button
+              class="rounded-md bg-primary px-3 py-1 text-xs text-white"
+              @click="loadLatestAutopilotRun()"
+            >
+              重试
+            </button>
+          </template>
+          <template v-else>
+            <span class="text-sm text-text-muted">暂无自动驾驶任务</span>
+            <button
+              class="rounded-md bg-primary px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-hover"
+              @click="showRunConfigDrawer = true"
+            >
+              启动自动驾驶
+            </button>
+          </template>
         </div>
 
         <AutopilotChapterReader
