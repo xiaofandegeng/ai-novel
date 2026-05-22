@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { NAppLayout, useToast } from '@ai-novel/ui'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { triggerChapterPostprocess, triggerScenePostprocess } from '../api/ai'
+import AutopilotChapterNavigator from '../features/autonomous-writing/components/autopilot-chapter-navigator.vue'
+import AutopilotChapterReader from '../features/autonomous-writing/components/autopilot-chapter-reader.vue'
+import AutopilotHeroBar from '../features/autonomous-writing/components/autopilot-hero-bar.vue'
+import AutopilotModeToggle from '../features/autonomous-writing/components/autopilot-mode-toggle.vue'
+import AutopilotRunConfigDrawer from '../features/autonomous-writing/components/autopilot-run-config-drawer.vue'
+import { useAutonomousRun } from '../features/autonomous-writing/composables/useAutonomousRun'
 // AIQualityFeedbackPanel已被移除
 import AIMultiCandidatePanel from '../features/writing/components/ai-multi-candidate-panel.vue'
 import AIPendingResultPanel from '../features/writing/components/ai-pending-result-panel.vue'
@@ -38,6 +44,92 @@ const sceneStore = useSceneStore()
 const loading = ref(true)
 const fullScreen = ref(false)
 const sceneMode = ref(false)
+const mode = ref<'manual' | 'autopilot'>(
+  (route.query.mode as string) === 'autopilot' ? 'autopilot' : 'manual',
+)
+const showRunConfigDrawer = ref(false)
+
+// --- Autopilot mode ---
+const {
+  currentRun: autopilotRun,
+  error: autopilotError,
+  loadLatestRun: loadLatestAutopilotRun,
+  loadRun: loadAutopilotRun,
+  loading: autopilotLoading,
+  createRun: createAutopilotRun,
+  start: startAutopilotRun,
+  pause: pauseAutopilotRun,
+  resume: resumeAutopilotRun,
+  abandon: abandonAutopilotRun,
+  totalJobs: autopilotTotalJobs,
+  completedJobs: autopilotCompletedJobs,
+  failedJobs: autopilotFailedJobs,
+  chapterProgress: autopilotChapterProgress,
+  elapsedMs: autopilotElapsedMs,
+  estimatedRemainingMs: autopilotEstimatedRemainingMs,
+  runningJob: autopilotRunningJob,
+  averageMsPerChapter: autopilotAverageMsPerChapter,
+  stopPolling: stopAutopilotPolling,
+} = useAutonomousRun(projectId)
+
+const autopilotJobs = computed(() => autopilotRun.value?.jobs ?? [])
+const autopilotCurrentJob = computed(() =>
+  autopilotJobs.value.find((j: any) => j.chapterId === currentChapterId.value) ?? null,
+)
+
+let prevCompletedCount = 0
+watch(autopilotCompletedJobs, (count) => {
+  if (count > prevCompletedCount && mode.value === 'autopilot') {
+    chapterStore.fetchChapters(projectId)
+  }
+  prevCompletedCount = count
+})
+
+watch(mode, (newMode) => {
+  router.replace({ query: { ...route.query, mode: newMode === 'autopilot' ? 'autopilot' : undefined } })
+  if (newMode === 'autopilot') {
+    loadLatestAutopilotRun()
+  }
+  else {
+    stopAutopilotPolling()
+  }
+})
+
+async function handleAutopilotStart(input: any) {
+  try {
+    const run = await createAutopilotRun(input)
+    await startAutopilotRun(run.id)
+    await loadAutopilotRun(run.id)
+    showRunConfigDrawer.value = false
+  }
+  catch (err) {
+    console.error('Failed to start run', err)
+  }
+}
+
+async function handleAutopilotPause(runId: string) {
+  await pauseAutopilotRun(runId)
+  await loadAutopilotRun(runId)
+}
+
+async function handleAutopilotResume(runId: string) {
+  await resumeAutopilotRun(runId)
+  await loadAutopilotRun(runId)
+}
+
+async function handleAutopilotAbandon(runId: string) {
+  await abandonAutopilotRun(runId)
+  await loadAutopilotRun(runId)
+}
+
+function handleAutopilotNewRun() {
+  autopilotRun.value = null
+  showRunConfigDrawer.value = true
+}
+
+function switchChapterAutopilot(id: string) {
+  router.push({ query: { ...route.query, chapter: id } })
+}
 
 const currentChapterId = computed(() => route.query.chapter as string)
 const currentChapter = computed(() =>
@@ -183,6 +275,10 @@ onMounted(async () => {
     }
     else if (currentChapter.value) {
       loadChapter(currentChapter.value)
+    }
+
+    if (mode.value === 'autopilot') {
+      await loadLatestAutopilotRun()
     }
   }
   catch {
@@ -462,21 +558,93 @@ async function handleUpdateMemory() {
     </template>
 
     <template #topbar-right>
-      <WritingHeaderActions
-        v-model:scene-mode="sceneMode"
-        v-model:full-screen="fullScreen"
-        :scene-save-error="!!sceneSaveError"
-        :active-saving="activeSaving"
-        :active-word-count="activeWordCount"
-        :updating-memory="updatingMemory"
-        :draft-exists="!!draft"
-        @snapshot="handleSnapshot"
-        @update-memory="handleUpdateMemory"
-        @run-quality-audit="handleRunAI('quality')"
-      />
+      <div class="flex items-center gap-3">
+        <AutopilotModeToggle v-model="mode" />
+        <WritingHeaderActions
+          v-if="mode === 'manual'"
+          v-model:scene-mode="sceneMode"
+          v-model:full-screen="fullScreen"
+          :scene-save-error="!!sceneSaveError"
+          :active-saving="activeSaving"
+          :active-word-count="activeWordCount"
+          :updating-memory="updatingMemory"
+          :draft-exists="!!draft"
+          @snapshot="handleSnapshot"
+          @update-memory="handleUpdateMemory"
+          @run-quality-audit="handleRunAI('quality')"
+        />
+      </div>
     </template>
 
-    <div class="h-full flex overflow-hidden bg-bg-page">
+    <!-- Autopilot mode -->
+    <div v-if="mode === 'autopilot'" class="h-full flex overflow-hidden bg-bg-page">
+      <AutopilotChapterNavigator
+        v-if="!fullScreen"
+        :chapters="chapterStore.chapters"
+        :current-chapter-id="currentChapterId"
+        :jobs="autopilotJobs"
+        @switch="switchChapterAutopilot"
+      />
+
+      <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <AutopilotHeroBar
+          v-if="autopilotRun"
+          :current-run="autopilotRun"
+          :loading="autopilotLoading"
+          :total-jobs="autopilotTotalJobs"
+          :completed-jobs="autopilotCompletedJobs"
+          :failed-jobs="autopilotFailedJobs"
+          :chapter-progress="autopilotChapterProgress"
+          :elapsed-ms="autopilotElapsedMs"
+          :estimated-remaining-ms="autopilotEstimatedRemainingMs"
+          :average-ms-per-chapter="autopilotAverageMsPerChapter"
+          :running-job="autopilotRunningJob"
+          @pause="handleAutopilotPause"
+          @resume="handleAutopilotResume"
+          @abandon="handleAutopilotAbandon"
+          @new-run="handleAutopilotNewRun"
+          @refresh="autopilotRun ? loadAutopilotRun(autopilotRun.id) : loadLatestAutopilotRun()"
+        />
+
+        <!-- No active run banner -->
+        <div v-else class="flex items-center justify-center gap-3 border-b border-border-light bg-bg-surface px-4 py-6">
+          <p class="text-sm text-text-muted">暂无自动驾驶任务</p>
+          <button
+            class="rounded-md bg-primary px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-hover"
+            @click="showRunConfigDrawer = true"
+          >
+            启动自动驾驶
+          </button>
+        </div>
+
+        <AutopilotChapterReader
+          :chapter="currentChapter"
+          :job="autopilotCurrentJob"
+          :loading="loading"
+        />
+      </div>
+
+      <WritingContextPanel
+        v-if="!fullScreen"
+        ref="contextPanelRef"
+        :chapter="currentChapter"
+        :characters="characterStore.characters"
+        :story-bible="bibleStore.storyBible"
+        :chapter-elements="chapterElementStore.elements"
+        :project-id="projectId"
+        :scene-id="null"
+        :project-summary="projectSummary"
+        :story-path="storyPath"
+        @apply-a-i="applyAIResult"
+        @insert-a-i="handleInsertAI"
+        @consistency-check="updateConsistency($event.report, $event.loading)"
+        @run-ai="handleRunAI"
+        @stream-a-i="applyAIResult"
+      />
+    </div>
+
+    <!-- Manual mode (existing layout) -->
+    <div v-else class="h-full flex overflow-hidden bg-bg-page">
       <!-- Scene panel (only in scene mode) -->
       <SceneDraftPanel
         v-if="sceneMode && !fullScreen"
@@ -545,6 +713,15 @@ async function handleUpdateMemory() {
         @stream-a-i="applyAIResult"
       />
     </div>
+
+    <!-- Autopilot run config drawer -->
+    <AutopilotRunConfigDrawer
+      :project-id="projectId"
+      :open="showRunConfigDrawer"
+      :loading="autopilotLoading"
+      @start="handleAutopilotStart"
+      @close="showRunConfigDrawer = false"
+    />
 
     <!-- Multi-candidate comparison panel -->
     <AIMultiCandidatePanel

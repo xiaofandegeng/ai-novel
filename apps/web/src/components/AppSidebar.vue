@@ -23,22 +23,22 @@ const route = useRoute()
 
 const primaryMenuItems = [
   {
-    name: '自动驾驶舱',
-    path: `/project/${props.projectId}/autopilot`,
+    name: '正文工作区',
+    path: `/project/${props.projectId}/write`,
+    icon: PenLine,
+    activeMatch: /write/,
+  },
+  {
+    name: '自动驾驶',
+    path: `/project/${props.projectId}/write?mode=autopilot`,
     icon: Bot,
-    activeMatch: /autopilot/,
+    activeMatch: (path: string) => path.includes('/write') && new URLSearchParams(window.location.search).get('mode') === 'autopilot',
   },
   {
     name: '项目总览',
     path: `/project/${props.projectId}`,
     icon: LayoutDashboard,
     activeMatch: /^\/project\/[^/]+$/,
-  },
-  {
-    name: '正文工作区',
-    path: `/project/${props.projectId}/write`,
-    icon: PenLine,
-    activeMatch: /write/,
   },
   {
     name: '健康巡检',
@@ -98,6 +98,9 @@ type SidebarItem = typeof primaryMenuItems[number]
 const hasActiveSetup = computed(() => setupItems.some(isActive))
 
 function isActive(item: SidebarItem) {
+  if (typeof item.activeMatch === 'function') {
+    return item.activeMatch(route.path)
+  }
   return item.activeMatch.test(route.path)
 }
 </script>

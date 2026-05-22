@@ -59,12 +59,11 @@ const router = createRouter({
         },
         {
           path: 'autopilot',
-          name: 'autopilot',
-          component: () => import('@/views/autopilot-view.vue'),
+          redirect: to => `/project/${to.params.id}/write?mode=autopilot`,
         },
         {
           path: 'writing-job',
-          redirect: to => `/project/${to.params.id}/autopilot`,
+          redirect: to => `/project/${to.params.id}/write?mode=autopilot`,
         },
         {
           path: 'settings',

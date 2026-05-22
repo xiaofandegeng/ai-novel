@@ -274,5 +274,6 @@ export function useAutonomousRun(projectId: string) {
     abandon,
     resolveException,
     ignoreException,
+    stopPolling,
   }
 }
