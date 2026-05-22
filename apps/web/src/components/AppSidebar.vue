@@ -1,16 +1,8 @@
 <script setup lang="ts">
 import {
-  Activity,
   BookOpen,
-  Bot,
   LayoutDashboard,
-  Lightbulb,
-  ListTree,
-  PenLine,
   Settings,
-  Share2,
-  Users,
-  Zap,
 } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
@@ -21,30 +13,12 @@ const props = defineProps<{
 
 const route = useRoute()
 
-const primaryMenuItems = [
+const menuItems = computed(() => [
   {
-    name: '正文工作区',
-    path: `/project/${props.projectId}/write`,
-    icon: PenLine,
-    activeMatch: (path: string, query: Record<string, any>) => path.includes('/write') && query.mode !== 'autopilot',
-  },
-  {
-    name: '自动驾驶',
-    path: `/project/${props.projectId}/write?mode=autopilot`,
-    icon: Bot,
-    activeMatch: (path: string, query: Record<string, any>) => path.includes('/write') && query.mode === 'autopilot',
-  },
-  {
-    name: '项目总览',
+    name: '自动写作驾驶舱',
     path: `/project/${props.projectId}`,
     icon: LayoutDashboard,
     activeMatch: /^\/project\/[^/]+$/,
-  },
-  {
-    name: '健康巡检',
-    path: `/project/${props.projectId}/health`,
-    icon: Activity,
-    activeMatch: /health/,
   },
   {
     name: '项目设置',
@@ -52,55 +26,16 @@ const primaryMenuItems = [
     icon: Settings,
     activeMatch: /settings/,
   },
-]
+])
 
-const setupItems = [
-  {
-    name: '故事设定集',
-    path: `/project/${props.projectId}/bible`,
-    icon: BookOpen,
-    activeMatch: /bible/,
-  },
-  {
-    name: '大纲规划',
-    path: `/project/${props.projectId}/outline`,
-    icon: ListTree,
-    activeMatch: /outline/,
-  },
-  {
-    name: '角色档案',
-    path: `/project/${props.projectId}/characters`,
-    icon: Users,
-    activeMatch: /characters/,
-  },
-  {
-    name: '关系图谱',
-    path: `/project/${props.projectId}/relationships`,
-    icon: Share2,
-    activeMatch: /relationships/,
-  },
-  {
-    name: '矛盾矩阵',
-    path: `/project/${props.projectId}/conflicts`,
-    icon: Zap,
-    activeMatch: /conflicts/,
-  },
-  {
-    name: '伏笔台账',
-    path: `/project/${props.projectId}/foreshadowing`,
-    icon: Lightbulb,
-    activeMatch: /foreshadowing/,
-  },
-]
-
-type SidebarItem = typeof primaryMenuItems[number]
-
-const hasActiveSetup = computed(() => setupItems.some(isActive))
+interface SidebarItem {
+  name: string
+  path: string
+  icon: any
+  activeMatch: RegExp
+}
 
 function isActive(item: SidebarItem) {
-  if (typeof item.activeMatch === 'function') {
-    return item.activeMatch(route.path, route.query)
-  }
   return item.activeMatch.test(route.path)
 }
 </script>
@@ -121,10 +56,10 @@ function isActive(item: SidebarItem) {
 
     <nav class="flex-1 overflow-y-auto p-3 space-y-1">
       <div class="px-3 pb-2 pt-1 text-[11px] text-text-muted font-semibold tracking-widest uppercase">
-        自动化主流程
+        自动化导航
       </div>
       <router-link
-        v-for="item in primaryMenuItems"
+        v-for="item in menuItems"
         :key="item.path"
         :to="item.path"
         class="group relative min-h-10 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
@@ -144,32 +79,6 @@ function isActive(item: SidebarItem) {
         />
         <span class="truncate">{{ item.name }}</span>
       </router-link>
-
-      <details class="pt-3" :open="hasActiveSetup">
-        <summary class="cursor-pointer select-none rounded-md px-3 py-2 text-[11px] text-text-muted font-semibold tracking-widest uppercase hover:bg-bg-subtle hover:text-text-secondary">
-          基础设定
-        </summary>
-        <div class="mt-1 space-y-1">
-          <router-link
-            v-for="item in setupItems"
-            :key="item.path"
-            :to="item.path"
-            class="group relative min-h-9 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors"
-            :class="isActive(item)
-              ? 'bg-primary-soft text-primary shadow-sm'
-              : 'text-text-secondary hover:bg-bg-subtle hover:text-text-primary'"
-          >
-            <span v-if="isActive(item)" class="absolute bottom-2 left-0 top-2 w-1 rounded-r-full bg-primary" />
-            <component
-              :is="item.icon"
-              :size="17"
-              :stroke-width="isActive(item) ? 2.25 : 1.75"
-              :class="isActive(item) ? 'text-primary' : 'text-text-muted group-hover:text-text-secondary'"
-            />
-            <span class="truncate">{{ item.name }}</span>
-          </router-link>
-        </div>
-      </details>
     </nav>
 
     <div class="border-t border-border-light p-4">

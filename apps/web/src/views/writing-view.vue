@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { NAppLayout, useToast } from '@ai-novel/ui'
 import type { CreateAutonomousRunInput } from '@ai-novel/shared'
+import { NAppLayout, useToast } from '@ai-novel/ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { triggerChapterPostprocess, triggerScenePostprocess } from '../api/ai'
 import AutopilotChapterNavigator from '../features/autonomous-writing/components/autopilot-chapter-navigator.vue'
 import AutopilotChapterReader from '../features/autonomous-writing/components/autopilot-chapter-reader.vue'
+import AutopilotCharacterPanel from '../features/autonomous-writing/components/autopilot-character-panel.vue'
 import AutopilotHeroBar from '../features/autonomous-writing/components/autopilot-hero-bar.vue'
 import AutopilotModeToggle from '../features/autonomous-writing/components/autopilot-mode-toggle.vue'
 import AutopilotRunConfigDrawer from '../features/autonomous-writing/components/autopilot-run-config-drawer.vue'
@@ -73,6 +74,11 @@ const {
   stopPolling: stopAutopilotPolling,
 } = useAutonomousRun(projectId)
 
+const currentChapterId = computed(() => (route.query.chapter as string) || '')
+const currentChapter = computed(() =>
+  chapterStore.chapters.find(c => c.id === currentChapterId.value),
+)
+
 const autopilotJobs = computed(() => autopilotRun.value?.jobs ?? [])
 const autopilotCurrentJob = computed(() =>
   autopilotJobs.value.find((j: any) => j.chapterId === currentChapterId.value) ?? null,
@@ -91,6 +97,13 @@ watch(mode, (newMode) => {
   }
   else {
     stopAutopilotPolling()
+  }
+})
+
+watch(() => route.query.mode, (newMode) => {
+  const target = newMode === 'autopilot' ? 'autopilot' : 'manual'
+  if (mode.value !== target) {
+    mode.value = target
   }
 })
 
@@ -118,6 +131,7 @@ async function handleAutopilotAbandon(runId: string) {
 }
 
 function handleAutopilotNewRun() {
+  stopAutopilotPolling()
   autopilotRun.value = null
   showRunConfigDrawer.value = true
 }
@@ -125,11 +139,6 @@ function handleAutopilotNewRun() {
 function switchChapterAutopilot(id: string) {
   router.push({ query: { ...route.query, chapter: id } })
 }
-
-const currentChapterId = computed(() => route.query.chapter as string)
-const currentChapter = computed(() =>
-  chapterStore.chapters.find(c => c.id === currentChapterId.value),
-)
 
 const projectSummary = computed(() => {
   const p = projectStore.currentProject
@@ -581,7 +590,7 @@ async function handleUpdateMemory() {
         @switch="switchChapterAutopilot"
       />
 
-      <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div class="min-w-0 flex flex-1 flex-col overflow-hidden">
         <AutopilotHeroBar
           v-if="autopilotRun"
           :current-run="autopilotRun"
@@ -618,7 +627,7 @@ async function handleUpdateMemory() {
           <template v-else>
             <span class="text-sm text-text-muted">暂无自动驾驶任务</span>
             <button
-              class="rounded-md bg-primary px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-hover"
+              class="rounded-md bg-primary px-4 py-1.5 text-xs text-white font-medium transition-colors hover:bg-primary-hover"
               @click="showRunConfigDrawer = true"
             >
               启动自动驾驶
@@ -633,22 +642,10 @@ async function handleUpdateMemory() {
         />
       </div>
 
-      <WritingContextPanel
+      <AutopilotCharacterPanel
         v-if="!fullScreen"
-        ref="contextPanelRef"
-        :chapter="currentChapter"
-        :characters="characterStore.characters"
-        :story-bible="bibleStore.storyBible"
-        :chapter-elements="chapterElementStore.elements"
         :project-id="projectId"
-        :scene-id="null"
-        :project-summary="projectSummary"
-        :story-path="storyPath"
-        @apply-a-i="applyAIResult"
-        @insert-a-i="handleInsertAI"
-        @consistency-check="updateConsistency($event.report, $event.loading)"
-        @run-ai="handleRunAI"
-        @stream-a-i="applyAIResult"
+        :refresh-trigger="autopilotCompletedJobs"
       />
     </div>
 

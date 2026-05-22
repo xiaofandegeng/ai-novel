@@ -78,7 +78,7 @@ function handleStart() {
     title="启动自动驾驶"
     @update:model-value="$emit('close')"
   >
-    <div class="space-y-4 p-2">
+    <div class="p-2 space-y-4">
       <div class="grid grid-cols-2 gap-4">
         <NSelect
           v-model="form.strategy"
@@ -141,7 +141,7 @@ function handleStart() {
       </div>
 
       <button
-        class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-50"
+        class="w-full flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm text-white font-medium transition-colors hover:bg-primary-hover disabled:opacity-50"
         :disabled="loading || (['chapter_range', 'rewrite_selected', 'from_current_forward'].includes(form.scopeType) && !form.startChapterId)"
         @click="handleStart"
       >

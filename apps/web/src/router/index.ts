@@ -15,55 +15,47 @@ const router = createRouter({
         {
           path: '',
           name: 'project-home',
-          component: () => import('@/views/project-home-view.vue'),
+          component: () => import('@/views/automation-cockpit-view.vue'),
         },
         {
           path: 'bible',
-          name: 'story-bible',
-          component: () => import('@/views/story-bible-view.vue'),
+          redirect: to => `/project/${to.params.id}`,
         },
         {
           path: 'characters',
-          name: 'characters',
-          component: () => import('@/views/characters-view.vue'),
+          redirect: to => `/project/${to.params.id}`,
         },
         {
           path: 'outline',
-          name: 'outline',
-          component: () => import('@/views/outline-view.vue'),
+          redirect: to => `/project/${to.params.id}`,
         },
         {
           path: 'write',
-          name: 'write',
-          component: () => import('@/views/writing-view.vue'),
+          redirect: to => `/project/${to.params.id}`,
         },
         {
           path: 'relationships',
-          name: 'relationships',
-          component: () => import('@/views/relationships-view.vue'),
+          redirect: to => `/project/${to.params.id}`,
         },
         {
           path: 'conflicts',
-          name: 'conflicts',
-          component: () => import('@/views/conflict-matrix-view.vue'),
+          redirect: to => `/project/${to.params.id}`,
         },
         {
           path: 'foreshadowing',
-          name: 'foreshadowing',
-          component: () => import('@/views/foreshadowing-ledger-view.vue'),
+          redirect: to => `/project/${to.params.id}`,
         },
         {
           path: 'health',
-          name: 'project-health',
-          component: () => import('@/views/project-health-view.vue'),
+          redirect: to => `/project/${to.params.id}`,
         },
         {
           path: 'autopilot',
-          redirect: to => `/project/${to.params.id}/write?mode=autopilot`,
+          redirect: to => `/project/${to.params.id}`,
         },
         {
           path: 'writing-job',
-          redirect: to => `/project/${to.params.id}/write?mode=autopilot`,
+          redirect: to => `/project/${to.params.id}`,
         },
         {
           path: 'settings',

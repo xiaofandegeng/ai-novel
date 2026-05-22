@@ -59,13 +59,16 @@ function getStatusLabel(status: string): string {
 }
 
 function formatDuration(ms: number): string {
-  if (ms <= 0) return '--'
+  if (ms <= 0)
+    return '--'
   const totalSeconds = Math.floor(ms / 1000)
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
-  if (hours > 0) return `${hours}h ${minutes}m`
-  if (minutes > 0) return `${minutes}m ${seconds}s`
+  if (hours > 0)
+    return `${hours}h ${minutes}m`
+  if (minutes > 0)
+    return `${minutes}m ${seconds}s`
   return `${seconds}s`
 }
 </script>
@@ -142,16 +145,28 @@ function formatDuration(ms: number): string {
     <div v-if="expanded" class="border-t border-border-light px-4 py-2">
       <div class="grid grid-cols-3 gap-3">
         <div class="text-center">
-          <div class="text-[10px] text-text-muted">已用时间</div>
-          <div class="text-xs font-bold">{{ formatDuration(elapsedMs) }}</div>
+          <div class="text-[10px] text-text-muted">
+            已用时间
+          </div>
+          <div class="text-xs font-bold">
+            {{ formatDuration(elapsedMs) }}
+          </div>
         </div>
         <div class="text-center">
-          <div class="text-[10px] text-text-muted">预计剩余</div>
-          <div class="text-xs font-bold">{{ estimatedRemainingMs > 0 ? formatDuration(estimatedRemainingMs) : '--' }}</div>
+          <div class="text-[10px] text-text-muted">
+            预计剩余
+          </div>
+          <div class="text-xs font-bold">
+            {{ estimatedRemainingMs > 0 ? formatDuration(estimatedRemainingMs) : '--' }}
+          </div>
         </div>
         <div class="text-center">
-          <div class="text-[10px] text-text-muted">平均每章</div>
-          <div class="text-xs font-bold">{{ averageMsPerChapter > 0 ? formatDuration(averageMsPerChapter) : '--' }}</div>
+          <div class="text-[10px] text-text-muted">
+            平均每章
+          </div>
+          <div class="text-xs font-bold">
+            {{ averageMsPerChapter > 0 ? formatDuration(averageMsPerChapter) : '--' }}
+          </div>
         </div>
       </div>
 

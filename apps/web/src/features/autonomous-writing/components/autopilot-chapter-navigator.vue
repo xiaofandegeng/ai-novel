@@ -88,7 +88,7 @@ function getStatusColor(status: string | undefined) {
                   :style="{ width: `${(jobMap.get(ch.id)!.stepSummary!.completedSteps / jobMap.get(ch.id)!.stepSummary!.totalSteps) * 100}%` }"
                 />
               </div>
-              <div v-if="jobMap.get(ch.id)?.stepSummary?.currentStepLabel" class="mt-0.5 text-[9px] text-text-muted truncate">
+              <div v-if="jobMap.get(ch.id)?.stepSummary?.currentStepLabel" class="mt-0.5 truncate text-[9px] text-text-muted">
                 {{ jobMap.get(ch.id)!.stepSummary!.currentStepLabel }}
               </div>
             </div>

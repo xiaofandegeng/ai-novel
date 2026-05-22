@@ -9,6 +9,7 @@ import { registerAICandidateRoutes } from './routes/ai-candidates'
 import { registerAIContextSnapshotRoutes } from './routes/ai-context-snapshots'
 import { registerAIUsageRoutes } from './routes/ai-usage'
 import { registerAuthoringEventRoutes } from './routes/authoring-events'
+import { registerAutomationCockpitRoutes } from './routes/automation-cockpit'
 import { registerAutonomousRunRoutes } from './routes/autonomous-runs'
 import { registerChapterChangeSetRoutes } from './routes/chapter-change-sets'
 import { registerChapterElementRoutes } from './routes/chapter-elements'
@@ -66,6 +67,7 @@ registerAIUsageRoutes(app)
 registerPromptTemplateRoutes(app)
 registerAICandidateRoutes(app)
 registerAutonomousRunRoutes(app)
+registerAutomationCockpitRoutes(app)
 
 app.notFound((c) => {
   return c.json({ error: 'Not Found' }, 404)

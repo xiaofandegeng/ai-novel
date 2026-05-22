@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import type { AutonomousRunJob } from '@ai-novel/shared'
-import type { Chapter } from '@ai-novel/shared'
+import type { AutonomousRunJob, Chapter } from '@ai-novel/shared'
 import { NTag } from '@ai-novel/ui'
 import { BookOpen, Loader2 } from 'lucide-vue-next'
 import { computed } from 'vue'
@@ -39,7 +38,7 @@ function getJobStatusVariant(status: string | undefined): string {
 </script>
 
 <template>
-  <div class="autopilot-chapter-reader flex h-full flex-col overflow-hidden">
+  <div class="autopilot-chapter-reader h-full flex flex-col overflow-hidden">
     <!-- Header -->
     <div v-if="chapter" class="flex items-center justify-between border-b border-border-light px-6 py-3">
       <div class="flex items-center gap-3">
@@ -48,7 +47,7 @@ function getJobStatusVariant(status: string | undefined): string {
           <h3 class="text-sm font-bold">
             第 {{ chapter.chapterNumber }} 章 · {{ chapter.title }}
           </h3>
-          <p v-if="chapter.outline" class="mt-0.5 text-[10px] text-text-muted line-clamp-1">
+          <p v-if="chapter.outline" class="line-clamp-1 mt-0.5 text-[10px] text-text-muted">
             {{ chapter.outline }}
           </p>
         </div>
@@ -64,7 +63,7 @@ function getJobStatusVariant(status: string | undefined): string {
     <!-- Content -->
     <div class="flex-1 overflow-y-auto">
       <!-- Empty / loading state -->
-      <div v-if="!chapter || loading" class="flex h-full items-center justify-center">
+      <div v-if="!chapter || loading" class="h-full flex items-center justify-center">
         <div class="text-center">
           <Loader2 v-if="loading" :size="24" class="mx-auto mb-2 animate-spin text-primary" />
           <BookOpen v-else :size="32" class="mx-auto mb-3 text-text-muted/20" />
@@ -75,25 +74,29 @@ function getJobStatusVariant(status: string | undefined): string {
       </div>
 
       <!-- No content yet -->
-      <div v-else-if="!chapter.draft" class="flex h-full items-center justify-center">
+      <div v-else-if="!chapter.draft" class="h-full flex items-center justify-center">
         <div class="text-center">
           <template v-if="job?.status === 'running'">
             <Loader2 :size="24" class="mx-auto mb-2 animate-spin text-primary" />
-            <p class="text-sm text-text-muted">正在生成中...</p>
+            <p class="text-sm text-text-muted">
+              正在生成中...
+            </p>
             <p v-if="job.stepSummary?.currentStepLabel" class="mt-1 text-xs text-text-muted">
               {{ job.stepSummary.currentStepLabel }}
             </p>
           </template>
           <template v-else>
             <BookOpen :size="32" class="mx-auto mb-3 text-text-muted/20" />
-            <p class="text-sm text-text-muted">该章节尚未生成内容</p>
+            <p class="text-sm text-text-muted">
+              该章节尚未生成内容
+            </p>
           </template>
         </div>
       </div>
 
       <!-- Chapter content -->
       <div v-else class="mx-auto max-w-3xl px-8 py-6">
-        <div class="whitespace-pre-wrap break-words font-serif text-sm leading-[1.9] text-text-primary">
+        <div class="whitespace-pre-wrap break-words text-sm text-text-primary leading-[1.9] font-serif">
           {{ chapter.draft }}
         </div>
       </div>
