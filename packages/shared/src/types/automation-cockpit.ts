@@ -94,6 +94,9 @@ export interface CockpitPlotDirection {
   nextChapterGoal?: string
   nextChapterEvents?: string
   suggestions?: string[]
+  globalGuardrails?: string[]
+  activeConstraints?: string[]
+  healthWarnings?: string[]
 }
 
 export interface CockpitHealthSummary {
@@ -110,7 +113,7 @@ export interface CockpitHealthSummary {
 export interface CockpitNarrativeEvent {
   id: string
   type: string
-  status: 'auto_applied' | 'pending_review' | 'isolated' | 'failed' | 'ignored'
+  status: 'auto_applied' | 'pending_review' | 'isolated' | 'failed' | 'ignored' | 'approved'
   title: string
   summary: string
   sourceChapterId?: string

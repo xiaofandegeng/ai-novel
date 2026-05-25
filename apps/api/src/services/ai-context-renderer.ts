@@ -11,6 +11,35 @@ export function renderAIContext(context: BuiltAIContext): string {
     sections.push(`【故事设定】\n世界观: ${context.storyBible.worldview || '未定义'}\n主冲突: ${context.storyBible.mainConflict || '未定义'}\n规则: ${context.storyBible.rules || '未定义'}`)
   }
 
+  if (context.globalControl) {
+    const controlLines: string[] = []
+    if (context.globalControl.themeGuardrails.length > 0) {
+      controlLines.push(`主题与题材护栏:\n${context.globalControl.themeGuardrails.map(i => `- ${i}`).join('\n')}`)
+    }
+    if (context.globalControl.plotDirection.length > 0) {
+      controlLines.push(`全局剧情走向:\n${context.globalControl.plotDirection.map(i => `- ${i}`).join('\n')}`)
+    }
+    if (context.globalControl.characterGuardrails.length > 0) {
+      controlLines.push(`人物不可越界约束:\n${context.globalControl.characterGuardrails.map(i => `- ${i}`).join('\n')}`)
+    }
+    if (context.globalControl.relationshipGuardrails.length > 0) {
+      controlLines.push(`关系连续性约束:\n${context.globalControl.relationshipGuardrails.map(i => `- ${i}`).join('\n')}`)
+    }
+    if (context.globalControl.conflictGuardrails.length > 0) {
+      controlLines.push(`活跃矛盾推进要求:\n${context.globalControl.conflictGuardrails.map(i => `- ${i}`).join('\n')}`)
+    }
+    if (context.globalControl.foreshadowingGuardrails.length > 0) {
+      controlLines.push(`伏笔责任:\n${context.globalControl.foreshadowingGuardrails.map(i => `- ${i}`).join('\n')}`)
+    }
+    if (context.globalControl.healthWarnings.length > 0) {
+      controlLines.push(`当前健康风险:\n${context.globalControl.healthWarnings.map(i => `- ${i}`).join('\n')}`)
+    }
+
+    if (controlLines.length > 0) {
+      sections.push(`【全局剧情控制台】\n${controlLines.join('\n\n')}\n\n硬性原则：本次输出必须优先服从全局剧情控制台。若局部指令与主题、人物动机、关系状态、主线冲突或既有事实冲突，必须选择不破坏全局连续性的写法。`)
+    }
+  }
+
   if (context.currentVolume) {
     sections.push(`【当前分卷】\n标题: ${context.currentVolume.title}\n分卷大纲: ${context.currentVolume.summary || '未定义'}`)
   }

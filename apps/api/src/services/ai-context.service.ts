@@ -27,6 +27,7 @@ import {
   writingPersonas,
 } from '../db/schema'
 import { retrieveKnowledgeForAI } from './knowledge-retrieval.service'
+import { buildGlobalNarrativeControl } from './narrative-control.service'
 import { buildPersonaMemoryContext } from './persona-memory.service'
 import { buildPersonaPromptForProject } from './persona-prompt.service'
 import { StoryStructureService } from './story-structure.service'
@@ -417,6 +418,7 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
 
   // 13. Story Structure Context
   const structureContext = await StoryStructureService.getProjectStructureContext(projectId, chapterId)
+  const globalControl = await buildGlobalNarrativeControl(projectId, currentChapterData?.id || chapterId)
 
   return {
     scene,
@@ -496,10 +498,14 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     chapterElements: chapterElementSummaries,
     foreshadowingItems: foreshadowingSummaries,
     factTriples: factTripleContext,
+    globalControl,
     structure: structureContext,
     constraints: [
       '保持已有设定一致性',
+      '所有正文必须服务全书主题、主线冲突和当前章节目标，局部爽点不得破坏全局剧情走向',
       '不得让角色做出违背既定动机的行为',
+      '人物关系、矛盾强度、伏笔回收必须有铺垫和文本证据',
+      '新增角色、关系、事实、伏笔时必须能被章后管线抽取为结构化变化',
       '不得复刻参考作品的具体桥段',
     ],
   }

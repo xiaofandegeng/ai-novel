@@ -41,7 +41,7 @@ export const useAutomationCockpitStore = defineStore('automationCockpit', () => 
       if (payload.value?.events) {
         const item = payload.value.events.find(e => e.id === itemId)
         if (item)
-          item.status = 'auto_applied'
+          item.status = 'approved'
       }
     }
     catch (e: any) {

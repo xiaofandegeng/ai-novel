@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { CockpitPlotDirection } from '@ai-novel/shared'
-import { ArrowRightCircle, Compass, Navigation, Target } from 'lucide-vue-next'
+import { AlertTriangle, ArrowRightCircle, Compass, LockKeyhole, Navigation, Target } from 'lucide-vue-next'
 
 defineProps<{
   plotDirection: CockpitPlotDirection | null
@@ -9,13 +9,49 @@ defineProps<{
 
 <template>
   <div class="plot-direction-panel">
-    <div v-if="!plotDirection || (!plotDirection.themeProgress && !plotDirection.nextChapterGoal && !plotDirection.suggestions?.length)" class="empty-state">
+    <div v-if="!plotDirection || (!plotDirection.themeProgress && !plotDirection.nextChapterGoal && !plotDirection.suggestions?.length && !plotDirection.globalGuardrails?.length)" class="empty-state">
       <Compass :size="32" class="empty-icon" />
       <p>暂无走向提示。AI将随着写作流推进自动为您生成下一章大纲建议与冲突爆点。</p>
     </div>
 
     <div v-else class="direction-container">
       <!-- 主题进度 -->
+      <div v-if="plotDirection.globalGuardrails?.length" class="direction-section">
+        <div class="section-title">
+          <LockKeyhole :size="16" class="icon-guard" />
+          <span>全局剧情护栏</span>
+        </div>
+        <ul class="constraint-list">
+          <li v-for="(item, index) in plotDirection.globalGuardrails" :key="`guard-${index}`">
+            {{ item }}
+          </li>
+        </ul>
+      </div>
+
+      <div v-if="plotDirection.activeConstraints?.length" class="direction-section">
+        <div class="section-title">
+          <Target :size="16" class="icon-target" />
+          <span>人物与关系不可越界</span>
+        </div>
+        <ul class="constraint-list compact">
+          <li v-for="(item, index) in plotDirection.activeConstraints" :key="`constraint-${index}`">
+            {{ item }}
+          </li>
+        </ul>
+      </div>
+
+      <div v-if="plotDirection.healthWarnings?.length" class="direction-section">
+        <div class="section-title">
+          <AlertTriangle :size="16" class="icon-warning" />
+          <span>当前偏航预警</span>
+        </div>
+        <ul class="constraint-list warning">
+          <li v-for="(item, index) in plotDirection.healthWarnings" :key="`warning-${index}`">
+            {{ item }}
+          </li>
+        </ul>
+      </div>
+
       <div v-if="plotDirection.themeProgress" class="direction-section">
         <div class="section-title">
           <Compass :size="16" class="icon-compass" />
@@ -127,6 +163,12 @@ defineProps<{
       .icon-suggest {
         color: var(--success, #10b981);
       }
+      .icon-guard {
+        color: var(--primary, #0f766e);
+      }
+      .icon-warning {
+        color: var(--warning, #f59e0b);
+      }
     }
 
     .section-content {
@@ -206,6 +248,35 @@ defineProps<{
           color: var(--text-secondary, #4b5563);
           line-height: 1.4;
         }
+      }
+    }
+
+    .constraint-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin: 0;
+      padding: 0;
+
+      li {
+        border: 1px solid var(--border-light, #e5e7eb);
+        border-left: 4px solid var(--primary, #0f766e);
+        border-radius: 0.5rem;
+        background-color: var(--bg-surface, #ffffff);
+        padding: 0.625rem 0.75rem;
+        color: var(--text-secondary, #4b5563);
+        font-size: 0.8125rem;
+        line-height: 1.45;
+      }
+
+      &.compact li {
+        border-left-color: var(--purple, #8b5cf6);
+      }
+
+      &.warning li {
+        border-left-color: var(--warning, #f59e0b);
+        background-color: var(--warning-soft, #fffbeb);
       }
     }
   }

@@ -10,6 +10,7 @@ export type AIProviderId
     | 'kimi'
     | 'zhipu-glm'
     | 'gemini'
+    | 'tuf-gemini'
     | 'volcengine-ark'
     | 'openai-compatible'
 
@@ -89,6 +90,24 @@ export const AI_PROVIDER_PRESETS: AIProviderPreset[] = [
       { label: 'Gemini 1.5 Flash', value: 'gemini-1.5-flash' },
       { label: 'Gemini 1.5 Pro', value: 'gemini-1.5-pro' },
     ],
+  },
+  {
+    id: 'tuf-gemini',
+    label: '土匪 Gemini',
+    description: '用于自建或代理的 Gemini OpenAI 兼容网关。适合使用非官方网关、反代网关或团队内部 Gemini 代理。',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    defaultModel: 'gemini-2.5-flash',
+    defaultEmbeddingModel: 'text-embedding-004',
+    apiKeyHint: '填写土匪 Gemini 网关的 API Key；如网关地址不同，请修改 API Base URL。',
+    models: [
+      { label: 'Gemini 2.5 Flash', value: 'gemini-2.5-flash' },
+      { label: 'Gemini 2.5 Pro', value: 'gemini-2.5-pro' },
+      { label: 'Gemini 2.0 Flash', value: 'gemini-2.0-flash' },
+      { label: 'Gemini 1.5 Flash', value: 'gemini-1.5-flash' },
+      { label: 'Gemini 1.5 Pro', value: 'gemini-1.5-pro' },
+      { label: '自定义模型名', value: 'custom-gemini-model' },
+    ],
+    requiresCustomModel: true,
   },
   {
     id: 'volcengine-ark',

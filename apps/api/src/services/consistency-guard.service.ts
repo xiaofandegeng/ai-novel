@@ -33,7 +33,7 @@ export async function runConsistencyGuard(projectId: string, input: RunConsisten
   const fullPrompt = `你是一位严谨的小说一致性守卫。你的任务是审查 AI 生成的内容是否偏离了作品的已有设定、人物性格、剧情逻辑和文风。
 
 【审查任务】
-你正在审查场景 scene=${scene}${hasScene ? '（场景级正文）' : ''} 的 AI 生成结果。请根据该场景的具体上下文判断生成内容是否违背主题、人物、设定、前后文和风格。
+你正在审查场景 scene=${scene}${hasScene ? '（场景级正文）' : ''} 的 AI 生成结果。请根据该场景的具体上下文判断生成内容是否违背主题、人物、设定、前后文、全局剧情控制台和文风。
 ${sceneCheckInstructions}
 
 ${contextPrompt}
@@ -51,8 +51,9 @@ ${generatedText}
 1. overallStatus: "pass" (无风险), "warning" (轻微偏差), "blocked" (严重冲突/人物崩坏/设定漂移)。
 2. score: 0-100 的一致性得分。
 3. 必须分别对 themeAlignment, plotContinuity, characterConsistency, worldRuleConsistency, foreshadowingConsistency, styleConsistency 这六个维度进行评分和原因说明。
-4. risks: 具体的风险点列表。${hasScene ? ' 每个风险必须标明 scope 为 "chapter"（章节级）或 "scene"（场景级）。' : ''}
-5. suggestedFixes: 具体的修改建议列表。
+4. 如果生成内容违背【全局剧情控制台】中的主题护栏、人物不可越界约束、关系连续性、活跃矛盾推进要求或伏笔责任，必须至少给 warning；严重冲突必须 blocked。
+5. risks: 具体的风险点列表。${hasScene ? ' 每个风险必须标明 scope 为 "chapter"（章节级）或 "scene"（场景级）。' : ''}
+6. suggestedFixes: 具体的修改建议列表。
 
 返回 JSON 格式（不要包含 markdown 代码块标记）：
 {

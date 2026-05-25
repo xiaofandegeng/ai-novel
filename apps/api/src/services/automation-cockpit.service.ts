@@ -29,6 +29,7 @@ import {
   projectHealthReports,
   writingJobSteps,
 } from '../db/schema'
+import { buildGlobalNarrativeControl } from './narrative-control.service'
 
 const STEP_LABEL_MAP: Record<string, string> = {
   prepare_context: '构建上下文',
@@ -272,11 +273,21 @@ export class AutomationCockpitService {
       .orderBy(desc(chapterMemories.createdAt))
       .limit(1)
 
+    const globalControl = await buildGlobalNarrativeControl(projectId, runSummary?.currentChapterId)
     const plotDirection: CockpitPlotDirection = {
       themeProgress: latestMemory?.themeProgress || '项目已正常启动，进入全自动写作流程。',
-      nextChapterGoal: undefined,
-      nextChapterEvents: undefined,
-      suggestions: [],
+      nextChapterGoal: globalControl.plotDirection.find(i => i.startsWith('下一章目标：'))?.replace('下一章目标：', ''),
+      nextChapterEvents: globalControl.plotDirection.find(i => i.startsWith('下一章关键事件：'))?.replace('下一章关键事件：', ''),
+      suggestions: [
+        ...globalControl.conflictGuardrails.slice(0, 2).map(i => `推进矛盾：${i}`),
+        ...globalControl.foreshadowingGuardrails.slice(0, 2).map(i => `照看伏笔：${i}`),
+      ],
+      globalGuardrails: globalControl.themeGuardrails,
+      activeConstraints: [
+        ...globalControl.characterGuardrails.slice(0, 4),
+        ...globalControl.relationshipGuardrails.slice(0, 4),
+      ],
+      healthWarnings: globalControl.healthWarnings,
     }
 
     // 10. 健康风险与巡检 (Health Risk Summary)
@@ -353,6 +364,9 @@ export class AutomationCockpitService {
       let cockpitStatus: CockpitNarrativeEvent['status'] = 'pending_review'
       if (item.status === 'applied') {
         cockpitStatus = 'auto_applied'
+      }
+      else if (item.status === 'approved') {
+        cockpitStatus = 'approved'
       }
       else if (item.status === 'pending') {
         cockpitStatus = 'pending_review'

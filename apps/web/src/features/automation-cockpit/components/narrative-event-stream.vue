@@ -16,6 +16,8 @@ function getEventStatusInfo(status: string) {
   switch (status) {
     case 'auto_applied':
       return { text: '已自动应用', class: 'status-applied', icon: CheckCircle2 }
+    case 'approved':
+      return { text: '已采纳同步', class: 'status-applied', icon: CheckCircle2 }
     case 'pending_review':
       return { text: '待人工审阅', class: 'status-pending', icon: Clock }
     case 'isolated':
@@ -225,7 +227,8 @@ function formatDate(dateStr: string) {
     }
 
     /* 根据状态渲染不同的轴点颜色 */
-    &.card-auto_applied {
+    &.card-auto_applied,
+    &.card-approved {
       .timeline-axis .axis-dot {
         background-color: var(--success, #10b981);
       }

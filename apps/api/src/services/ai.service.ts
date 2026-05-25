@@ -314,6 +314,15 @@ export async function assertAIConfigured() {
   return settings
 }
 
+function cleanJSONString(str: string): string {
+  let cleaned = str.trim()
+  const match = cleaned.match(/^```(?:json)?\n?([\s\S]*?)\n?```$/i)
+  if (match) {
+    cleaned = match[1].trim()
+  }
+  return cleaned
+}
+
 export async function callAIJSON<T = Record<string, unknown>>(
   messages: ChatCompletionMessageParam[],
   options?: {
@@ -364,8 +373,9 @@ export async function callAIJSON<T = Record<string, unknown>>(
       if (!content)
         throw new AIError('AI 返回内容为空', 'EMPTY_RESPONSE')
 
+      const cleanedContent = cleanJSONString(content)
       try {
-        return JSON.parse(content) as T
+        return JSON.parse(cleanedContent) as T
       }
       catch (e: any) {
         throw new AIParseError(`AI 返回的 JSON 无法解析: ${e.message}`, content)

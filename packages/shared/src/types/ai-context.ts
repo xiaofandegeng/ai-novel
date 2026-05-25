@@ -67,6 +67,16 @@ export interface KnowledgeContextSnippet {
   reasons?: string[]
 }
 
+export interface GlobalNarrativeControl {
+  themeGuardrails: string[]
+  plotDirection: string[]
+  characterGuardrails: string[]
+  relationshipGuardrails: string[]
+  conflictGuardrails: string[]
+  foreshadowingGuardrails: string[]
+  healthWarnings: string[]
+}
+
 export interface BuiltAIContext {
   scene: AIScene
   task: string
@@ -142,6 +152,7 @@ export interface BuiltAIContext {
   chapterElements: string[]
   foreshadowingItems: ForeshadowingContextSummary[]
   factTriples: string[]
+  globalControl?: GlobalNarrativeControl
   structure?: {
     allActs: Array<{ title: string, description: string | null }>
     currentAct: { title: string, description: string | null, progress: string } | null
