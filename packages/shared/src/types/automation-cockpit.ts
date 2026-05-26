@@ -102,12 +102,39 @@ export interface CockpitPlotDirection {
 export interface CockpitHealthSummary {
   overallScore: number
   riskCount: number
-  details?: {
-    scope: string
-    score: number
-    riskLevel: 'low' | 'medium' | 'high'
-    description?: string
-  }[]
+  details?: CockpitHealthRiskDetail[]
+}
+
+export type CockpitHealthRiskFixAction
+  = | 'auto_plan_scenes'
+    | 'autonomous_chapter_repair'
+    | 'none'
+
+export interface CockpitHealthRiskDetail {
+  id?: string
+  type?: string
+  chapterId?: string | null
+  scope: string
+  score?: number
+  riskLevel: 'low' | 'medium' | 'high'
+  description?: string
+  actionLabel?: string
+  targetRoute?: string
+  fixAction?: CockpitHealthRiskFixAction
+  fixLabel?: string
+}
+
+export interface CockpitHealthRiskRepairInput {
+  riskId?: string
+  riskType?: string
+  chapterId?: string | null
+}
+
+export interface CockpitHealthRiskRepairResult {
+  action: CockpitHealthRiskFixAction
+  chapterId?: string
+  runId?: string
+  message: string
 }
 
 export interface CockpitNarrativeEvent {

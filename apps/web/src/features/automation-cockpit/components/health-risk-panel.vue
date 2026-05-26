@@ -1,10 +1,60 @@
 <script setup lang="ts">
-import type { CockpitHealthSummary } from '@ai-novel/shared'
+import type { CockpitHealthRiskDetail, CockpitHealthSummary } from '@ai-novel/shared'
+import { useToast } from '@ai-novel/ui'
 import { Activity, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-vue-next'
+import { ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { repairCockpitHealthRisk } from '../api/automation-cockpit.api'
 
 defineProps<{
   health: CockpitHealthSummary | null
 }>()
+
+const emit = defineEmits<{
+  (e: 'refresh'): void
+}>()
+
+const router = useRouter()
+const route = useRoute()
+const projectId = route.params.id as string
+const toast = useToast()
+
+const repairingRiskKey = ref('')
+
+function handleAction(routeStr: string) {
+  if (routeStr) {
+    router.push(routeStr)
+  }
+}
+
+function getRiskKey(item: CockpitHealthRiskDetail) {
+  return item.id || `${item.type || 'risk'}:${item.chapterId || item.description || 'unknown'}`
+}
+
+function canRepairRisk(item: CockpitHealthRiskDetail) {
+  return !!projectId && !!item.chapterId && item.fixAction !== 'none'
+}
+
+async function handleRepairRisk(item: CockpitHealthRiskDetail) {
+  if (!canRepairRisk(item))
+    return
+
+  const riskKey = getRiskKey(item)
+  repairingRiskKey.value = riskKey
+  try {
+    toast.add('正在根据风险原因启动自动修复，请稍候...', 'info')
+    const result = await repairCockpitHealthRisk(projectId, item)
+    toast.add(result.message || '风险修复任务已启动。', 'success')
+    emit('refresh')
+  }
+  catch (err: any) {
+    console.error(err)
+    toast.add(err.message || '风险修复失败，请稍后重试。', 'error')
+  }
+  finally {
+    repairingRiskKey.value = ''
+  }
+}
 
 function getScoreColor(score: number) {
   if (score >= 85)
@@ -83,6 +133,29 @@ function getRiskLevelBadge(level: 'low' | 'medium' | 'high') {
             <p v-if="item.description" class="risk-desc">
               {{ item.description }}
             </p>
+            <div v-if="item.actionLabel || canRepairRisk(item) || item.targetRoute" class="risk-action-suggest">
+              <div class="suggest-content">
+                <span class="action-prefix font-semibold">建议方案：</span>
+                <span class="action-text">{{ item.actionLabel || '根据风险定位自动执行章节修复，并刷新全局台账。' }}</span>
+              </div>
+              <div class="action-buttons-wrap">
+                <button
+                  v-if="canRepairRisk(item)"
+                  class="action-repair-btn font-semibold"
+                  :disabled="repairingRiskKey === getRiskKey(item)"
+                  @click="handleRepairRisk(item)"
+                >
+                  {{ repairingRiskKey === getRiskKey(item) ? '修复中...' : (item.fixLabel || '一键修复') }}
+                </button>
+                <button
+                  v-if="item.targetRoute"
+                  class="action-go-btn font-semibold"
+                  @click="handleAction(item.targetRoute)"
+                >
+                  一键直达
+                </button>
+              </div>
+            </div>
             <div v-if="item.score !== undefined" class="risk-score-indicator">
               <span class="score-lbl">评估得分: {{ item.score }} / 100</span>
             </div>
@@ -320,6 +393,83 @@ function getRiskLevelBadge(level: 'low' | 'medium' | 'high') {
         color: var(--text-secondary, #4b5563);
         margin: 0 0 0.5rem 0;
         line-height: 1.4;
+      }
+
+      .risk-action-suggest {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        font-size: 0.75rem;
+        background-color: var(--bg-subtle, #f9fafb);
+        border: 1px dashed var(--border-light, #e5e7eb);
+        border-radius: 0.375rem;
+        padding: 0.375rem 0.5rem;
+        margin: 0.25rem 0 0.5rem 0;
+        color: var(--text-secondary, #4b5563);
+        line-height: 1.4;
+
+        .suggest-content {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.25rem;
+        }
+
+        .action-prefix {
+          color: var(--primary, #3b82f6);
+          white-space: nowrap;
+        }
+
+        .action-text {
+          font-weight: 500;
+          color: var(--text-primary, #111827);
+        }
+
+        .action-buttons-wrap {
+          display: flex;
+          align-items: center;
+          gap: 0.375rem;
+          flex-shrink: 0;
+        }
+
+        .action-repair-btn {
+          background-color: var(--success, #10b981);
+          color: #ffffff;
+          border: none;
+          border-radius: 0.25rem;
+          padding: 0.125rem 0.5rem;
+          font-size: 0.6875rem;
+          cursor: pointer;
+          transition: background-color 0.2s ease;
+          white-space: nowrap;
+          flex-shrink: 0;
+
+          &:hover:not(:disabled) {
+            background-color: var(--success-dark, #059669);
+          }
+
+          &:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+          }
+        }
+
+        .action-go-btn {
+          background-color: var(--primary, #3b82f6);
+          color: #ffffff;
+          border: none;
+          border-radius: 0.25rem;
+          padding: 0.125rem 0.5rem;
+          font-size: 0.6875rem;
+          cursor: pointer;
+          transition: background-color 0.2s ease;
+          white-space: nowrap;
+          flex-shrink: 0;
+
+          &:hover {
+            background-color: var(--primary-dark, #2563eb);
+          }
+        }
       }
 
       .risk-score-indicator {

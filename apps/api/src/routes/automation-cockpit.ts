@@ -42,4 +42,17 @@ export function registerAutomationCockpitRoutes(app: Hono) {
       return c.json(fail(e.message || '获取章节详情失败'), 500)
     }
   })
+
+  // 4. 一键修复健康风险
+  app.post('/api/projects/:projectId/cockpit/risks/repair', async (c) => {
+    const projectId = c.req.param('projectId')
+    try {
+      const body = await c.req.json()
+      const result = await AutomationCockpitService.repairHealthRisk(projectId, body)
+      return c.json(success(result))
+    }
+    catch (e: any) {
+      return c.json(fail(e.message || '风险自动修复失败'), 400)
+    }
+  })
 }

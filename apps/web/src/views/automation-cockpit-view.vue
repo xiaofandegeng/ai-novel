@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useToast } from '@ai-novel/ui'
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useChapterStore } from '@/stores/chapter.store'
@@ -46,9 +46,34 @@ useCockpitPolling(projectId, 4000)
 
 const chapterStore = useChapterStore()
 
-// 控制章节详情抽屉
+// 控制右侧看板 Tab 和章节详情抽屉
+const activeNarrativeTab = ref<'character' | 'relationship' | 'conflict' | 'foreshadowing' | 'plot' | 'health'>('character')
+const drawerInitialTab = ref<'content' | 'outline' | 'scenes'>('content')
+
 const detailDrawerVisible = ref(false)
 const activeChapterId = ref('')
+
+// 监听路由 query 参数，实现深层链接或点击直达
+watch(
+  () => route.query,
+  (query) => {
+    if (query.tab && ['character', 'relationship', 'conflict', 'foreshadowing', 'plot', 'health'].includes(query.tab as string)) {
+      activeNarrativeTab.value = query.tab as any
+    }
+    if (query.chapter) {
+      if (query.tab === 'outline') {
+        drawerInitialTab.value = 'outline'
+      }
+      else {
+        drawerInitialTab.value = 'content'
+      }
+      activeChapterId.value = query.chapter as string
+      detailDrawerVisible.value = true
+      loadChapter(query.chapter as string)
+    }
+  },
+  { immediate: true },
+)
 
 onMounted(async () => {
   if (projectId) {
@@ -58,6 +83,7 @@ onMounted(async () => {
 
 // 当点击流水线中的章节时打开抽屉并拉取章节详情
 async function handleChapterClick(chapterId: string) {
+  drawerInitialTab.value = 'content'
   activeChapterId.value = chapterId
   detailDrawerVisible.value = true
   await loadChapter(chapterId)
@@ -157,12 +183,14 @@ async function handleSaveChapter(text: string) {
       <!-- 右侧：六个维度的叙事动态感知看板 -->
       <section class="right-narrative-region">
         <NarrativeStateBoard
+          v-model:active-tab="activeNarrativeTab"
           :characters="characters"
           :relationships="relationships"
           :conflicts="conflicts"
           :foreshadowing="foreshadowing"
           :plot-direction="plotDirection"
           :health="health"
+          @refresh="loadCockpit"
         />
       </section>
     </main>
@@ -173,6 +201,7 @@ async function handleSaveChapter(text: string) {
       :project-id="projectId"
       :chapter-id="activeChapterId"
       :chapter-detail="chapterDetail"
+      :initial-tab="drawerInitialTab"
       @save="handleSaveChapter"
     />
   </div>

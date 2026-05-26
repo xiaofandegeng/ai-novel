@@ -95,6 +95,56 @@ function countMatches(content: string, words: string[]) {
   return words.reduce((sum, word) => sum + content.split(word).length - 1, 0)
 }
 
+function normalizeChineseText(value: string) {
+  return value
+    .trim()
+    .replace(/[《》“”"'：:，,。.!！?？\s]/g, '')
+    .replace(/神秘/g, '')
+    .replace(/来访者/g, '来客')
+    .replace(/之谜$/, '')
+    .replace(/的秘密$/, '')
+}
+
+function isSimilarTitle(a?: string | null, b?: string | null) {
+  if (!a || !b)
+    return false
+  const left = normalizeChineseText(a)
+  const right = normalizeChineseText(b)
+  if (!left || !right)
+    return false
+  return left === right || left.includes(right) || right.includes(left)
+}
+
+function inferCharacterRole(input: {
+  name: string
+  role?: string
+  reason?: string
+  content: string
+  chapter: typeof chapters.$inferSelect
+}) {
+  const role = input.role || 'extra'
+  if (role !== 'extra')
+    return role
+
+  const anchorText = [
+    input.reason || '',
+    input.chapter.title,
+    input.chapter.goals || '',
+    input.chapter.conflicts || '',
+    input.chapter.events || '',
+    input.chapter.outline || '',
+  ].join('\n')
+
+  const nameCount = countMatches(input.content, [input.name])
+  const isPlotAnchor = anchorText.includes(input.name)
+    || /哥哥|姐姐|父亲|母亲|爱人|凶手|证人|反派|导师|主谋|失踪|关键|核心|真相/.test(input.reason || '')
+
+  if (isPlotAnchor || nameCount >= 3)
+    return 'supporting'
+
+  return role
+}
+
 function buildStyleFingerprint(content: string, styleNotes?: string | null) {
   const normalized = content.trim()
   const sentences = normalized
@@ -300,8 +350,11 @@ export async function runChapterPostprocess(input: {
     }
 
     if (parsed.foreshadowingAdded?.length) {
+      const existingForeshadowing = await db.select().from(foreshadowingItems).where(eq(foreshadowingItems.projectId, projectId))
       for (const fs of parsed.foreshadowingAdded) {
         if (!fs.title)
+          continue
+        if (existingForeshadowing.some(item => isSimilarTitle(item.title, fs.title)))
           continue
         await createSuggestion(projectId, chapterId, runId, 'foreshadowing_add', {
           title: fs.title,
@@ -366,7 +419,13 @@ export async function runChapterPostprocess(input: {
 
         await createSuggestion(projectId, chapterId, runId, 'character_add', {
           name: character.name,
-          role: character.role || 'extra',
+          role: inferCharacterRole({
+            name: character.name,
+            role: character.role,
+            reason: character.reason,
+            content,
+            chapter,
+          }),
           personality: character.personality || '',
           goal: character.goal || '',
           desire: character.desire || '',

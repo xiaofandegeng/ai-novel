@@ -2,6 +2,7 @@ import type { Hono } from 'hono'
 import { and, eq, ne } from 'drizzle-orm'
 import { db } from '../db'
 import { chapters } from '../db/schema'
+import { autoPlanScenesForChapter } from '../services/auto-repair.service'
 import * as postprocessService from '../services/chapter-postprocess.service'
 import { assertVolumeBelongsToProject } from '../services/ownership.service'
 import { fail, generateId, now, success, updatedFields } from '../utils'
@@ -196,6 +197,18 @@ export function registerChapterRoutes(app: Hono) {
     }
     catch (e: any) {
       return c.json(fail(e.message), 500)
+    }
+  })
+
+  app.post('/api/projects/:projectId/chapters/:id/auto-plan-scenes', async (c) => {
+    const projectId = c.req.param('projectId')
+    const chapterId = c.req.param('id')
+    try {
+      const result = await autoPlanScenesForChapter(projectId, chapterId)
+      return c.json(success(result))
+    }
+    catch (e: any) {
+      return c.json(fail(e.message || '一键规划场景失败'), 500)
     }
   })
 }

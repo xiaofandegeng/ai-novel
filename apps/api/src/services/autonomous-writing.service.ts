@@ -322,7 +322,7 @@ async function prepareRunJobs(
       id: writingJobId,
       projectId,
       currentChapterId: ch.id,
-      mode: 'draft_only',
+      mode: 'outline_then_draft',
       status: 'idle',
       targetWords: params.targetWordsPerChapter,
       autonomousRunId: runId,
@@ -330,9 +330,12 @@ async function prepareRunJobs(
       updatedAt: now(),
     })
 
-    // Add steps for the writing job (minimal set for draft_only)
+    // Add steps for the writing job. Autonomous writing must always plan first,
+    // so draft generation cannot consume an empty or stale outline.
     const steps = [
       'prepare_context',
+      'generate_plan',
+      'validate_plan',
       'generate_draft',
       'build_change_set',
       'evaluate_change_set',

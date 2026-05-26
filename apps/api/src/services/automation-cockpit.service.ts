@@ -6,6 +6,8 @@ import type {
   CockpitConflictState,
   CockpitForeshadowingState,
   CockpitHealthSummary,
+  CockpitHealthRiskRepairInput,
+  CockpitHealthRiskRepairResult,
   CockpitNarrativeEvent,
   CockpitPlotDirection,
   CockpitProjectSummary,
@@ -29,6 +31,8 @@ import {
   projectHealthReports,
   writingJobSteps,
 } from '../db/schema'
+import { autoPlanScenesForChapter } from './auto-repair.service'
+import { createAutonomousRun, startAutonomousRun } from './autonomous-writing.service'
 import { buildGlobalNarrativeControl } from './narrative-control.service'
 
 const STEP_LABEL_MAP: Record<string, string> = {
@@ -52,6 +56,92 @@ const STEP_LABEL_MAP: Record<string, string> = {
 }
 
 export class AutomationCockpitService {
+  private static extractChapterIdFromRisk(risk: { id?: string, chapterId?: string | null, targetRoute?: string }): string | null {
+    if (risk.chapterId)
+      return risk.chapterId
+
+    if (risk.id) {
+      const parts = risk.id.split(':')
+      if (parts[1])
+        return parts[1]
+    }
+
+    if (risk.targetRoute) {
+      const match = risk.targetRoute.match(/[?&]chapter=([^&]+)/)
+      if (match?.[1])
+        return decodeURIComponent(match[1])
+    }
+
+    return null
+  }
+
+  private static getRiskFixMeta(risk: { type?: string, chapterId?: string | null }) {
+    if (!risk.chapterId)
+      return { fixAction: 'none' as const, fixLabel: undefined }
+
+    if (risk.type === 'scene') {
+      return {
+        fixAction: 'auto_plan_scenes' as const,
+        fixLabel: '一键规划场景',
+      }
+    }
+
+    return {
+      fixAction: 'autonomous_chapter_repair' as const,
+      fixLabel: '一键自动修复',
+    }
+  }
+
+  static async repairHealthRisk(
+    projectId: string,
+    input: CockpitHealthRiskRepairInput,
+  ): Promise<CockpitHealthRiskRepairResult> {
+    const chapterId = input.chapterId || this.extractChapterIdFromRisk({
+      id: input.riskId,
+      chapterId: input.chapterId,
+    })
+
+    if (!chapterId) {
+      throw new Error('该风险缺少章节定位，暂无法自动修复。')
+    }
+
+    const [chapter] = await db
+      .select()
+      .from(chapters)
+      .where(and(eq(chapters.id, chapterId), eq(chapters.projectId, projectId)))
+      .limit(1)
+
+    if (!chapter) {
+      throw new Error('未找到该项目下的风险章节，无法自动修复。')
+    }
+
+    if (input.riskType === 'scene' || input.riskId?.startsWith('scene:')) {
+      await autoPlanScenesForChapter(projectId, chapterId)
+      return {
+        action: 'auto_plan_scenes',
+        chapterId,
+        message: '已完成章节场景规划，并同步刷新健康指标。',
+      }
+    }
+
+    const run = await createAutonomousRun(projectId, {
+      strategy: 'safe',
+      scopeType: 'rewrite_selected',
+      startChapterId: chapterId,
+      endChapterId: chapterId,
+      targetChapterCount: 1,
+      targetWordsPerChapter: Math.max(1200, Math.min(5000, chapter.draft?.length || 3000)),
+    })
+    await startAutonomousRun(projectId, run.id)
+
+    return {
+      action: 'autonomous_chapter_repair',
+      chapterId,
+      runId: run.id,
+      message: '已启动该章节的自动修复任务，修复会同步进入驾驶舱流水线。',
+    }
+  }
+
   static async getCockpitData(projectId: string): Promise<AutomationCockpitPayload> {
     // 1. 获取项目基本信息
     const [projectRecord] = await db
@@ -304,16 +394,45 @@ export class AutomationCockpitService {
     const latestReport = healthReports[0]
     if (latestReport) {
       overallScore = latestReport.score
-      // 遍历所有报告，收集高风险指标
-      for (const rep of healthReports) {
-        if (rep.riskLevel === 'high' || rep.riskLevel === 'medium') {
-          riskCount++
-        }
+      const metricsJson = (latestReport.metricsJson || {}) as any
+      const topRisks = metricsJson.topRisks || []
+
+      riskCount = topRisks.filter((r: any) => r.severity === 'high' || r.severity === 'medium').length
+
+      const typeLabelMap: Record<string, string> = {
+        foreshadowing: '伏笔偏离',
+        conflict: '矛盾失衡',
+        character: '人物崩坏',
+        relationship: '关系异常',
+        bible: '设定偏离',
+        scene: '情节缺失',
+      }
+
+      for (const risk of topRisks) {
+        const chapterId = this.extractChapterIdFromRisk(risk)
+        const fixMeta = this.getRiskFixMeta({ type: risk.type, chapterId })
         detailsList.push({
-          scope: rep.scope,
-          score: rep.score,
-          riskLevel: rep.riskLevel,
-          description: (rep.metricsJson as any)?.description || undefined,
+          id: risk.id,
+          type: risk.type,
+          chapterId,
+          scope: typeLabelMap[risk.type] || risk.type || '未知指标',
+          score: undefined,
+          riskLevel: risk.severity || 'low',
+          description: risk.title,
+          actionLabel: risk.actionLabel,
+          targetRoute: risk.targetRoute,
+          ...fixMeta,
+        })
+      }
+
+      // 兜底项：防备没有任何具体 risks 却扣分的情况
+      if (detailsList.length === 0 && overallScore < 100) {
+        detailsList.push({
+          scope: '综合情况',
+          score: overallScore,
+          riskLevel: latestReport.riskLevel || 'low',
+          description: '一致性检测发生轻微扣分，暂无急需处置的具体冲突点。',
+          fixAction: 'none',
         })
       }
     }

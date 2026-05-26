@@ -19,6 +19,30 @@ type ApprovalLevel = 'conservative' | 'balanced' | 'aggressive'
 
 const characterRoles = new Set(['protagonist', 'antagonist', 'mentor', 'ally', 'supporting', 'extra'])
 
+function normalizeChineseText(value: string) {
+  return value
+    .trim()
+    .replace(/[《》“”"'：:，,。.!！?？\s]/g, '')
+    .replace(/神秘/g, '')
+    .replace(/来访者/g, '来客')
+    .replace(/之谜$/, '')
+    .replace(/的秘密$/, '')
+}
+
+function isSimilarTitle(a?: string | null, b?: string | null) {
+  if (!a || !b)
+    return false
+  const left = normalizeChineseText(a)
+  const right = normalizeChineseText(b)
+  if (!left || !right)
+    return false
+  return left === right || left.includes(right) || right.includes(left)
+}
+
+function shouldPromoteRelationshipRole(type?: string, strength?: number) {
+  return ['family', 'lover', 'mentor'].includes(type || '') || (strength || 0) >= 6
+}
+
 export interface ApplyResult {
   applied: number
   acknowledged: number
@@ -310,6 +334,17 @@ export async function applyOneSuggestion(
     case 'foreshadowing_add': {
       if (!payload.title)
         throw new Error('伏笔标题为空')
+      const existingForeshadowing = await tx.select().from(foreshadowingItems).where(eq(foreshadowingItems.projectId, projectId))
+      const matched = existingForeshadowing.find((item: typeof foreshadowingItems.$inferSelect) => isSimilarTitle(item.title, payload.title))
+      if (matched) {
+        if (payload.description && !matched.description?.includes(payload.description)) {
+          await tx.update(foreshadowingItems).set({
+            description: [matched.description, payload.description].filter(Boolean).join('\n'),
+            updatedAt: now(),
+          }).where(eq(foreshadowingItems.id, matched.id))
+        }
+        return 'acknowledged'
+      }
       await tx.insert(foreshadowingItems).values({
         id: generateId(),
         projectId,
@@ -372,8 +407,11 @@ export async function applyOneSuggestion(
 
       let characterId = existing?.id
       if (existing) {
+        const nextRole = existing.role === 'extra' && role !== 'extra'
+          ? role
+          : existing.role || role
         await tx.update(characters).set({
-          role: existing.role || role,
+          role: nextRole,
           goal: existing.goal || payload.goal || undefined,
           fear: existing.fear || payload.fear || undefined,
           secret: existing.secret || payload.secret || undefined,
@@ -580,12 +618,45 @@ export async function applyOneSuggestion(
       const [charA] = await tx.select().from(characters).where(and(eq(characters.name, characterAName), eq(characters.projectId, projectId)))
       const [charB] = await tx.select().from(characters).where(and(eq(characters.name, characterBName), eq(characters.projectId, projectId)))
 
-      if (!charA || !charB) {
-        throw new Error(`匹配不到角色：${!charA ? characterAName : ''} ${!charB ? characterBName : ''}`)
+      let finalCharA = charA
+      if (!finalCharA) {
+        const [inserted] = await tx.insert(characters).values({
+          id: generateId(),
+          projectId,
+          name: characterAName,
+          role: 'extra',
+          createdAt: now(),
+          updatedAt: now(),
+        }).returning()
+        finalCharA = inserted
+      }
+
+      let finalCharB = charB
+      if (!finalCharB) {
+        const [inserted] = await tx.insert(characters).values({
+          id: generateId(),
+          projectId,
+          name: characterBName,
+          role: 'extra',
+          createdAt: now(),
+          updatedAt: now(),
+        }).returning()
+        finalCharB = inserted
+      }
+
+      if (shouldPromoteRelationshipRole(type, strength)) {
+        for (const character of [finalCharA, finalCharB]) {
+          if (character.role === 'extra') {
+            await tx.update(characters).set({
+              role: 'supporting',
+              updatedAt: now(),
+            }).where(eq(characters.id, character.id))
+          }
+        }
       }
 
       // 规范化 ID 顺序，确保数据库中 A < B，符合 uniqueIndex 要求
-      const [charAId, charBId] = normalizeCharacterPair(charA.id, charB.id)
+      const [charAId, charBId] = normalizeCharacterPair(finalCharA.id, finalCharB.id)
 
       const [existing] = await tx.select().from(characterRelationships).where(and(
         eq(characterRelationships.projectId, projectId),

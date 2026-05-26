@@ -1,5 +1,12 @@
 import type { AutonomousStrategy, ConsistencyGuardReport } from '@ai-novel/shared'
+import { and, eq } from 'drizzle-orm'
+import { db } from '../db'
+import { chapters, chapterScenes, projectHealthReports } from '../db/schema'
+import { generateId, now } from '../utils'
+import { renderAIContext } from './ai-context-renderer'
+import { buildProjectAIContext } from './ai-context.service'
 import { callAIJSON } from './ai.service'
+import { getProjectHealthMetrics } from './health-metrics.service'
 
 export async function attemptAutoRepair(input: {
   projectId: string
@@ -172,4 +179,182 @@ ${JSON.stringify(originalPlan, null, 2)}
       repairReport: `Auto-repair plan AI call failed: ${err.message}`,
     }
   }
+}
+
+export async function autoPlanScenesForChapter(projectId: string, chapterId: string): Promise<{ success: boolean }> {
+  // 1. 获取章节和项目信息
+  const [chapter] = await db.select().from(chapters).where(
+    and(eq(chapters.id, chapterId), eq(chapters.projectId, projectId)),
+  )
+  if (!chapter) {
+    throw new Error('Chapter not found')
+  }
+
+  // 2. 获取 AI 上下文
+  const context = await buildProjectAIContext({
+    projectId,
+    scene: 'outline',
+    chapterId,
+    userInstruction: '为当前章节生成详细的大纲和场景拆分规划',
+  })
+  const rendered = renderAIContext(context)
+
+  const chapterInfo = `章节序号: 第 ${chapter.chapterNumber} 章, 章节标题: ${chapter.title || '待定'}`
+
+  const prompt = `你是一位顶级的小说大纲策划师和场景拆分专家。请根据以下项目故事背景、设定集、前文摘要等上下文，为当前章节规划详细的剧情大纲，并拆分为具体的场景节拍（3-5个场景）。
+
+【上下文环境】
+${rendered}
+
+【当前章节信息】
+${chapterInfo}
+
+请按以下严格的 JSON 格式返回规划方案，切记不要包含 Markdown 格式标记（如 \`\`\`json）：
+{
+  "goals": "本章核心目标和起到的承上启下作用",
+  "conflicts": "本章主要矛盾冲突",
+  "outline": "章节大纲细则（300字左右详细交代起因、发展、转折）",
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "title": "场景标题",
+      "location": "场景发生地点",
+      "purpose": "此场景在剧情/角色塑造上的目的",
+      "summary": "此场景的具体情节梗概",
+      "characters": ["出场角色A", "出场角色B"],
+      "conflict": "此场景内的局部冲突",
+      "conflictLevel": 5,
+      "beatType": "setup"
+    }
+  ]
+}
+`.trim()
+
+  const result = await callAIJSON<{
+    goals: string
+    conflicts: string
+    outline: string
+    scenes: Array<{
+      sceneNumber: number
+      title: string
+      location: string
+      purpose: string
+      summary: string
+      characters: string[]
+      conflict: string
+      conflictLevel: number
+      beatType: string
+    }>
+  }>([
+    { role: 'user', content: prompt },
+  ], {
+    temperature: 50,
+    metadata: { projectId, chapterId, taskType: 'auto_plan_scenes' },
+  })
+
+  if (!result || !result.outline || !Array.isArray(result.scenes)) {
+    throw new Error('AI 生成场景规划失败或返回格式不正确')
+  }
+
+  // 3. 在事务中写入数据库
+  await db.transaction(async (tx) => {
+    // A. 更新章节大纲、目标、冲突
+    await tx.update(chapters).set({
+      outline: result.outline,
+      goals: result.goals || null,
+      conflicts: result.conflicts || null,
+      updatedAt: now(),
+    }).where(and(eq(chapters.id, chapterId), eq(chapters.projectId, projectId)))
+
+    // B. 清除旧场景
+    await tx.delete(chapterScenes).where(
+      and(
+        eq(chapterScenes.projectId, projectId),
+        eq(chapterScenes.chapterId, chapterId),
+      ),
+    )
+
+    // C. 插入新场景
+    if (result.scenes.length > 0) {
+      const sceneValues = result.scenes.map((s, index) => ({
+        id: generateId(),
+        projectId,
+        chapterId,
+        sceneNumber: s.sceneNumber || (index + 1),
+        title: s.title || null,
+        location: s.location || null,
+        purpose: s.purpose || null,
+        summary: s.summary || null,
+        characters: s.characters ? JSON.stringify(s.characters) : null,
+        conflict: s.conflict || null,
+        conflictLevel: s.conflictLevel || 5,
+        beatType: (s.beatType || 'setup') as any,
+        status: 'planned' as 'planned' | 'drafting' | 'reviewed' | 'completed',
+        orderIndex: index + 1,
+        updatedAt: now(),
+      }))
+      await tx.insert(chapterScenes).values(sceneValues)
+    }
+  })
+
+  // 4. 重新计算并保存项目健康度指标
+  const metrics = await getProjectHealthMetrics(projectId)
+  const topRisks = metrics.risks.slice(0, 5).map(risk => ({
+    id: risk.id,
+    severity: risk.severity,
+    type: risk.type,
+    title: risk.title,
+    actionLabel: risk.actionLabel,
+    targetRoute: risk.targetRoute,
+  }))
+  const { riskLevel, score } = calculateHealthScoreLocal(metrics)
+  const reportId = generateId()
+
+  await db.insert(projectHealthReports).values({
+    id: reportId,
+    projectId,
+    scope: 'overall',
+    score,
+    riskLevel,
+    metricsJson: {
+      completedChapters: metrics.completedChapters,
+      totalChapters: metrics.totalChapters,
+      openForeshadowingCount: metrics.openForeshadowingCount,
+      pendingTriples: metrics.pendingTriples,
+      scenesWithoutContent: metrics.scenesWithoutContent,
+      scenesWithoutPurpose: metrics.scenesWithoutPurpose,
+      scenesWithoutConflict: metrics.scenesWithoutConflict,
+      tensionTrend: metrics.tensionTrend,
+      riskCount: metrics.risks.length,
+      topRisks,
+    },
+  })
+
+  return { success: true }
+}
+
+function calculateHealthScoreLocal(metrics: any): {
+  riskLevel: 'low' | 'medium' | 'high'
+  score: number
+} {
+  const radarValues = Object.values(metrics.radarMetrics || {}) as number[]
+  const baseScore = radarValues.length > 0
+    ? Math.round(radarValues.reduce((sum, value) => sum + value, 0) / radarValues.length)
+    : 100
+  const penalty = (metrics.risks || []).reduce((sum: number, risk: any) => {
+    if (risk.severity === 'high')
+      return sum + 15
+    if (risk.severity === 'medium')
+      return sum + 8
+    return sum + 3
+  }, 0)
+  const score = Math.max(0, Math.min(100, baseScore - penalty))
+  const hasHighRisk = (metrics.risks || []).some((risk: any) => risk.severity === 'high')
+  const hasMediumRisk = (metrics.risks || []).some((risk: any) => risk.severity === 'medium')
+
+  if (hasHighRisk || score < 60)
+    return { riskLevel: 'high', score }
+  if (hasMediumRisk || score < 80)
+    return { riskLevel: 'medium', score }
+  return { riskLevel: 'low', score }
 }

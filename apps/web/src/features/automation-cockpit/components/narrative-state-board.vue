@@ -8,7 +8,7 @@ import type {
   CockpitRelationshipState,
 } from '@ai-novel/shared'
 import { Activity, Compass, Eye, Flame, User, Users } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import CharacterEmotionPanel from './character-emotion-panel.vue'
 import ConflictTrendPanel from './conflict-trend-panel.vue'
 import ForeshadowingTrackerPanel from './foreshadowing-tracker-panel.vue'
@@ -17,16 +17,33 @@ import PlotDirectionPanel from './plot-direction-panel.vue'
 
 import RelationshipDynamicsPanel from './relationship-dynamics-panel.vue'
 
-defineProps<{
+const props = defineProps<{
   characters: CockpitCharacterState[]
   relationships: CockpitRelationshipState[]
   conflicts: CockpitConflictState[]
   foreshadowing: CockpitForeshadowingState[]
   plotDirection: CockpitPlotDirection | null
   health: CockpitHealthSummary | null
+  activeTab?: 'character' | 'relationship' | 'conflict' | 'foreshadowing' | 'plot' | 'health'
+}>()
+
+const emit = defineEmits<{
+  (e: 'update:activeTab', tab: 'character' | 'relationship' | 'conflict' | 'foreshadowing' | 'plot' | 'health'): void
+  (e: 'refresh'): void
 }>()
 
 const activeTab = ref<'character' | 'relationship' | 'conflict' | 'foreshadowing' | 'plot' | 'health'>('character')
+
+watch(() => props.activeTab, (val) => {
+  if (val && val !== activeTab.value) {
+    activeTab.value = val
+  }
+}, { immediate: true })
+
+function handleTabClick(tab: 'character' | 'relationship' | 'conflict' | 'foreshadowing' | 'plot' | 'health') {
+  activeTab.value = tab
+  emit('update:activeTab', tab)
+}
 
 const tabs = [
   { key: 'character', label: '角色情绪', icon: User },
@@ -47,7 +64,7 @@ const tabs = [
         :key="tab.key"
         class="tab-btn"
         :class="{ active: activeTab === tab.key }"
-        @click="activeTab = tab.key"
+        @click="handleTabClick(tab.key)"
       >
         <component :is="tab.icon" :size="16" class="tab-icon" />
         <span class="tab-label">{{ tab.label }}</span>
@@ -85,6 +102,7 @@ const tabs = [
         <HealthRiskPanel
           v-else-if="activeTab === 'health'"
           :health="health"
+          @refresh="emit('refresh')"
         />
       </KeepAlive>
     </div>

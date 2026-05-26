@@ -17,6 +17,7 @@ const props = defineProps<{
   projectId: string
   chapterId: string
   chapterDetail: CockpitChapterDetail | null
+  initialTab?: 'content' | 'outline' | 'scenes'
 }>()
 
 const emit = defineEmits<{
@@ -33,6 +34,16 @@ watch(
   () => props.chapterDetail?.content,
   (val) => {
     draftText.value = val || ''
+  },
+  { immediate: true },
+)
+
+watch(
+  () => props.initialTab,
+  (val) => {
+    if (val) {
+      activeTab.value = val
+    }
   },
   { immediate: true },
 )

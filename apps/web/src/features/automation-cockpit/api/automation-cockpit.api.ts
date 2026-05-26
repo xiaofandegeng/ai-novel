@@ -1,6 +1,8 @@
 import type {
   AutomationCockpitPayload,
   CockpitChapterDetail,
+  CockpitHealthRiskDetail,
+  CockpitHealthRiskRepairResult,
   CockpitNarrativeEvent,
 } from '@ai-novel/shared'
 import { apiGet, apiPost } from '@/api/client'
@@ -15,6 +17,17 @@ export async function fetchCockpitEvents(projectId: string, limit = 100): Promis
 
 export async function fetchCockpitChapterDetail(projectId: string, chapterId: string): Promise<CockpitChapterDetail> {
   return apiGet<CockpitChapterDetail>(`/api/projects/${projectId}/cockpit/chapters/${chapterId}`)
+}
+
+export async function repairCockpitHealthRisk(
+  projectId: string,
+  risk: CockpitHealthRiskDetail,
+): Promise<CockpitHealthRiskRepairResult> {
+  return apiPost<CockpitHealthRiskRepairResult>(`/api/projects/${projectId}/cockpit/risks/repair`, {
+    riskId: risk.id,
+    riskType: risk.type,
+    chapterId: risk.chapterId,
+  })
 }
 
 export async function approveChangeSetItem(projectId: string, changeSetId: string, itemId: string): Promise<{ success: boolean }> {

@@ -276,6 +276,8 @@ async function executeGeneratePlan(
   contextOutput: string,
   chapterTitle: string | null,
   stepId: string,
+  projectId?: string,
+  chapterId?: string | null,
 ): Promise<string> {
   const parsed = JSON.parse(contextOutput)
   const contextPrompt = parsed.rendered || ''
@@ -301,18 +303,76 @@ ${contextPrompt}
   "emotionalArc": "情绪曲线描述",
   "foreshadowing": "本章可能埋设的伏笔",
   "endingHook": "结尾钩子（吸引读者继续阅读）",
-  "outline": "详细章节大纲（300-500字，包含场景描述、角色行动、对话要点和转折点）"
+  "outline": "详细章节大纲（300-500字，包含场景描述、角色行动、对话要点和转折点）",
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "title": "场景标题",
+      "location": "发生地点",
+      "purpose": "此场景在剧情、关系或伏笔上的作用",
+      "summary": "场景梗概",
+      "characters": ["出场角色"],
+      "conflict": "场景内局部冲突",
+      "conflictLevel": 5,
+      "beatType": "setup"
+    }
+  ]
 }
 
 要求：
 - 大纲必须与前后章节连贯
 - 角色行为必须符合已有性格和动机
 - 必须推进主线或支线剧情
-- 注意伏笔的埋设和回收`,
+- 注意伏笔的埋设和回收
+- 必须拆出 3-5 个可执行场景，后续正文将严格按这些场景推进`,
     },
   ]
 
   const plan = await callAIJSON<Record<string, any>>(messages, { temperature: 60 })
+
+  if (projectId && chapterId) {
+    await db.transaction(async (tx) => {
+      await tx.update(chapters).set({
+        title: typeof plan.title === 'string' && plan.title.trim() ? plan.title.trim() : undefined,
+        goals: typeof plan.goals === 'string' ? plan.goals : null,
+        conflicts: typeof plan.conflicts === 'string' ? plan.conflicts : null,
+        events: typeof plan.events === 'string' ? plan.events : null,
+        emotionalArc: typeof plan.emotionalArc === 'string' ? plan.emotionalArc : null,
+        foreshadowing: typeof plan.foreshadowing === 'string' ? plan.foreshadowing : null,
+        endingHook: typeof plan.endingHook === 'string' ? plan.endingHook : null,
+        outline: typeof plan.outline === 'string' ? plan.outline : null,
+        status: 'planning',
+        updatedAt: now(),
+      }).where(and(eq(chapters.id, chapterId), eq(chapters.projectId, projectId)))
+
+      if (Array.isArray(plan.scenes) && plan.scenes.length > 0) {
+        await tx.delete(chapterScenes).where(and(
+          eq(chapterScenes.projectId, projectId),
+          eq(chapterScenes.chapterId, chapterId),
+        ))
+
+        await tx.insert(chapterScenes).values(plan.scenes.slice(0, 8).map((scene: any, index: number) => ({
+          id: generateId(),
+          projectId,
+          chapterId,
+          sceneNumber: Number(scene.sceneNumber) || index + 1,
+          title: typeof scene.title === 'string' ? scene.title : `场景 ${index + 1}`,
+          location: typeof scene.location === 'string' ? scene.location : null,
+          purpose: typeof scene.purpose === 'string' ? scene.purpose : null,
+          summary: typeof scene.summary === 'string' ? scene.summary : null,
+          characters: Array.isArray(scene.characters) ? JSON.stringify(scene.characters) : null,
+          conflict: typeof scene.conflict === 'string' ? scene.conflict : null,
+          conflictLevel: Number(scene.conflictLevel) || 5,
+          beatType: typeof scene.beatType === 'string' ? scene.beatType : 'setup',
+          status: 'planned' as any,
+          orderIndex: index + 1,
+          createdAt: now(),
+          updatedAt: now(),
+        })))
+      }
+    })
+  }
+
   const output = JSON.stringify(plan)
   await updateStep(stepId, { output, updatedAt: now() })
   return output
@@ -418,6 +478,7 @@ async function executeApplyDraft(
   const [row] = await db.update(chapters).set({
     draft: content,
     title: draft.title || undefined,
+    status: 'completed',
     updatedAt: now(),
   }).where(and(
     eq(chapters.id, chapterId),
@@ -624,6 +685,7 @@ async function executeUpdateHealth(
 ): Promise<void> {
   const metrics = await getProjectHealthMetrics(projectId)
   const topRisks = metrics.risks.slice(0, 5).map(risk => ({
+    id: risk.id,
     severity: risk.severity,
     type: risk.type,
     title: risk.title,
@@ -923,7 +985,7 @@ async function executeStep(
         const chapterTitle = chapterId
           ? (await db.select({ title: chapters.title }).from(chapters).where(eq(chapters.id, chapterId)))[0]?.title
           : null
-        await executeGeneratePlan(contextOutput, chapterTitle, step.id)
+        await executeGeneratePlan(contextOutput, chapterTitle, step.id, projectId, chapterId)
         break
       }
 
@@ -1124,7 +1186,7 @@ async function executeStep(
         break
 
       case 'done':
-        await updateStep(step.id, { output: JSON.stringify({ finished: true }), finishedAt: now() })
+        await updateStep(step.id, { status: 'completed', output: JSON.stringify({ finished: true }), finishedAt: now() })
         return true
 
       default:

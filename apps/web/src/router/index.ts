@@ -19,43 +19,43 @@ const router = createRouter({
         },
         {
           path: 'bible',
-          redirect: to => `/project/${to.params.id}`,
+          redirect: to => ({ path: `/project/${to.params.id}`, query: { ...to.query, tab: 'bible' } }),
         },
         {
           path: 'characters',
-          redirect: to => `/project/${to.params.id}`,
+          redirect: to => ({ path: `/project/${to.params.id}`, query: { ...to.query, tab: 'character' } }),
         },
         {
           path: 'outline',
-          redirect: to => `/project/${to.params.id}`,
+          redirect: to => ({ path: `/project/${to.params.id}`, query: { ...to.query, tab: 'outline' } }),
         },
         {
           path: 'write',
-          redirect: to => `/project/${to.params.id}`,
+          redirect: to => ({ path: `/project/${to.params.id}`, query: { ...to.query } }),
         },
         {
           path: 'relationships',
-          redirect: to => `/project/${to.params.id}`,
+          redirect: to => ({ path: `/project/${to.params.id}`, query: { ...to.query, tab: 'relationship' } }),
         },
         {
           path: 'conflicts',
-          redirect: to => `/project/${to.params.id}`,
+          redirect: to => ({ path: `/project/${to.params.id}`, query: { ...to.query, tab: 'conflict' } }),
         },
         {
           path: 'foreshadowing',
-          redirect: to => `/project/${to.params.id}`,
+          redirect: to => ({ path: `/project/${to.params.id}`, query: { ...to.query, tab: 'foreshadowing' } }),
         },
         {
           path: 'health',
-          redirect: to => `/project/${to.params.id}`,
+          redirect: to => ({ path: `/project/${to.params.id}`, query: { ...to.query, tab: 'health' } }),
         },
         {
           path: 'autopilot',
-          redirect: to => `/project/${to.params.id}`,
+          redirect: to => ({ path: `/project/${to.params.id}`, query: { ...to.query, tab: 'health' } }),
         },
         {
           path: 'writing-job',
-          redirect: to => `/project/${to.params.id}`,
+          redirect: to => ({ path: `/project/${to.params.id}`, query: { ...to.query } }),
         },
         {
           path: 'settings',
