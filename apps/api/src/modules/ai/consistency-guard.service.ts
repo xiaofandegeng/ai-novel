@@ -80,7 +80,10 @@ ${riskScopeField}
   try {
     return await callAIJSON<ConsistencyGuardReport>(
       [{ role: 'user', content: fullPrompt }],
-      { temperature: 20 },
+      {
+        temperature: 20,
+        metadata: { projectId, chapterId, taskType: 'consistency_guard' },
+      },
     )
   }
   catch (error: unknown) {

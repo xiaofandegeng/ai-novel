@@ -76,7 +76,10 @@ ${JSON.stringify(characterBios, null, 2)}
       status: string
       description: string
     }>
-  }>([{ role: 'user', content: prompt }], { temperature: 30 })
+  }>([{ role: 'user', content: prompt }], {
+    temperature: 30,
+    metadata: { projectId, chapterId, taskType: 'infer_character_relationships' },
+  })
 
   let suggestionsCreated = 0
   const suggestions = aiResult.suggestions || []

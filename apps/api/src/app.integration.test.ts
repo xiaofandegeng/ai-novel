@@ -295,6 +295,20 @@ describe('http application boundary', () => {
     expect(events.filter(event => event.aggregateType === 'ProjectSettings')).toHaveLength(3)
   })
 
+  it('rejects AI execution without an explicit project scope', async () => {
+    const response = await app.request('/api/ai/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: '继续写' }] }),
+    })
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: 'Project ID is required',
+    })
+  })
+
   it('saves project prompt overrides and renders the effective template', async () => {
     const projectId = await createProject(app)
     const timestamp = '2026-08-11T00:00:00.000Z'

@@ -339,7 +339,7 @@ async function executePrepareContext(
   const rendered = renderAIContext(context)
 
   // Record snapshot
-  const settings = await getEffectiveAISettings()
+  const settings = await getEffectiveAISettings(projectId)
   await createAIContextSnapshot({
     projectId,
     chapterId: chapterId || undefined,
@@ -357,6 +357,7 @@ async function executePrepareContext(
 }
 
 async function executeGenerateSceneDraft(
+  projectId: string,
   contextOutput: string,
   sceneTitle: string | null,
   stepId: string,
@@ -393,7 +394,10 @@ ${contextPrompt}
     },
   ]
 
-  const plan = await callAIJSON<Record<string, unknown>>(messages, { temperature: 60 })
+  const plan = await callAIJSON<Record<string, unknown>>(messages, {
+    temperature: 60,
+    metadata: { projectId, taskType: 'generate_scene_plan' },
+  })
   const output = JSON.stringify(plan)
   await updateStep(stepId, { output, updatedAt: now() })
   return output
@@ -403,7 +407,7 @@ async function executeGeneratePlan(
   contextOutput: string,
   chapterTitle: string | null,
   stepId: string,
-  projectId?: string,
+  projectId: string,
   chapterId?: string | null,
 ): Promise<string> {
   const parsed = JSON.parse(contextOutput)
@@ -455,7 +459,10 @@ ${contextPrompt}
     },
   ]
 
-  const plan = await callAIJSON<GeneratedChapterPlan>(messages, { temperature: 60 })
+  const plan = await callAIJSON<GeneratedChapterPlan>(messages, {
+    temperature: 60,
+    metadata: { projectId, chapterId: chapterId || undefined, taskType: 'generate_plan' },
+  })
 
   if (projectId && chapterId) {
     await db.transaction(async (tx) => {
@@ -506,6 +513,7 @@ ${contextPrompt}
 }
 
 async function executeGenerateDraft(
+  projectId: string,
   contextOutput: string,
   planOutput: string,
   stepId: string,
@@ -557,7 +565,10 @@ ${contextPrompt}
     },
   ]
 
-  const draft = await callAIJSON<{ title: string, draft: string, wordCount: number }>(messages, { temperature: 70 })
+  const draft = await callAIJSON<{ title: string, draft: string, wordCount: number }>(messages, {
+    temperature: 70,
+    metadata: { projectId, taskType: 'generate_draft' },
+  })
   const output = JSON.stringify(draft)
   await updateStep(stepId, { output, updatedAt: now() })
   return output
@@ -1121,7 +1132,7 @@ async function executeStep(
         const sceneTitle = sceneId
           ? (await db.select({ title: chapterScenes.title }).from(chapterScenes).where(eq(chapterScenes.id, sceneId)))[0]?.title
           : null
-        await executeGenerateSceneDraft(contextOutput, sceneTitle, step.id)
+        await executeGenerateSceneDraft(projectId, contextOutput, sceneTitle, step.id)
         break
       }
 
@@ -1138,7 +1149,7 @@ async function executeStep(
         const planOutput = job.mode === 'scene_draft'
           ? previousStepOutputs.get('generate_scene_draft') || '{}'
           : previousStepOutputs.get('generate_plan') || '{}'
-        await executeGenerateDraft(contextOutput, planOutput, step.id, job.targetWords)
+        await executeGenerateDraft(projectId, contextOutput, planOutput, step.id, job.targetWords)
         break
       }
 

@@ -17,7 +17,7 @@ export function registerAiRoutes(app: Hono) {
     const { scene, chapterId, volumeId, sceneId, selectedText, userInstruction, model } = await c.req.json()
 
     try {
-      await assertAIConfigured()
+      await assertAIConfigured(projectId)
       const context = await buildProjectAIContext({
         projectId,
         scene,
@@ -30,7 +30,7 @@ export function registerAiRoutes(app: Hono) {
 
       const renderedPrompt = renderAIContext(context)
 
-      const settings = await getEffectiveAISettings()
+      const settings = await getEffectiveAISettings(projectId)
       const effectiveModel = model || settings.model
 
       // Write context snapshot (don't block the stream on failure)
@@ -62,7 +62,7 @@ export function registerAiRoutes(app: Hono) {
       return streamText(c, async (stream) => {
         try {
           const messages = [{ role: 'user' as const, content: renderedPrompt }]
-          for await (const chunk of streamChat(messages, { model })) {
+          for await (const chunk of streamChat(messages, { projectId, model })) {
             await stream.write(chunk)
           }
         }
@@ -96,9 +96,11 @@ export function registerAiRoutes(app: Hono) {
 
     if (!messages || !messages.length)
       return c.json(fail('Messages are required'), 400)
+    if (typeof projectId !== 'string' || !projectId.trim())
+      return c.json(fail('Project ID is required'), 400)
 
     try {
-      await assertAIConfigured()
+      await assertAIConfigured(projectId)
     }
     catch (error: unknown) {
       return c.json(fail(errorMessage(error)), 400)
@@ -110,7 +112,7 @@ export function registerAiRoutes(app: Hono) {
 
     return streamText(c, async (stream) => {
       try {
-        for await (const chunk of streamChat(messages, { context, model, personaPrompt })) {
+        for await (const chunk of streamChat(messages, { projectId, context, model, personaPrompt })) {
           await stream.write(chunk)
         }
       }

@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm'
 import OpenAI from 'openai'
 import { getAIEnvironmentConfig } from '../../config/environment'
 import { db } from '../../db'
-import { aiSettings, projectAISettings, projectReadModels } from '../../db/schema'
+import { projectAISettings, projectReadModels } from '../../db/schema'
 import { DomainCommandError } from '../../eventing'
 import { commandBus } from '../../eventing-runtime'
 import { CredentialVault } from '../../security/credential-vault'
@@ -19,7 +19,7 @@ import {
 } from './project-settings.eventing'
 
 interface AIMetadata {
-  projectId?: string
+  projectId: string
   chapterId?: string
   contextSnapshotId?: string
   taskType?: string
@@ -52,11 +52,16 @@ export class AIConfigurationError extends AIError {
   }
 }
 
+export class AIProjectScopeError extends AIError {
+  constructor() {
+    super('AI execution requires an explicit project ID', 'PROJECT_SCOPE_REQUIRED')
+    this.name = 'AIProjectScopeError'
+  }
+}
+
 async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
-
-const GLOBAL_AI_SETTINGS_ID = 'global'
 
 interface EffectiveAISettings {
   provider: AIProviderId | string
@@ -110,42 +115,9 @@ export function sanitizeAISettings(settings: EffectiveAISettings) {
   }
 }
 
-async function getLegacyEffectiveAISettings(): Promise<EffectiveAISettings> {
-  const fallback = defaultAISettings()
-  const [saved] = await db.select().from(aiSettings).where(eq(aiSettings.id, GLOBAL_AI_SETTINGS_ID))
-
-  if (!saved)
-    return fallback
-
-  const provider = saved.provider || fallback.provider
-  const model = saved.model || fallback.model
-  const embeddingProvider = saved.embeddingProvider || fallback.embeddingProvider
-
-  return {
-    provider,
-    baseUrl: saved.baseUrl || fallback.baseUrl,
-    model,
-    apiKey: saved.apiKey || fallback.apiKey,
-    temperature: saved.temperature ?? fallback.temperature,
-
-    embeddingProvider,
-    embeddingBaseUrl: saved.embeddingBaseUrl || fallback.embeddingBaseUrl,
-    embeddingModel: normalizeEmbeddingModel({
-      provider,
-      model,
-      embeddingProvider,
-      embeddingModel: saved.embeddingModel || fallback.embeddingModel,
-    }) || fallback.embeddingModel,
-    embeddingApiKey: saved.embeddingApiKey || saved.apiKey || fallback.embeddingApiKey,
-    embeddingEnabled: saved.embeddingEnabled ?? fallback.embeddingEnabled,
-
-    updatedAt: saved.updatedAt ?? undefined,
-  }
-}
-
-export async function getEffectiveAISettings(projectId?: string): Promise<EffectiveAISettings> {
+export async function getEffectiveAISettings(projectId: string): Promise<EffectiveAISettings> {
   if (!projectId)
-    return getLegacyEffectiveAISettings()
+    throw new AIProjectScopeError()
 
   await assertProjectExists(projectId)
   const fallback = defaultAISettings()
@@ -459,8 +431,8 @@ export async function testEmbeddingConnection(projectId: string, input?: UpdateA
   }
 }
 
-export async function assertAIConfigured() {
-  const settings = await getEffectiveAISettings()
+export async function assertAIConfigured(projectId: string) {
+  const settings = await getEffectiveAISettings(projectId)
   if (!settings.apiKey) {
     throw new AIConfigurationError('AI 服务未配置，请先到项目设置完成配置检测')
   }
@@ -478,19 +450,22 @@ function cleanJSONString(str: string): string {
 
 export async function callAIJSON<T = Record<string, unknown>>(
   messages: ChatCompletionMessageParam[],
-  options?: {
+  options: {
     model?: string
     temperature?: number
     responseFormat?: { type: 'json_object' }
     maxRetries?: number
-    metadata?: AIMetadata
+    metadata: AIMetadata
   },
 ): Promise<T> {
-  const settings = await assertAIConfigured()
+  const projectId = options.metadata?.projectId
+  if (!projectId)
+    throw new AIProjectScopeError()
+  const settings = await assertAIConfigured(projectId)
   const client = createOpenAIClient(settings)
-  const maxRetries = options?.maxRetries ?? 2
-  const model = options?.model || settings.model
-  const taskType = options?.metadata?.taskType || 'unknown'
+  const maxRetries = options.maxRetries ?? 2
+  const model = options.model || settings.model
+  const taskType = options.metadata.taskType || 'unknown'
   const startedAt = Date.now()
   let lastError: unknown
 
@@ -499,16 +474,16 @@ export async function callAIJSON<T = Record<string, unknown>>(
       const response = await client.chat.completions.create({
         model,
         messages,
-        temperature: (options?.temperature ?? settings.temperature) / 100,
-        response_format: options?.responseFormat || { type: 'json_object' },
+        temperature: (options.temperature ?? settings.temperature) / 100,
+        response_format: options.responseFormat || { type: 'json_object' },
       })
 
       const latencyMs = Date.now() - startedAt
       const usage = response.usage
 
-      if (options?.metadata?.projectId) {
+      if (options.metadata.projectId) {
         await AIUsageService.recordUsage({
-          projectId: options.metadata.projectId,
+          projectId,
           chapterId: options.metadata.chapterId,
           contextSnapshotId: options.metadata.contextSnapshotId,
           provider: settings.provider,
@@ -545,9 +520,9 @@ export async function callAIJSON<T = Record<string, unknown>>(
         console.warn(`AI call failed, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries}):`, errorMessage(error))
         await sleep(delay)
       }
-      else if (options?.metadata?.projectId) {
+      else if (options.metadata.projectId) {
         await AIUsageService.recordUsage({
-          projectId: options.metadata.projectId,
+          projectId,
           chapterId: options.metadata.chapterId,
           contextSnapshotId: options.metadata.contextSnapshotId,
           provider: settings.provider,
@@ -569,7 +544,8 @@ export async function callAIJSON<T = Record<string, unknown>>(
 
 export async function* streamChat(
   messages: ChatCompletionMessageParam[],
-  options?: {
+  options: {
+    projectId: string
     context?: string
     model?: string
     personaPrompt?: string | null
@@ -579,7 +555,7 @@ export async function* streamChat(
     throw new Error('Messages are required')
   }
 
-  const settings = await assertAIConfigured()
+  const settings = await assertAIConfigured(options.projectId)
   const openai = createOpenAIClient(settings)
 
   const systemMessages: ChatCompletionMessageParam[] = [
@@ -588,15 +564,15 @@ export async function* streamChat(
       content: '你是专业的长篇小说自动写作引擎。必须优先遵守项目上下文、故事设定、人物动机、章节目标、场景约束、伏笔台账、事实图谱和写作人格。输出必须可被系统自动检查、修复、结构化抽取与写回，不得复刻参考作品原文、专名、桥段或连续表达。',
     },
   ]
-  if (options?.context) {
+  if (options.context) {
     systemMessages.push({ role: 'system', content: `Context: ${options.context}` })
   }
-  if (options?.personaPrompt) {
+  if (options.personaPrompt) {
     systemMessages.push({ role: 'system', content: `写作人格约束：\n${options.personaPrompt}` })
   }
 
   const response = await openai.chat.completions.create({
-    model: options?.model || settings.model,
+    model: options.model || settings.model,
     messages: [...systemMessages, ...messages],
     stream: true,
     temperature: settings.temperature / 100,
@@ -609,13 +585,16 @@ export async function* streamChat(
     }
   }
 }
-export async function callAIEmbedding(text: string, options?: { model?: string }): Promise<number[]> {
-  const settings = await getEffectiveAISettings()
+export async function callAIEmbedding(
+  text: string,
+  options: { projectId: string, model?: string },
+): Promise<number[]> {
+  const settings = await getEffectiveAISettings(options.projectId)
   if (settings.embeddingEnabled === false) {
     throw new Error('当前项目已禁用向量化（Embedding）功能，请在设置中开启。')
   }
 
-  const model = options?.model || settings.embeddingModel || 'text-embedding-3-small'
+  const model = options.model || settings.embeddingModel || 'text-embedding-3-small'
   const client = createOpenAIClient({
     apiKey: settings.embeddingApiKey || settings.apiKey,
     baseUrl: settings.embeddingBaseUrl || settings.baseUrl,

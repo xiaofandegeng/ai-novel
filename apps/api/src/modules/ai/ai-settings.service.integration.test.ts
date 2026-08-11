@@ -9,7 +9,7 @@ import {
   projectAISettings,
 } from '../../db/schema'
 import { createProject } from '../project/projects.service'
-import { getAISettings, updateAISettings } from './ai.service'
+import { getAISettings, getEffectiveAISettings, updateAISettings } from './ai.service'
 
 const MASTER_KEY = Buffer.alloc(32, 9).toString('base64')
 
@@ -89,5 +89,13 @@ describe('project AI settings service', () => {
     const secondSettings = await getAISettings(second.id)
 
     expect(secondSettings.hasApiKey).toBe(false)
+  })
+
+  it('rejects AI settings resolution without an explicit project scope', async () => {
+    const resolveWithoutProject = getEffectiveAISettings as (projectId?: string) => ReturnType<typeof getEffectiveAISettings>
+
+    await expect(resolveWithoutProject()).rejects.toMatchObject({
+      code: 'PROJECT_SCOPE_REQUIRED',
+    })
   })
 })

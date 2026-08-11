@@ -261,7 +261,10 @@ ${truncatedContent}
 
   return await callAIJSON<ExtractedChapterChanges>(
     [{ role: 'user', content: prompt }],
-    { temperature: 30 },
+    {
+      temperature: 30,
+      metadata: { projectId, chapterId, taskType: 'extract_chapter_changes' },
+    },
   )
 }
 
@@ -733,7 +736,10 @@ ${truncatedContent}
     newConflicts: Array<{ title: string, type: 'internal' | 'external', intensity: number, participants: string, description: string }>
     events: StructuredEvent[]
     styleNotes: StructuredStyleNote[]
-  }>([{ role: 'user', content: prompt }], { temperature: 30 })
+  }>([{ role: 'user', content: prompt }], {
+    temperature: 30,
+    metadata: { projectId, chapterId, taskType: 'extract_scene_changes' },
+  })
 
   let count = 0
 

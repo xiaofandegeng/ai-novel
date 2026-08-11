@@ -92,11 +92,11 @@
 - Modify: `apps/api/src/modules/automation/*.service.ts`
 - Modify: affected unit and integration tests
 
-- [ ] Inventory every `getEffectiveAISettings`, `assertAIConfigured`, `callAIJSON`, `streamChat`, and `callAIEmbedding` call.
-- [ ] Require or propagate `projectId` at every product AI call boundary.
-- [ ] Reject missing project scope instead of silently using another project's credentials.
-- [ ] Verify cross-project credential isolation.
-- [ ] Commit: `refactor(api): scope ai execution to project settings`.
+- [x] Inventory every `getEffectiveAISettings`, `assertAIConfigured`, `callAIJSON`, `streamChat`, and `callAIEmbedding` call.
+- [x] Require or propagate `projectId` at every product AI call boundary.
+- [x] Reject missing project scope instead of silently using another project's credentials.
+- [x] Verify cross-project credential isolation.
+- [x] Commit: `refactor(api): scope ai execution to project settings`.
 
 ## Task 7: Event-source prompt overrides
 
