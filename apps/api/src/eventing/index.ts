@@ -1,3 +1,4 @@
+export * from './aggregate-repository'
 export * from './command-bus'
 export * from './errors'
 export * from './event-registry'

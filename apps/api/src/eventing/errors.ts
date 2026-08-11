@@ -86,6 +86,19 @@ export class DomainCommandError extends EventingError {
   }
 }
 
+export class InvalidSnapshotError extends EventingError {
+  constructor(
+    readonly stream: StreamRef,
+    readonly expectedSchemaVersion: number,
+    readonly actualSchemaVersion: number,
+  ) {
+    super(
+      `Snapshot ${stream.aggregateType}/${stream.aggregateId} expected schema version ${expectedSchemaVersion}, received ${actualSchemaVersion}`,
+      'INVALID_SNAPSHOT',
+    )
+  }
+}
+
 export class DuplicateProjectionError extends EventingError {
   constructor(readonly projectionName: string) {
     super(`Projection already registered: ${projectionName}`, 'DUPLICATE_PROJECTION')

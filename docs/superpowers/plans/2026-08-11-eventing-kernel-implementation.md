@@ -586,7 +586,7 @@ git commit -m "feat(api): add transactional command bus"
 - Consumes: `EventRegistry`, Event Store streams and snapshots.
 - Produces: `AggregateDefinition<TState>` and `AggregateRepository.load()`.
 
-- [ ] **Step 1: Write failing aggregate loading tests**
+- [x] **Step 1: Write failing aggregate loading tests**
 
 ```ts
 it('reduces decoded stream events into aggregate state', async () => {
@@ -604,12 +604,12 @@ it('starts from a snapshot and applies only later events', async () => {
 
 Also test unknown event types, invalid snapshot versions, empty streams using `initialState`, and snapshot creation at the configured interval.
 
-- [ ] **Step 2: Run tests and observe missing repository failure**
+- [x] **Step 2: Run tests and observe missing repository failure**
 
 Run: `pnpm --filter @ai-novel/api test -- src/eventing/aggregate-repository.test.ts`  
 Expected: FAIL.
 
-- [ ] **Step 3: Implement pure aggregate definitions and repository loading**
+- [x] **Step 3: Implement pure aggregate definitions and repository loading**
 
 ```ts
 export interface AggregateDefinition<TState> {
@@ -629,12 +629,12 @@ export class AggregateRepository {
 
 Decode and upcast each event before `evolve`. Never mutate the previous state object inside the repository.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run: `pnpm --filter @ai-novel/api test -- src/eventing/aggregate-repository.test.ts`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit aggregate repository**
+- [x] **Step 5: Commit aggregate repository**
 
 ```bash
 git add apps/api/src/eventing
