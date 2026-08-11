@@ -12,7 +12,7 @@ import type {
 } from '../../eventing'
 import { eq } from 'drizzle-orm'
 import { novelProjects, projectReadModels } from '../../db/schema'
-import { DomainCommandError } from '../../eventing'
+import { createPayloadCodec, DomainCommandError } from '../../eventing'
 import { generateId, now } from '../../shared/utils'
 
 export const PROJECT_AGGREGATE_TYPE = 'Project'
@@ -34,6 +34,8 @@ const PROJECT_STATUSES: readonly ProjectStatus[] = [
   'completed',
   'archived',
 ]
+
+const payloadCodec = createPayloadCodec('INVALID_PROJECT_PAYLOAD', 'Project payload')
 
 export type ProjectSnapshot = JsonObject & {
   id: string
@@ -375,28 +377,15 @@ function requiredTrimmedString(record: JsonObject, key: string): string {
 }
 
 function requiredString(record: JsonObject, key: string): string {
-  const value = record[key]
-  if (typeof value !== 'string')
-    throw new DomainCommandError('INVALID_PROJECT_PAYLOAD', `${key} must be a string`)
-  return value
+  return payloadCodec.string(record, key, { allowEmpty: true, trim: false })
 }
 
 function nullableString(record: JsonObject, key: string): string | null {
-  const value = record[key]
-  if (value === undefined || value === null)
-    return null
-  if (typeof value !== 'string')
-    throw new DomainCommandError('INVALID_PROJECT_PAYLOAD', `${key} must be a string or null`)
-  return value
+  return payloadCodec.nullableString(record, key)
 }
 
 function nullableNumber(record: JsonObject, key: string): number | null {
-  const value = record[key]
-  if (value === undefined || value === null)
-    return null
-  if (typeof value !== 'number' || !Number.isFinite(value))
-    throw new DomainCommandError('INVALID_PROJECT_PAYLOAD', `${key} must be a finite number or null`)
-  return value
+  return payloadCodec.nullableNumber(record, key)
 }
 
 function projectStatus(value: unknown): ProjectStatus {
@@ -406,7 +395,5 @@ function projectStatus(value: unknown): ProjectStatus {
 }
 
 function readObject(value: unknown): JsonObject {
-  if (typeof value !== 'object' || value === null || Array.isArray(value))
-    throw new DomainCommandError('INVALID_PROJECT_PAYLOAD', 'Project payload must be an object')
-  return value as JsonObject
+  return payloadCodec.object(value)
 }

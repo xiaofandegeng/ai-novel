@@ -11,7 +11,7 @@ import type {
 } from '../../eventing'
 import { eq } from 'drizzle-orm'
 import { projectPromptOverrides } from '../../db/schema'
-import { DomainCommandError } from '../../eventing'
+import { createPayloadCodec, DomainCommandError } from '../../eventing'
 import { generateId, now } from '../../shared/utils'
 import {
   PROJECT_AGGREGATE_TYPE,
@@ -25,6 +25,8 @@ export const SET_PROJECT_PROMPT_OVERRIDE_COMMAND = 'SetProjectPromptOverride'
 
 export const PROMPT_TEMPLATE_SELECTED = 'PromptTemplateSelected'
 export const PROJECT_PROMPT_OVERRIDE_CHANGED = 'ProjectPromptOverrideChanged'
+
+const payloadCodec = createPayloadCodec('INVALID_PROMPT_OVERRIDE', 'Prompt override payload')
 
 export type ProjectPromptOverrideSnapshot = JsonObject & {
   id: string
@@ -260,30 +262,17 @@ function nextBoolean(record: JsonObject, key: string, fallback: boolean): boolea
 }
 
 function requiredString(record: JsonObject, key: string): string {
-  const value = record[key]
-  if (typeof value !== 'string' || !value.trim())
-    throw new DomainCommandError('INVALID_PROMPT_OVERRIDE', `${key} must be a non-empty string`)
-  return value.trim()
+  return payloadCodec.string(record, key)
 }
 
 function nullableString(record: JsonObject, key: string): string | null {
-  const value = record[key]
-  if (value === undefined || value === null)
-    return null
-  if (typeof value !== 'string')
-    throw new DomainCommandError('INVALID_PROMPT_OVERRIDE', `${key} must be a string or null`)
-  return value
+  return payloadCodec.nullableString(record, key)
 }
 
 function requiredBoolean(record: JsonObject, key: string): boolean {
-  const value = record[key]
-  if (typeof value !== 'boolean')
-    throw new DomainCommandError('INVALID_PROMPT_OVERRIDE', `${key} must be a boolean`)
-  return value
+  return payloadCodec.boolean(record, key)
 }
 
 function readObject(value: unknown): JsonObject {
-  if (typeof value !== 'object' || value === null || Array.isArray(value))
-    throw new DomainCommandError('INVALID_PROMPT_OVERRIDE', 'Prompt override payload must be an object')
-  return value as JsonObject
+  return payloadCodec.object(value)
 }

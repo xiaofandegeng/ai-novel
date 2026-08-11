@@ -12,7 +12,7 @@ import type {
 } from '../../eventing'
 import { and, eq, ne } from 'drizzle-orm'
 import { chapters, chapterScenes, chapterVersions } from '../../db/schema'
-import { DomainCommandError } from '../../eventing'
+import { createPayloadCodec, DomainCommandError } from '../../eventing'
 import { generateId, now } from '../../shared/utils'
 import {
   PROJECT_AGGREGATE_TYPE,
@@ -50,6 +50,8 @@ export const SCENE_CHANGED = 'SceneChanged'
 export const SCENE_REORDERED = 'SceneReordered'
 export const SCENE_CONTENT_APPLIED = 'SceneContentApplied'
 export const SCENE_DELETED = 'SceneDeleted'
+
+const payloadCodec = createPayloadCodec('INVALID_CHAPTER', 'Chapter payload')
 
 const CHAPTER_STATUSES: readonly ChapterStatus[] = [
   'not_started',
@@ -1057,10 +1059,7 @@ function chapterResult(state: ChapterState): ChapterSnapshot {
 }
 
 function requiredString(record: JsonObject, key: string): string {
-  const value = record[key]
-  if (typeof value !== 'string' || !value.trim())
-    throw new DomainCommandError('INVALID_CHAPTER', `${key} must be a non-empty string`)
-  return value.trim()
+  return payloadCodec.string(record, key)
 }
 
 function nonEmptyString(record: JsonObject, key: string): string {
@@ -1071,12 +1070,7 @@ function nonEmptyString(record: JsonObject, key: string): string {
 }
 
 function nullableString(record: JsonObject, key: string): string | null {
-  const value = record[key]
-  if (value === undefined || value === null)
-    return null
-  if (typeof value !== 'string')
-    throw new DomainCommandError('INVALID_CHAPTER', `${key} must be a string or null`)
-  return value
+  return payloadCodec.nullableString(record, key)
 }
 
 function optionalNullableString(record: JsonObject, key: string, fallback: string | null): string | null {
@@ -1084,10 +1078,7 @@ function optionalNullableString(record: JsonObject, key: string, fallback: strin
 }
 
 function requiredInteger(record: JsonObject, key: string, minimum: number): number {
-  const value = record[key]
-  if (!Number.isInteger(value) || (value as number) < minimum)
-    throw new DomainCommandError('INVALID_CHAPTER', `${key} must be an integer >= ${minimum}`)
-  return value as number
+  return payloadCodec.integer(record, key, { minimum })
 }
 
 function nullableInteger(record: JsonObject, key: string, minimum: number): number | null {
@@ -1120,14 +1111,9 @@ function sceneBeatType(value: unknown): SceneBeatType | null {
 }
 
 function objectArray(record: JsonObject, key: string): JsonObject[] {
-  const value = record[key]
-  if (!Array.isArray(value))
-    throw new DomainCommandError('INVALID_SCENE', `${key} must be an array`)
-  return value.map(readObject)
+  return payloadCodec.objectArray(record, key)
 }
 
 function readObject(value: unknown): JsonObject {
-  if (typeof value !== 'object' || value === null || Array.isArray(value))
-    throw new DomainCommandError('INVALID_CHAPTER', 'Chapter payload must be an object')
-  return value as JsonObject
+  return payloadCodec.object(value)
 }

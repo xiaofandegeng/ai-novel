@@ -11,7 +11,7 @@ import type {
 } from '../../eventing'
 import { eq } from 'drizzle-orm'
 import { projectAISettings } from '../../db/schema'
-import { DomainCommandError } from '../../eventing'
+import { createPayloadCodec, DomainCommandError } from '../../eventing'
 import { deleteProjectCredentials } from '../../security/credential-vault'
 import { generateId, now } from '../../shared/utils'
 import {
@@ -27,6 +27,8 @@ export const CHANGE_PROJECT_AI_SETTINGS_COMMAND = 'ChangeProjectAISettings'
 const AI_PROVIDER_SELECTED = 'AIProviderSelected'
 const CREDENTIAL_REFERENCE_CHANGED = 'CredentialReferenceChanged'
 const PROJECT_SETTINGS_CHANGED = 'ProjectSettingsChanged'
+
+const payloadCodec = createPayloadCodec('INVALID_PROJECT_SETTINGS', 'Settings payload')
 
 export type ProjectAISettingsSnapshot = JsonObject & {
   projectId: string
@@ -321,26 +323,15 @@ function readSettingsEvent(payload: JsonObject): ProjectAISettingsSnapshot {
 }
 
 function requiredString(record: JsonObject, key: string): string {
-  const value = record[key]
-  if (typeof value !== 'string' || !value.trim())
-    throw new DomainCommandError('INVALID_PROJECT_SETTINGS', `${key} must be a non-empty string`)
-  return value.trim()
+  return payloadCodec.string(record, key)
 }
 
 function nullableString(record: JsonObject, key: string): string | null {
-  const value = record[key]
-  if (value === undefined || value === null)
-    return null
-  if (typeof value !== 'string')
-    throw new DomainCommandError('INVALID_PROJECT_SETTINGS', `${key} must be a string or null`)
-  return value
+  return payloadCodec.nullableString(record, key)
 }
 
 function requiredBoolean(record: JsonObject, key: string): boolean {
-  const value = record[key]
-  if (typeof value !== 'boolean')
-    throw new DomainCommandError('INVALID_PROJECT_SETTINGS', `${key} must be a boolean`)
-  return value
+  return payloadCodec.boolean(record, key)
 }
 
 function boundedTemperature(value: unknown): number {
@@ -350,7 +341,5 @@ function boundedTemperature(value: unknown): number {
 }
 
 function readObject(value: unknown): JsonObject {
-  if (typeof value !== 'object' || value === null || Array.isArray(value))
-    throw new DomainCommandError('INVALID_PROJECT_SETTINGS', 'Settings payload must be an object')
-  return value as JsonObject
+  return payloadCodec.object(value)
 }

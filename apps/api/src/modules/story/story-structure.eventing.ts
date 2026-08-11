@@ -17,7 +17,7 @@ import {
   storyStructureTemplates,
   volumes,
 } from '../../db/schema'
-import { DomainCommandError } from '../../eventing'
+import { createPayloadCodec, DomainCommandError } from '../../eventing'
 import { generateId, now } from '../../shared/utils'
 import {
   PROJECT_AGGREGATE_TYPE,
@@ -46,6 +46,8 @@ export const ACT_CREATED = 'ActCreated'
 export const ACT_CHANGED = 'ActChanged'
 export const ACT_DELETED = 'ActDeleted'
 export const STRUCTURE_TEMPLATE_APPLIED = 'StructureTemplateApplied'
+
+const payloadCodec = createPayloadCodec('INVALID_STORY_STRUCTURE', 'Story structure payload')
 
 export type StoryBibleSnapshot = JsonObject & {
   id: string
@@ -718,19 +720,11 @@ async function deleteProjectStructure(
 }
 
 function requiredString(record: JsonObject, key: string): string {
-  const value = record[key]
-  if (typeof value !== 'string' || !value.trim())
-    throw new DomainCommandError('INVALID_STORY_STRUCTURE', `${key} must be a non-empty string`)
-  return value.trim()
+  return payloadCodec.string(record, key)
 }
 
 function nullableString(record: JsonObject, key: string): string | null {
-  const value = record[key]
-  if (value === undefined || value === null)
-    return null
-  if (typeof value !== 'string')
-    throw new DomainCommandError('INVALID_STORY_STRUCTURE', `${key} must be a string or null`)
-  return value
+  return payloadCodec.nullableString(record, key)
 }
 
 function optionalNullableString(record: JsonObject, key: string, fallback: string | null): string | null {
@@ -738,19 +732,11 @@ function optionalNullableString(record: JsonObject, key: string, fallback: strin
 }
 
 function requiredInteger(record: JsonObject, key: string, minimum: number): number {
-  const value = record[key]
-  if (!Number.isInteger(value) || (value as number) < minimum)
-    throw new DomainCommandError('INVALID_STORY_STRUCTURE', `${key} must be an integer >= ${minimum}`)
-  return value as number
+  return payloadCodec.integer(record, key, { minimum })
 }
 
 function nullableInteger(record: JsonObject, key: string, minimum: number): number | null {
-  const value = record[key]
-  if (value === undefined || value === null)
-    return null
-  if (!Number.isInteger(value) || (value as number) < minimum)
-    throw new DomainCommandError('INVALID_STORY_STRUCTURE', `${key} must be null or an integer >= ${minimum}`)
-  return value as number
+  return payloadCodec.nullableInteger(record, key, { minimum })
 }
 
 function normalizeText(record: JsonObject, key: string): string | null {
@@ -765,14 +751,9 @@ function normalizeText(record: JsonObject, key: string): string | null {
 }
 
 function stringArray(record: JsonObject, key: string): string[] {
-  const value = record[key]
-  if (!Array.isArray(value) || value.some(item => typeof item !== 'string' || !item.trim()))
-    throw new DomainCommandError('INVALID_STORY_STRUCTURE', `${key} must be an array of strings`)
-  return value.map(item => String(item).trim())
+  return payloadCodec.stringArray(record, key)
 }
 
 function readObject(value: unknown): JsonObject {
-  if (typeof value !== 'object' || value === null || Array.isArray(value))
-    throw new DomainCommandError('INVALID_STORY_STRUCTURE', 'Story structure payload must be an object')
-  return value as JsonObject
+  return payloadCodec.object(value)
 }
