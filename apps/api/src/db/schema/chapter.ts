@@ -6,7 +6,7 @@ import { volumes } from './structure'
 export const chapters = pgTable('chapters', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  volumeId: text('volume_id').references(() => volumes.id, { onDelete: 'cascade' }),
+  volumeId: text('volume_id').references(() => volumes.id, { onDelete: 'set null' }),
   title: text('title').notNull(),
   chapterNumber: integer('chapter_number').notNull(),
   outline: text('outline'),

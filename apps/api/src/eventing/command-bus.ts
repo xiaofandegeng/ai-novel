@@ -1,5 +1,5 @@
-import type { EventStore, EventStoreSession } from './event-store'
 import type { EventRegistry } from './event-registry'
+import type { EventStore, EventStoreSession } from './event-store'
 import type { CommandDecision, CommandEnvelope, JsonObject } from './event-types'
 import type { ProjectionRegistry } from './projection-runner'
 import { eq } from 'drizzle-orm'

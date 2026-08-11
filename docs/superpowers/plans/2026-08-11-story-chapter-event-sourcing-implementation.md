@@ -35,12 +35,12 @@
 - Modify: `apps/api/src/modules/story/acts.service.ts`
 - Modify: `apps/api/src/modules/story/story-structure.service.ts`
 
-- [ ] Define strict `StoryBibleChanged`, `VolumeCreated`, `VolumeChanged`, `VolumeDeleted`, `ActCreated`, `ActChanged`, `ActDeleted`, and `StructureTemplateApplied` events.
-- [ ] Enforce project ownership, unique entity IDs, and aggregate invariants in command handlers.
-- [ ] Project events synchronously into the existing story structure tables.
-- [ ] Rebuild one project without changing another project's rows.
-- [ ] Route all story bible, volume, act, and structure-template writes through the Command Bus.
-- [ ] Commit: `feat(api): event source story structure`.
+- [x] Define strict `StoryBibleChanged`, `VolumeCreated`, `VolumeChanged`, `VolumeDeleted`, `ActCreated`, `ActChanged`, `ActDeleted`, and `StructureTemplateApplied` events.
+- [x] Enforce project ownership, unique entity IDs, and aggregate invariants in command handlers.
+- [x] Project events synchronously into the existing story structure tables.
+- [x] Rebuild one project without changing another project's rows.
+- [x] Route all story bible, volume, act, and structure-template writes through the Command Bus.
+- [x] Commit: `feat(api): event source story structure`.
 
 ## Task 3: Chapter aggregate and chapter projection
 

@@ -88,6 +88,10 @@ describe('api architecture boundaries', () => {
       'projectReadModels',
       'projectAISettings',
       'projectPromptOverrides',
+      'storyBibles',
+      'volumes',
+      'acts',
+      'projectAppliedTemplates',
     ]
     const applicationFiles = sourceFiles(sourceRoot)
       .filter(file => !file.endsWith('.test.ts'))

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from './app'
 import { db, sql } from './db'
@@ -737,6 +737,29 @@ describe('http application boundary', () => {
 
     expect((await requestJson(app, `${timelinePath}/${timeline.id}`, 'DELETE')).response.status).toBe(200)
     expect((await requestJson(app, `${arcPath}/${arc.id}`, 'DELETE')).response.status).toBe(200)
+  })
+
+  it('deduplicates retried story-structure HTTP commands', async () => {
+    const projectId = await createProject(app, '结构幂等测试')
+    const createVolume = () => app.request(`/api/projects/${projectId}/volumes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'create-first-volume',
+      },
+      body: JSON.stringify({ title: '第一卷', orderIndex: 1 }),
+    })
+    const first = await createVolume()
+    const firstBody = await first.json() as { data: { id: string } }
+    const second = await createVolume()
+
+    expect(second.status).toBe(201)
+    await expect(second.json()).resolves.toEqual(firstBody)
+    const storyEvents = await db.select().from(domainEvents).where(and(
+      eq(domainEvents.aggregateType, 'StoryStructure'),
+      eq(domainEvents.projectId, projectId),
+    ))
+    expect(storyEvents.map(event => event.eventType)).toEqual(['VolumeCreated'])
   })
 
   it('lists and applies a story-structure template into project acts', async () => {
