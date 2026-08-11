@@ -1,8 +1,8 @@
 import type { AIProviderPreset } from '@ai-novel/shared'
 import { useToast } from '@ai-novel/ui'
 import { computed, onMounted, ref } from 'vue'
-import * as settingsApi from '../../../api/settings'
-import { toErrorMessage } from '../../../utils/error-message'
+import { toErrorMessage } from '../../../shared/utils/error-message'
+import * as settingsApi from '../api/settings.api'
 
 export function useAIProviderSettings(_projectId: string) {
   const toast = useToast()

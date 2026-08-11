@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import type { StoryStructureTemplate } from '@ai-novel/shared'
-import type { PromptOverride, PromptTemplate } from '../../../api/prompt-templates'
+import type { PromptOverride, PromptTemplate } from '../api/prompt-templates.api'
 import { NButton, NConfirmDialog, NPanel, NTag, useToast } from '@ai-novel/ui'
 import { Code, Layout, RefreshCw, Save, Terminal } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
-import { promptTemplateApi } from '../../../api/prompt-templates'
-import { storyStructureApi } from '../../../api/story-structure'
-import { toErrorMessage } from '../../../utils/error-message'
+import { toErrorMessage } from '../../../shared/utils/error-message'
+import { promptTemplateApi } from '../api/prompt-templates.api'
+import { storyStructureApi } from '../api/story-structure.api'
 
 const props = defineProps<{
   projectId: string

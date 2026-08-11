@@ -7,12 +7,13 @@ This file is the first document every AI coding agent must read before changing 
 Before writing code, read these files in order:
 
 1. `AGENTS.md`
-2. `docs/development/engineering-standards.md`
-3. `docs/development/ui-implementation-rules.md`
-4. `docs/development/ai-collaboration-rules.md`
-5. `docs/product/ai-novel-workbench-product-design.md`
-6. `docs/design/ai-novel-workbench-ui-design-spec.md`
-7. `docs/development/current-architecture.md`
+2. `docs/README.md`
+3. `docs/architecture/overview.md`
+4. `docs/standards/engineering.md`
+5. `docs/standards/ui.md`
+6. `docs/standards/ai-collaboration.md`
+7. `docs/product/product-design.md`
+8. `docs/design/ui-design-spec.md`
 
 ## Project Summary
 
@@ -33,11 +34,11 @@ The product is not a generic AI chat app. It is a structured creative writing sy
 Use this structure:
 
 ```text
-apps/web       Frontend app
-apps/api       Backend API
-packages/ui    Shared design-system components
+apps/web        Frontend app organized by feature
+apps/api        Backend API organized by domain module
+packages/ui     Shared design-system components
 packages/shared Shared types and API contracts
-docs           Product, design, development, and agent rules
+docs            Indexed product, design, architecture, guides, and standards
 ```
 
 Do not put build artifacts, temporary scripts, generated experiments, or one-off migration helpers inside business source folders such as `apps/web/src/views`.
@@ -89,9 +90,10 @@ For frontend UI changes, inspect the affected route in the browser and check des
 3. Keep business logic in the right layer:
    - Vue views compose feature components.
    - Pinia stores hold state.
-   - `apps/web/src/api` owns HTTP calls.
+   - `apps/web/src/features/*/api` owns domain HTTP calls.
+   - `apps/web/src/shared/api` owns the reusable HTTP client.
    - Hono routes handle HTTP.
-   - API services own backend business logic.
+   - `apps/api/src/modules/*` owns routes and backend business logic by domain.
    - `packages/shared` owns cross-app contracts.
 4. Add or update tests when changing shared contracts, services, composables, or critical flows.
 5. Summarize changed files and verification results in the final response.

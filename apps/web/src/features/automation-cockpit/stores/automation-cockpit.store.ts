@@ -1,7 +1,7 @@
 import type { AutomationCockpitPayload, CockpitChapterDetail } from '@ai-novel/shared'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { toErrorMessage } from '../../../utils/error-message'
+import { toErrorMessage } from '../../../shared/utils/error-message'
 import * as api from '../api/automation-cockpit.api'
 
 export const useAutomationCockpitStore = defineStore('automationCockpit', () => {

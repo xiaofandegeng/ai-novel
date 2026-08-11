@@ -164,6 +164,40 @@ describe('http application boundary', () => {
     await expect(ownerResponse.json()).resolves.toMatchObject({ data: { title: '第一章' }, success: true })
   })
 
+  it('ignores identity and ownership fields smuggled through request JSON', async () => {
+    const ownerId = await createProject(app, '归属项目')
+    const otherId = await createProject(app, '其他项目')
+
+    const created = await requestJson<{ id: string, projectId: string, name: string }>(
+      app,
+      `/api/projects/${ownerId}/characters`,
+      'POST',
+      { id: 'forged-id', projectId: otherId, name: '安全角色' },
+    )
+    expect(created.response.status).toBe(201)
+    expect(created.body.data).toMatchObject({ projectId: ownerId, name: '安全角色' })
+    expect(created.body.data.id).not.toBe('forged-id')
+
+    const updated = await requestJson<{ id: string, projectId: string, name: string }>(
+      app,
+      `/api/projects/${ownerId}/characters/${created.body.data.id}`,
+      'PATCH',
+      { id: 'replaced-id', projectId: otherId, name: '安全角色·修订' },
+    )
+    expect(updated.response.status).toBe(200)
+    expect(updated.body.data).toMatchObject({
+      id: created.body.data.id,
+      projectId: ownerId,
+      name: '安全角色·修订',
+    })
+
+    const otherCharacters = await requestJson<Array<{ id: string }>>(
+      app,
+      `/api/projects/${otherId}/characters`,
+    )
+    expect(otherCharacters.body.data).toEqual([])
+  })
+
   it('rejects incomplete chapter input instead of leaking a database error', async () => {
     const projectId = await createProject(app)
     const response = await app.request(`/api/projects/${projectId}/chapters`, {

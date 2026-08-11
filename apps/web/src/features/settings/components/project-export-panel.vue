@@ -9,14 +9,14 @@ import {
   Users,
 } from 'lucide-vue-next'
 import { reactive, ref } from 'vue'
+import { toErrorMessage } from '../../../shared/utils/error-message'
 import {
   exportCharacterProfiles,
   exportConflictReport,
   exportForeshadowingReport,
   exportManuscript,
   exportProposal,
-} from '../../../api/export'
-import { toErrorMessage } from '../../../utils/error-message'
+} from '../api/export.api'
 
 const props = defineProps<{
   projectId: string

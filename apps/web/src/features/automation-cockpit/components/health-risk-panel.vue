@@ -4,7 +4,7 @@ import { useToast } from '@ai-novel/ui'
 import { Activity, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { toErrorMessage } from '@/utils/error-message'
+import { toErrorMessage } from '../../../shared/utils/error-message'
 import { repairCockpitHealthRisk } from '../api/automation-cockpit.api'
 
 defineProps<{

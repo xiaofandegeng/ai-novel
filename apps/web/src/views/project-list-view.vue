@@ -18,9 +18,9 @@ import {
 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useProjectLabels } from '../composables/useProjectLabels'
-import { useProjectStore } from '../stores/project.store'
-import { toErrorMessage } from '../utils/error-message'
+import { useProjectLabels } from '@/features/projects/composables/useProjectLabels'
+import { useProjectStore } from '@/features/projects/stores/project.store'
+import { toErrorMessage } from '../shared/utils/error-message'
 
 const router = useRouter()
 const projectStore = useProjectStore()

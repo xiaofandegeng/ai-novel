@@ -10,7 +10,8 @@ alwaysApply: false
 
 - Use Vue 3 Composition API and TypeScript.
 - Views compose feature components; they should not contain large business workflows.
-- Put HTTP calls in `apps/web/src/api`.
+- Put domain HTTP calls in `apps/web/src/features/<domain>/api`.
+- Keep only the reusable HTTP client and pure utilities in `apps/web/src/shared`.
 - Keep Pinia stores domain-specific and typed.
 - Use shared types from `packages/shared`.
 - Use design-system components from `packages/ui`.
@@ -26,4 +27,3 @@ pnpm lint
 pnpm typecheck
 pnpm build
 ```
-

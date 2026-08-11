@@ -14,14 +14,14 @@ import {
 import { onMounted, reactive, ref } from 'vue'
 
 import { useRoute, useRouter } from 'vue-router'
-import { exportProject } from '../api/export'
+import { deleteProject, fetchProject, updateProject } from '@/features/projects/api/projects.api'
+import { exportProject } from '@/features/settings/api/export.api'
 
-import { deleteProject, fetchProject, updateProject } from '../api/projects'
 import AIPromptSettings from '../features/settings/components/ai-prompt-settings.vue'
 import ProjectAIProviderSettings from '../features/settings/components/project-ai-provider-settings.vue'
 import ProjectExportPanel from '../features/settings/components/project-export-panel.vue'
 import { useAIProviderSettings } from '../features/settings/composables/useAIProviderSettings'
-import { toErrorMessage } from '../utils/error-message'
+import { toErrorMessage } from '../shared/utils/error-message'
 
 const route = useRoute()
 const router = useRouter()

@@ -3,7 +3,7 @@ import { useToast } from '@ai-novel/ui'
 import { onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-import { useChapterStore } from '@/stores/chapter.store'
+import { useChapterStore } from '@/features/automation-cockpit/stores/chapter.store'
 import AutomationControlPanel from '../features/automation-cockpit/components/automation-control-panel.vue'
 import ChapterDetailDrawer from '../features/automation-cockpit/components/chapter-detail-drawer.vue'
 

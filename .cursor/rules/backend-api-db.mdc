@@ -9,7 +9,10 @@ alwaysApply: false
 # Backend Rules
 
 - Hono routes handle HTTP only: params, status, response.
-- Put business logic in `apps/api/src/services`.
+- Co-locate routes and business services in `apps/api/src/modules/<domain>`.
+- Register the HTTP surface only through `apps/api/src/modules/index.ts`.
+- Read runtime environment values through `apps/api/src/config/environment.ts`.
+- Keep cross-domain primitives in `apps/api/src/shared`; do not move domain workflows there.
 - Use shared contracts from `packages/shared`.
 - Use uniform `success` and `fail` response helpers.
 - Import Drizzle SQL helpers explicitly, for example `eq` and `and` from `drizzle-orm`.
@@ -26,4 +29,3 @@ pnpm db:migrate
 pnpm --filter @ai-novel/api db:seed
 pnpm check
 ```
-

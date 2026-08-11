@@ -1,21 +1,19 @@
 ---
 description: Rules for AI writing features and destructive operations.
 globs:
-  - "apps/web/src/**/*"
-  - "apps/api/src/routes/ai.ts"
-  - "apps/api/src/services/**/*ai*"
+  - "apps/web/src/features/automation-cockpit/**/*"
+  - "apps/api/src/modules/ai/**/*"
+  - "apps/api/src/modules/automation/**/*"
 alwaysApply: false
 ---
 
 # AI Trust Boundary
 
-AI is an assistant, not an automatic author.
+AI may write automatically only inside a run explicitly started by the author.
 
-- AI-generated text must not directly overwrite drafts, outlines, characters, relationships, conflicts, or story bible fields.
-- Generated results must first be stored as a pending proposal.
-- User actions must include insert, replace, save as alternative, and discard when applicable.
-- Replacement and restore operations must use a design-system confirmation dialog.
-- Show enough context for the user to understand what the AI used.
-- Quality suggestions must not directly rewrite chapters.
+- Generated text must pass through context snapshot, consistency checks, a structured change set, and automatic risk decision before write-back.
+- Unsafe or unlocatable results must be isolated or skipped, never reported as completed.
+- Runs must preserve steps, errors, decisions, events, and versions for auditability.
+- Pause, terminate, manual accept/reject, replacement, restore, export, and delete operations must preserve author control and use design-system confirmation where destructive.
+- Show enough context and result state for the author to understand what the AI used and changed.
 - Knowledge-base analysis should extract structure and technique, not imitate protected works.
-

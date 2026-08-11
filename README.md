@@ -47,14 +47,16 @@ pnpm dev
 ```text
 ai-novel/
 ├── apps/
-│   ├── web/              # Vue 3 前端
-│   └── api/              # Hono 后端
+│   ├── web/              # Vue 3 前端：features + shared + views
+│   └── api/              # Hono 后端：modules + config + db + shared
 ├── packages/
 │   ├── shared/           # 共享类型定义
 │   └── ui/               # 设计系统组件
-├── docs/                 # 产品设计、UI 规格、开发文档
+├── docs/                 # 带索引的产品、设计、架构、指南和规范
 └── pnpm-workspace.yaml   # Monorepo 配置
 ```
+
+后端按 `project`、`story`、`character`、`narrative`、`ai`、`automation` 六个领域模块组织；前端按 `projects`、`settings`、`automation-cockpit` 三个 feature 组织。详细依赖方向见架构总览。
 
 ## 开发命令
 
@@ -82,7 +84,9 @@ API 集成测试默认使用当前系统用户连接本机 `ai_novel_test`，也
 
 ## 文档
 
-- [产品设计文档](docs/product/ai-novel-workbench-product-design.md)
-- [UI 设计规格](docs/design/ai-novel-workbench-ui-design-spec.md)
-- [当前架构](docs/development/current-architecture.md)
-- [本地 PostgreSQL 与 AI 配置说明](docs/development/local-postgresql-and-ai-config.md)
+- [文档索引](docs/README.md)
+- [产品设计](docs/product/product-design.md)
+- [UI 设计规格](docs/design/ui-design-spec.md)
+- [架构总览](docs/architecture/overview.md)
+- [本地开发与配置](docs/guides/local-development.md)
+- [工程规范](docs/standards/engineering.md)

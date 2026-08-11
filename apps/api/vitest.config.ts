@@ -19,7 +19,12 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json-summary'],
       reportsDirectory: './coverage',
-      include: ['src/{app,utils,routes,services}/**/*.ts'],
+      include: [
+        'src/app.ts',
+        'src/config/**/*.ts',
+        'src/modules/**/*.ts',
+        'src/shared/**/*.ts',
+      ],
       exclude: ['src/index.ts'],
       thresholds: {
         statements: 30,
