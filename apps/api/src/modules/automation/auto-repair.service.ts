@@ -1,14 +1,17 @@
 import type { AutonomousStrategy, ConsistencyGuardReport } from '@ai-novel/shared'
+import type { SceneSnapshot } from '../story/chapter.eventing'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { chapters, chapterScenes, projectHealthReports } from '../../db/schema'
-import { errorMessage, generateId, now } from '../../shared/utils'
+import { chapters, projectHealthReports } from '../../db/schema'
+import { errorMessage, generateId } from '../../shared/utils'
 import { renderAIContext } from '../ai/ai-context-renderer'
 import { buildProjectAIContext } from '../ai/ai-context.service'
 import { callAIJSON } from '../ai/ai.service'
 import { getProjectHealthMetrics } from '../narrative/health-metrics.service'
+import { dispatchChapterCommand } from '../story/chapter.commands'
+import { CHANGE_CHAPTER_COMMAND, PLAN_SCENES_COMMAND } from '../story/chapter.eventing'
 
-type BeatType = NonNullable<typeof chapterScenes.$inferInsert['beatType']>
+type BeatType = NonNullable<SceneSnapshot['beatType']>
 type ProjectHealthMetrics = Awaited<ReturnType<typeof getProjectHealthMetrics>>
 
 interface GuardDimension {
@@ -275,46 +278,42 @@ ${chapterInfo}
     throw new Error('AI 生成场景规划失败或返回格式不正确')
   }
 
-  // 3. 在事务中写入数据库
-  await db.transaction(async (tx) => {
-    // A. 更新章节大纲、目标、冲突
-    await tx.update(chapters).set({
+  // 3. 所有产品状态通过 Chapter 命令进入事件流
+  const correlationId = generateId()
+  await dispatchChapterCommand(
+    CHANGE_CHAPTER_COMMAND,
+    projectId,
+    chapterId,
+    {
       outline: result.outline,
       goals: result.goals || null,
       conflicts: result.conflicts || null,
-      updatedAt: now(),
-    }).where(and(eq(chapters.id, chapterId), eq(chapters.projectId, projectId)))
-
-    // B. 清除旧场景
-    await tx.delete(chapterScenes).where(
-      and(
-        eq(chapterScenes.projectId, projectId),
-        eq(chapterScenes.chapterId, chapterId),
-      ),
-    )
-
-    // C. 插入新场景
-    if (result.scenes.length > 0) {
-      const sceneValues = result.scenes.map((s, index) => ({
+    },
+    { commandId: `${correlationId}:chapter`, correlationId },
+  )
+  await dispatchChapterCommand(
+    PLAN_SCENES_COMMAND,
+    projectId,
+    chapterId,
+    {
+      mode: 'replace',
+      scenes: result.scenes.map((scene, index) => ({
         id: generateId(),
-        projectId,
-        chapterId,
-        sceneNumber: s.sceneNumber || (index + 1),
-        title: s.title || null,
-        location: s.location || null,
-        purpose: s.purpose || null,
-        summary: s.summary || null,
-        characters: s.characters ? JSON.stringify(s.characters) : null,
-        conflict: s.conflict || null,
-        conflictLevel: s.conflictLevel || 5,
-        beatType: normalizeBeatType(s.beatType || 'setup'),
-        status: 'planned' as 'planned' | 'drafting' | 'reviewed' | 'completed',
+        sceneNumber: scene.sceneNumber || index + 1,
+        title: scene.title || null,
+        location: scene.location || null,
+        purpose: scene.purpose || null,
+        summary: scene.summary || null,
+        characters: scene.characters ? JSON.stringify(scene.characters) : null,
+        conflict: scene.conflict || null,
+        conflictLevel: scene.conflictLevel || 5,
+        beatType: normalizeBeatType(scene.beatType || 'setup'),
+        status: 'planned',
         orderIndex: index + 1,
-        updatedAt: now(),
-      }))
-      await tx.insert(chapterScenes).values(sceneValues)
-    }
-  })
+      })),
+    },
+    { commandId: `${correlationId}:scenes`, correlationId },
+  )
 
   // 4. 重新计算并保存项目健康度指标
   const metrics = await getProjectHealthMetrics(projectId)

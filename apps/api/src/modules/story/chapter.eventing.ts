@@ -31,6 +31,7 @@ export const CREATE_CHAPTER_COMMAND = 'CreateChapter'
 export const CHANGE_CHAPTER_COMMAND = 'ChangeChapter'
 export const DELETE_CHAPTER_COMMAND = 'DeleteChapter'
 export const APPLY_CHAPTER_CONTENT_COMMAND = 'ApplyChapterContent'
+export const RECORD_CHAPTER_VERSION_COMMAND = 'RecordChapterVersion'
 export const PLAN_SCENES_COMMAND = 'PlanScenes'
 export const CHANGE_SCENE_COMMAND = 'ChangeScene'
 export const REORDER_SCENES_COMMAND = 'ReorderScenes'
@@ -43,6 +44,7 @@ export const CHAPTER_DETAILS_CHANGED = 'ChapterDetailsChanged'
 export const CHAPTER_CONTENT_APPLIED = 'ChapterContentApplied'
 export const CHAPTER_COMPLETED = 'ChapterCompleted'
 export const CHAPTER_DELETED = 'ChapterDeleted'
+export const CHAPTER_VERSION_RECORDED = 'ChapterVersionRecorded'
 export const SCENE_PLANNED = 'ScenePlanned'
 export const SCENE_CHANGED = 'SceneChanged'
 export const SCENE_REORDERED = 'SceneReordered'
@@ -158,6 +160,16 @@ export type ChapterSnapshot = JsonObject & {
   updatedAt: string
 }
 
+export type ChapterVersionSnapshot = JsonObject & {
+  id: string
+  projectId: string
+  chapterId: string
+  content: string
+  wordCount: number
+  note: string | null
+  createdAt: string
+}
+
 export type ChapterState = ChapterSnapshot & {
   exists: boolean
   deleted: boolean
@@ -248,6 +260,12 @@ function registerEvents(events: EventRegistry): void {
     currentSchemaVersion: 1,
     upcasters: {},
     validate: validateDeletedEvent,
+  })
+  events.register({
+    eventType: CHAPTER_VERSION_RECORDED,
+    currentSchemaVersion: 1,
+    upcasters: {},
+    validate: validateVersionRecordedEvent,
   })
   for (const eventType of FULL_SCENE_EVENTS) {
     events.register({
@@ -363,15 +381,39 @@ function registerCommands(runtime: ChapterEventingRuntime): void {
     }
   })
 
+  runtime.commands.register(RECORD_CHAPTER_VERSION_COMMAND, async (command, context) => {
+    const stream = chapterStream(command)
+    const loaded = await loadActiveChapter(runtime, command, context.session)
+    const timestamp = now()
+    const content = nonEmptyString(command.payload, 'content')
+    const version: ChapterVersionSnapshot = {
+      id: generateId(),
+      projectId: command.projectId!,
+      chapterId: command.aggregateId,
+      content,
+      wordCount: content.length,
+      note: nullableString(command.payload, 'note'),
+      createdAt: timestamp,
+    }
+    return {
+      streams: [{
+        stream,
+        expectedVersion: loaded.version,
+        events: [pendingEvent(CHAPTER_VERSION_RECORDED, { version }, command, timestamp)],
+      }],
+      result: { versionId: version.id },
+    }
+  })
+
   runtime.commands.register(PLAN_SCENES_COMMAND, async (command, context) => {
     const stream = chapterStream(command)
     const loaded = await loadActiveChapter(runtime, command, context.session)
     const inputs = objectArray(command.payload, 'scenes')
-    if (inputs.length === 0)
-      throw new DomainCommandError('INVALID_SCENE', 'scenes must be a non-empty array')
     const mode = command.payload.mode ?? 'append'
     if (mode !== 'append' && mode !== 'replace')
       throw new DomainCommandError('INVALID_SCENE', 'mode must be append or replace')
+    if (inputs.length === 0 && mode === 'append')
+      throw new DomainCommandError('INVALID_SCENE', 'append scenes must be a non-empty array')
 
     const timestamp = now()
     const currentScenes = Object.values(loaded.state.scenes ?? {})
@@ -399,7 +441,7 @@ function registerCommands(runtime: ChapterEventingRuntime): void {
       ? planned
       : sortScenes([...currentScenes, ...planned])
     return {
-      streams: [{ stream, expectedVersion: loaded.version, events }],
+      streams: events.length > 0 ? [{ stream, expectedVersion: loaded.version, events }] : [],
       result: { scenes: result },
     }
   })
@@ -489,6 +531,7 @@ function registerProjection(projections: ProjectionRegistry): void {
       ...FULL_CHAPTER_EVENTS,
       ...FULL_SCENE_EVENTS,
       CHAPTER_DELETED,
+      CHAPTER_VERSION_RECORDED,
       SCENE_DELETED,
       PROJECT_DELETED,
     ],
@@ -512,6 +555,12 @@ function registerProjection(projections: ProjectionRegistry): void {
           eq(chapterScenes.chapterId, scene.chapterId),
           eq(chapterScenes.id, scene.id),
         ))
+        return
+      }
+      if (event.eventType === CHAPTER_VERSION_RECORDED) {
+        await transaction.insert(chapterVersions)
+          .values(readVersionEvent(event.payload))
+          .onConflictDoNothing()
         return
       }
       if (FULL_SCENE_EVENTS.includes(event.eventType as typeof FULL_SCENE_EVENTS[number])) {
@@ -895,6 +944,24 @@ function validateContentAppliedEvent(payload: unknown): JsonObject {
   return {
     chapter: readChapterEvent(value),
     note: nullableString(value, 'note'),
+  }
+}
+
+function validateVersionRecordedEvent(payload: unknown): JsonObject {
+  return { version: readVersionEvent(readObject(payload)) }
+}
+
+function readVersionEvent(payload: JsonObject): ChapterVersionSnapshot {
+  const value = 'version' in payload ? readObject(payload.version) : payload
+  const content = nonEmptyString(value, 'content')
+  return {
+    id: requiredString(value, 'id'),
+    projectId: requiredString(value, 'projectId'),
+    chapterId: requiredString(value, 'chapterId'),
+    content,
+    wordCount: requiredInteger(value, 'wordCount', 1),
+    note: nullableString(value, 'note'),
+    createdAt: requiredString(value, 'createdAt'),
   }
 }
 

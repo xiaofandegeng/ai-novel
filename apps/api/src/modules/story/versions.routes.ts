@@ -2,7 +2,7 @@ import type { Hono } from 'hono'
 import { httpCommandOptions } from '../../shared/http/command-options'
 import { fail, success } from '../../shared/http/responses'
 import { assertChapterBelongsToProject } from '../../shared/ownership'
-import { APPLY_CHAPTER_CONTENT_COMMAND } from './chapter.eventing'
+import { RECORD_CHAPTER_VERSION_COMMAND } from './chapter.eventing'
 import * as versionService from './version.service'
 
 export function registerVersionRoutes(app: Hono) {
@@ -33,7 +33,7 @@ export function registerVersionRoutes(app: Hono) {
       chapterId,
       body.content,
       body.note,
-      httpCommandOptions(c, APPLY_CHAPTER_CONTENT_COMMAND, projectId, chapterId),
+      httpCommandOptions(c, RECORD_CHAPTER_VERSION_COMMAND, projectId, chapterId),
     )
     if (typeof row === 'object' && 'error' in row && row.error)
       return c.json(fail(row.error), 400)

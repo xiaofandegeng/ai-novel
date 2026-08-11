@@ -14,6 +14,8 @@ import {
   writingJobSteps,
 } from '../../db/schema'
 import { errorMessage, generateId, now } from '../../shared/utils'
+import { dispatchChapterCommand } from '../story/chapter.commands'
+import { CHANGE_CHAPTER_COMMAND, CHANGE_SCENE_COMMAND } from '../story/chapter.eventing'
 import { createSnapshot } from '../story/version.service'
 import { applyOneSuggestion } from './postprocess-suggestion.service'
 
@@ -430,29 +432,59 @@ export async function applyChangeSet(
       }
 
       const beforeContent = chapter.draft || ''
-      const beforeSnapshot = await createSnapshot(projectId, fullChangeSet.chapterId, beforeContent || ' ', `Unified Change Set Apply Before: ${changeSetId}`)
-      if ('error' in beforeSnapshot)
-        throw new Error(beforeSnapshot.error)
+      let beforeSnapshotId: string | null = null
+      if (beforeContent) {
+        const beforeSnapshot = await createSnapshot(
+          projectId,
+          fullChangeSet.chapterId,
+          beforeContent,
+          `Unified Change Set Apply Before: ${changeSetId}`,
+          {
+            commandId: `ApplyChangeSet:${changeSetId}:before`,
+            correlationId: changeSetId,
+            causationId: changeSetId,
+          },
+        )
+        if ('error' in beforeSnapshot)
+          throw new Error(beforeSnapshot.error)
+        beforeSnapshotId = beforeSnapshot.id
+      }
 
       // 2. Apply draft
       if (fullChangeSet.draftContent) {
         // P1-4: 场景自动写作区分写入目标
         if (fullChangeSet.sceneId) {
-          await tx.update(chapterScenes)
-            .set({ content: fullChangeSet.draftContent, status: 'reviewed', updatedAt: now() })
-            .where(and(
-              eq(chapterScenes.id, fullChangeSet.sceneId),
-              eq(chapterScenes.projectId, projectId),
-              eq(chapterScenes.chapterId, fullChangeSet.chapterId),
-            ))
+          await dispatchChapterCommand(
+            CHANGE_SCENE_COMMAND,
+            projectId,
+            fullChangeSet.chapterId,
+            {
+              id: fullChangeSet.sceneId,
+              content: fullChangeSet.draftContent,
+              status: 'reviewed',
+            },
+            {
+              commandId: `ApplyChangeSet:${changeSetId}:scene`,
+              correlationId: changeSetId,
+              causationId: changeSetId,
+            },
+          )
         }
         else {
-          await tx.update(chapters)
-            .set({ draft: fullChangeSet.draftContent, updatedAt: now() })
-            .where(and(
-              eq(chapters.id, fullChangeSet.chapterId),
-              eq(chapters.projectId, projectId),
-            ))
+          await dispatchChapterCommand(
+            CHANGE_CHAPTER_COMMAND,
+            projectId,
+            fullChangeSet.chapterId,
+            {
+              draft: fullChangeSet.draftContent,
+              note: `Unified Change Set Apply: ${changeSetId}`,
+            },
+            {
+              commandId: `ApplyChangeSet:${changeSetId}:chapter`,
+              correlationId: changeSetId,
+              causationId: changeSetId,
+            },
+          )
         }
       }
 
@@ -531,17 +563,32 @@ export async function applyChangeSet(
       }
 
       // 4. Mark change set as applied
-      const afterSnapshot = await createSnapshot(projectId, fullChangeSet.chapterId, fullChangeSet.draftContent || beforeContent || ' ', `Unified Change Set Apply After: ${changeSetId}`)
-      if ('error' in afterSnapshot)
-        throw new Error(afterSnapshot.error)
+      const afterContent = fullChangeSet.draftContent || beforeContent
+      let afterSnapshotId: string | null = null
+      if (afterContent) {
+        const afterSnapshot = await createSnapshot(
+          projectId,
+          fullChangeSet.chapterId,
+          afterContent,
+          `Unified Change Set Apply After: ${changeSetId}`,
+          {
+            commandId: `ApplyChangeSet:${changeSetId}:after`,
+            correlationId: changeSetId,
+            causationId: changeSetId,
+          },
+        )
+        if ('error' in afterSnapshot)
+          throw new Error(afterSnapshot.error)
+        afterSnapshotId = afterSnapshot.id
+      }
 
       await tx.update(chapterChangeSets)
         .set({
           status: 'applied',
           appliedAt: now(),
           updatedAt: now(),
-          beforeSnapshotId: beforeSnapshot.id,
-          afterSnapshotId: afterSnapshot.id,
+          beforeSnapshotId,
+          afterSnapshotId,
         })
         .where(eq(chapterChangeSets.id, changeSetId))
 

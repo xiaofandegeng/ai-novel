@@ -26,6 +26,7 @@ import {
   DELETE_CHAPTER_COMMAND,
   DELETE_SCENE_COMMAND,
   PLAN_SCENES_COMMAND,
+  RECORD_CHAPTER_VERSION_COMMAND,
   registerChapterEventing,
   REORDER_SCENES_COMMAND,
 } from './chapter.eventing'
@@ -265,7 +266,13 @@ describe('chapter eventing', () => {
       { content: '汽笛划破潮湿的夜。', note: '初稿快照' },
       'command-apply-content',
     )) as { versionId: string }
+    const retried = await runtime.commands.dispatch(chapterCommand(
+      APPLY_CHAPTER_CONTENT_COMMAND,
+      { content: '汽笛划破潮湿的夜。', note: '初稿快照' },
+      'command-apply-content',
+    )) as { versionId: string }
 
+    expect(retried).toEqual(applied)
     await expect(readChapter('project-1', 'chapter-1')).resolves.toMatchObject({
       draft: '汽笛划破潮湿的夜。',
     })
@@ -275,13 +282,27 @@ describe('chapter eventing', () => {
       note: '初稿快照',
       wordCount: 9,
     })
+    const recorded = await runtime.commands.dispatch(chapterCommand(
+      RECORD_CHAPTER_VERSION_COMMAND,
+      { content: '独立快照内容', note: '只记录，不应用' },
+      'command-record-version',
+    )) as { versionId: string }
+    await expect(readVersion('project-1', recorded.versionId)).resolves.toMatchObject({
+      content: '独立快照内容',
+      note: '只记录，不应用',
+    })
+    await expect(readChapter('project-1', 'chapter-1')).resolves.toMatchObject({
+      draft: '汽笛划破潮湿的夜。',
+    })
     const expected = await readVersion('project-1', applied.versionId)
+    const expectedRecorded = await readVersion('project-1', recorded.versionId)
     await db.delete(chapterVersions).where(eq(chapterVersions.projectId, 'project-1'))
 
     await new ProjectionReplay(runtime.projections, runtime.store)
       .replayProjection(CHAPTER_PROJECTION, { projectId: 'project-1' })
 
     await expect(readVersion('project-1', applied.versionId)).resolves.toEqual(expected)
+    await expect(readVersion('project-1', recorded.versionId)).resolves.toEqual(expectedRecorded)
   })
 })
 

@@ -90,10 +90,10 @@
 - Modify: story routes and API integration tests
 - Modify: affected `apps/web` chapter/story API modules and tests
 
-- [ ] Add `Idempotency-Key` support to every story/chapter mutation route.
-- [ ] Preserve existing success payloads, status codes, and project-boundary failures.
-- [ ] Verify create/edit/delete, bulk scene planning, chapter completion, and version browsing through HTTP.
-- [ ] Commit: `refactor(api): route story writes through command bus`.
+- [x] Add `Idempotency-Key` support to every story/chapter mutation route.
+- [x] Preserve existing success payloads, status codes, and project-boundary failures.
+- [x] Verify create/edit/delete, bulk scene planning, chapter completion, and version browsing through HTTP.
+- [x] Commit: `refactor(api): route story writes through command bus`.
 
 ## Task 7: Remove automation write bypasses
 
@@ -101,11 +101,11 @@
 - Modify: `apps/api/src/modules/automation/*.service.ts`
 - Modify: affected automation tests
 
-- [ ] Replace every direct chapter/scene update with an idempotent domain command.
-- [ ] Carry correlation and causation IDs from run/job context.
-- [ ] Ensure postprocess side effects begin only after the accepted chapter event commits.
-- [ ] Verify retries cannot apply generated content twice.
-- [ ] Commit: `refactor(api): command chapter automation writes`.
+- [x] Replace every direct chapter/scene update with an idempotent domain command.
+- [x] Carry correlation and causation IDs from run/job context.
+- [x] Ensure postprocess side effects begin only after the accepted chapter event commits.
+- [x] Verify retries cannot apply generated content twice.
+- [x] Commit: `refactor(api): command chapter automation writes`.
 
 ## Task 8: Architecture gates and phase verification
 

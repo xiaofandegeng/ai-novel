@@ -1,4 +1,5 @@
 import type { AutonomousStrategy, CreateWritingJobInput, WritingJob, WritingJobStepType } from '@ai-novel/shared'
+import type { ChapterSnapshot, SceneSnapshot } from '../story/chapter.eventing'
 import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { autonomousRunExceptions, autonomousRunJobs, autonomousWritingRuns, chapters, chapterScenes, projectHealthReports, writingJobs, writingJobSteps } from '../../db/schema'
@@ -11,6 +12,12 @@ import { callAIJSON, getEffectiveAISettings } from '../ai/ai.service'
 import { runConsistencyGuard } from '../ai/consistency-guard.service'
 import { AuthoringEventService } from '../narrative/authoring-event.service'
 import { getProjectHealthMetrics } from '../narrative/health-metrics.service'
+import { dispatchChapterCommand } from '../story/chapter.commands'
+import {
+  CHANGE_CHAPTER_COMMAND,
+  CHANGE_SCENE_COMMAND,
+  PLAN_SCENES_COMMAND,
+} from '../story/chapter.eventing'
 import { createSnapshot } from '../story/version.service'
 import { decideNextAction } from './auto-decision.service'
 import { attemptAutoRepair, attemptAutoRepairPlan } from './auto-repair.service'
@@ -33,7 +40,7 @@ type JobMode = 'outline_only' | 'draft_only' | 'outline_then_draft' | 'scene_dra
 type WritingJobStatus = NonNullable<typeof writingJobs.$inferInsert['status']>
 type TerminalWritingJobStatus = 'completed' | 'failed' | 'isolated'
 type JobStepUpdate = Partial<typeof writingJobSteps.$inferInsert>
-type SceneBeatType = NonNullable<typeof chapterScenes.$inferInsert['beatType']>
+type SceneBeatType = NonNullable<SceneSnapshot['beatType']>
 
 interface GeneratedScenePlan {
   sceneNumber?: number
@@ -465,8 +472,11 @@ ${contextPrompt}
   })
 
   if (projectId && chapterId) {
-    await db.transaction(async (tx) => {
-      await tx.update(chapters).set({
+    await dispatchChapterCommand<ChapterSnapshot>(
+      CHANGE_CHAPTER_COMMAND,
+      projectId,
+      chapterId,
+      {
         title: typeof plan.title === 'string' && plan.title.trim() ? plan.title.trim() : undefined,
         goals: typeof plan.goals === 'string' ? plan.goals : null,
         conflicts: typeof plan.conflicts === 'string' ? plan.conflicts : null,
@@ -476,35 +486,43 @@ ${contextPrompt}
         endingHook: typeof plan.endingHook === 'string' ? plan.endingHook : null,
         outline: typeof plan.outline === 'string' ? plan.outline : null,
         status: 'planning',
-        updatedAt: now(),
-      }).where(and(eq(chapters.id, chapterId), eq(chapters.projectId, projectId)))
+      },
+      {
+        commandId: `GenerateChapterPlan:${stepId}:chapter`,
+        correlationId: stepId,
+        causationId: stepId,
+      },
+    )
 
-      if (Array.isArray(plan.scenes) && plan.scenes.length > 0) {
-        await tx.delete(chapterScenes).where(and(
-          eq(chapterScenes.projectId, projectId),
-          eq(chapterScenes.chapterId, chapterId),
-        ))
-
-        await tx.insert(chapterScenes).values(plan.scenes.slice(0, 8).map((scene, index) => ({
-          id: generateId(),
-          projectId,
-          chapterId,
-          sceneNumber: Number(scene.sceneNumber) || index + 1,
-          title: typeof scene.title === 'string' ? scene.title : `场景 ${index + 1}`,
-          location: typeof scene.location === 'string' ? scene.location : null,
-          purpose: typeof scene.purpose === 'string' ? scene.purpose : null,
-          summary: typeof scene.summary === 'string' ? scene.summary : null,
-          characters: Array.isArray(scene.characters) ? JSON.stringify(scene.characters) : null,
-          conflict: typeof scene.conflict === 'string' ? scene.conflict : null,
-          conflictLevel: Number(scene.conflictLevel) || 5,
-          beatType: normalizeSceneBeatType(scene.beatType),
-          status: 'planned' as const,
-          orderIndex: index + 1,
-          createdAt: now(),
-          updatedAt: now(),
-        })))
-      }
-    })
+    if (Array.isArray(plan.scenes) && plan.scenes.length > 0) {
+      await dispatchChapterCommand(
+        PLAN_SCENES_COMMAND,
+        projectId,
+        chapterId,
+        {
+          mode: 'replace',
+          scenes: plan.scenes.slice(0, 8).map((scene, index) => ({
+            id: generateId(),
+            sceneNumber: Number(scene.sceneNumber) || index + 1,
+            title: typeof scene.title === 'string' ? scene.title : `场景 ${index + 1}`,
+            location: typeof scene.location === 'string' ? scene.location : null,
+            purpose: typeof scene.purpose === 'string' ? scene.purpose : null,
+            summary: typeof scene.summary === 'string' ? scene.summary : null,
+            characters: Array.isArray(scene.characters) ? JSON.stringify(scene.characters) : null,
+            conflict: typeof scene.conflict === 'string' ? scene.conflict : null,
+            conflictLevel: Number(scene.conflictLevel) || 5,
+            beatType: normalizeSceneBeatType(scene.beatType),
+            status: 'planned' as const,
+            orderIndex: index + 1,
+          })),
+        },
+        {
+          commandId: `GenerateChapterPlan:${stepId}:scenes`,
+          correlationId: stepId,
+          causationId: stepId,
+        },
+      )
+    }
   }
 
   const output = JSON.stringify(plan)
@@ -609,22 +627,39 @@ async function executeApplyDraft(
     throw new Error('生成正文为空，无法写入章节')
 
   if (isAutoMode) {
-    const currentContent = (await db.select({ draft: chapters.draft }).from(chapters).where(eq(chapters.id, chapterId)))[0]?.draft || ''
-    await createSnapshot(projectId, chapterId, currentContent, '全自动写作写入前备份 (Before Auto-Write)')
+    const currentContent = (await db.select({ draft: chapters.draft }).from(chapters).where(and(
+      eq(chapters.id, chapterId),
+      eq(chapters.projectId, projectId),
+    )))[0]?.draft || ''
+    await createSnapshot(
+      projectId,
+      chapterId,
+      currentContent,
+      '全自动写作写入前备份 (Before Auto-Write)',
+      {
+        commandId: `ApplyDraft:${stepId}:before`,
+        correlationId: stepId,
+        causationId: stepId,
+      },
+    )
   }
 
-  const [row] = await db.update(chapters).set({
-    draft: content,
-    title: draft.title || undefined,
-    status: 'completed',
-    updatedAt: now(),
-  }).where(and(
-    eq(chapters.id, chapterId),
-    eq(chapters.projectId, projectId),
-  )).returning()
-
-  if (!row)
-    throw new Error('章节不存在或不属于当前项目')
+  const row = await dispatchChapterCommand<ChapterSnapshot>(
+    CHANGE_CHAPTER_COMMAND,
+    projectId,
+    chapterId,
+    {
+      draft: content,
+      title: draft.title || undefined,
+      status: 'completed',
+      note: 'Writing job applied draft',
+    },
+    {
+      commandId: `ApplyDraft:${stepId}`,
+      correlationId: stepId,
+      causationId: stepId,
+    },
+  )
 
   // Log event
   await AuthoringEventService.logEvent({
@@ -636,7 +671,17 @@ async function executeApplyDraft(
   }).catch(err => console.error('Failed to log authoring event:', err))
 
   if (isAutoMode) {
-    await createSnapshot(projectId, chapterId, content, '全自动写作写入后备份 (After Auto-Write)')
+    await createSnapshot(
+      projectId,
+      chapterId,
+      content,
+      '全自动写作写入后备份 (After Auto-Write)',
+      {
+        commandId: `ApplyDraft:${stepId}:after`,
+        correlationId: stepId,
+        causationId: stepId,
+      },
+    )
   }
 
   const output = JSON.stringify({
@@ -664,22 +709,38 @@ async function executeApplySceneDraft(
   if (!content)
     throw new Error('生成正文为空，无法写入场景')
 
-  const [row] = await db.update(chapterScenes).set({
-    content,
-    status: 'reviewed',
-    updatedAt: now(),
-  }).where(and(
+  const [current] = await db.select().from(chapterScenes).where(and(
     eq(chapterScenes.id, sceneId),
     eq(chapterScenes.projectId, projectId),
-  )).returning()
-
-  if (!row)
+  )).limit(1)
+  if (!current)
     throw new Error('场景不存在或不属于当前项目')
 
   if (isAutoMode) {
-    const currentContent = (await db.select({ content: chapterScenes.content }).from(chapterScenes).where(eq(chapterScenes.id, sceneId)))[0]?.content || ''
-    await createSnapshot(projectId, row.chapterId, currentContent, '全自动写作写入前备份 (Before Auto-Write)')
+    await createSnapshot(
+      projectId,
+      current.chapterId,
+      current.content || '',
+      '全自动写作写入前备份 (Before Auto-Write)',
+      {
+        commandId: `ApplySceneDraft:${stepId}:before`,
+        correlationId: stepId,
+        causationId: stepId,
+      },
+    )
   }
+
+  const row = await dispatchChapterCommand<SceneSnapshot>(
+    CHANGE_SCENE_COMMAND,
+    projectId,
+    current.chapterId,
+    { id: sceneId, content, status: 'reviewed' },
+    {
+      commandId: `ApplySceneDraft:${stepId}`,
+      correlationId: stepId,
+      causationId: stepId,
+    },
+  )
 
   // Log event
   await AuthoringEventService.logEvent({
@@ -692,7 +753,17 @@ async function executeApplySceneDraft(
   }).catch(err => console.error('Failed to log authoring event:', err))
 
   if (isAutoMode) {
-    await createSnapshot(projectId, row.chapterId, content, '全自动写作写入后备份 (After Auto-Write)')
+    await createSnapshot(
+      projectId,
+      row.chapterId,
+      content,
+      '全自动写作写入后备份 (After Auto-Write)',
+      {
+        commandId: `ApplySceneDraft:${stepId}:after`,
+        correlationId: stepId,
+        causationId: stepId,
+      },
+    )
   }
 
   const output = JSON.stringify({
@@ -733,6 +804,11 @@ async function executeSaveVersion(
     chapterId,
     content,
     'Writing job applied draft',
+    {
+      commandId: `SaveVersion:${stepId}`,
+      correlationId: stepId,
+      causationId: stepId,
+    },
   )
   const snapshotId = result && 'id' in result ? result.id : null
   const output = JSON.stringify({ snapshotId, wordCount: content.length })

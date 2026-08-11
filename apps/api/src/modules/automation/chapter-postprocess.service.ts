@@ -5,6 +5,8 @@ import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, chapt
 import { errorMessage, generateId } from '../../shared/utils'
 import { callAIJSON } from '../ai/ai.service'
 import { getOrCreateEmbedding } from '../ai/embedding.service'
+import { dispatchChapterCommand } from '../story/chapter.commands'
+import { CHANGE_CHAPTER_COMMAND } from '../story/chapter.eventing'
 import { createSuggestion } from './postprocess-suggestion.service'
 
 export async function getChapterMemory(projectId: string, chapterId: string): Promise<ChapterMemory | null> {
@@ -276,7 +278,10 @@ export async function runChapterPostprocess(input: {
 }): Promise<ChapterPostprocessResult> {
   const { projectId, chapterId, content, trigger } = input
 
-  const [chapter] = await db.select().from(chapters).where(eq(chapters.id, chapterId))
+  const [chapter] = await db.select().from(chapters).where(and(
+    eq(chapters.id, chapterId),
+    eq(chapters.projectId, projectId),
+  ))
   if (!chapter)
     throw new Error('章节不存在')
 
@@ -320,9 +325,16 @@ export async function runChapterPostprocess(input: {
         }
 
         if (presentIds.size > existingIds.length) {
-          await db.update(chapters)
-            .set({ characters: JSON.stringify(Array.from(presentIds)) })
-            .where(eq(chapters.id, chapterId))
+          await dispatchChapterCommand(
+            CHANGE_CHAPTER_COMMAND,
+            projectId,
+            chapterId,
+            { characters: JSON.stringify(Array.from(presentIds)) },
+            {
+              commandId: `PostprocessCharacters:${runId}`,
+              correlationId: runId,
+            },
+          )
         }
       }
       catch (err) {

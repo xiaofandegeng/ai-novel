@@ -4,7 +4,7 @@ import { db } from '../../db'
 import { chapterVersions } from '../../db/schema'
 import { fail } from '../../shared/http/responses'
 import { dispatchChapterCommand } from './chapter.commands'
-import { APPLY_CHAPTER_CONTENT_COMMAND } from './chapter.eventing'
+import { RECORD_CHAPTER_VERSION_COMMAND } from './chapter.eventing'
 
 export async function listChapterVersions(projectId: string, chapterId: string) {
   return db
@@ -26,7 +26,7 @@ export async function createSnapshot(
   }
 
   const result = await dispatchChapterCommand<{ versionId: string }>(
-    APPLY_CHAPTER_CONTENT_COMMAND,
+    RECORD_CHAPTER_VERSION_COMMAND,
     projectId,
     chapterId,
     { content, note: note || 'Manual snapshot' },
