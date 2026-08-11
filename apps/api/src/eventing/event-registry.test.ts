@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { EventRegistry } from './event-registry'
 import {
   DuplicateEventTypeError,
   InvalidEventPayloadError,
@@ -7,6 +6,7 @@ import {
   UnknownEventTypeError,
   UnsupportedEventVersionError,
 } from './errors'
+import { EventRegistry } from './event-registry'
 
 describe('eventRegistry', () => {
   it('decodes a registered event at its current schema version', () => {

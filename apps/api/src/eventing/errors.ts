@@ -97,3 +97,15 @@ export class UnknownProjectionError extends EventingError {
     super(`Unknown projection: ${projectionName}`, 'UNKNOWN_PROJECTION')
   }
 }
+
+export class DuplicateOutboxHandlerError extends EventingError {
+  constructor(readonly handlerName: string) {
+    super(`Outbox handler already registered: ${handlerName}`, 'DUPLICATE_OUTBOX_HANDLER')
+  }
+}
+
+export class UnknownOutboxHandlerError extends EventingError {
+  constructor(readonly handlerName: string) {
+    super(`Unknown outbox handler: ${handlerName}`, 'UNKNOWN_OUTBOX_HANDLER')
+  }
+}

@@ -1,6 +1,7 @@
 import type {
   AggregateSnapshot,
   AppendBatch,
+  OutboxIntent,
   StoredEvent,
   StreamRef,
 } from './event-types'
@@ -10,6 +11,7 @@ import {
   aggregateSnapshots,
   aggregateStreams,
   domainEvents,
+  eventOutbox,
 } from '../db/schema'
 import { DuplicateEventError, EventConcurrencyError } from './errors'
 
@@ -20,6 +22,7 @@ export interface EventStoreSession {
   loadStream: (stream: StreamRef, fromVersion?: number) => Promise<StoredEvent[]>
   readAll: (afterPosition: number, limit: number) => Promise<StoredEvent[]>
   appendBatch: (batch: AppendBatch) => Promise<StoredEvent[]>
+  enqueueOutbox: (messages: OutboxIntent[]) => Promise<void>
   getSnapshot: (stream: StreamRef) => Promise<AggregateSnapshot | null>
   putSnapshot: (snapshot: AggregateSnapshot) => Promise<void>
 }
@@ -162,6 +165,19 @@ function createSession(transaction: EventingTransaction): EventStoreSession {
         }
         throw error
       }
+    },
+    async enqueueOutbox(messages) {
+      if (messages.length === 0)
+        return
+      await transaction.insert(eventOutbox)
+        .values(messages.map(message => ({
+          id: message.id,
+          eventId: message.eventId,
+          handlerName: message.handlerName,
+          payload: message.payload,
+          availableAt: message.availableAt ?? new Date().toISOString(),
+        })))
+        .onConflictDoNothing()
     },
     async getSnapshot(stream) {
       const [snapshot] = await transaction.select()

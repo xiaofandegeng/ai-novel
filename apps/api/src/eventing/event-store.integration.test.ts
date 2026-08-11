@@ -151,9 +151,11 @@ describe('eventStore', () => {
     await appendInitialEvent(store)
 
     await expect(sql`update domain_events set event_type = 'Tampered' where event_id = 'event-initial'`)
-      .rejects.toThrow(/append-only/i)
+      .rejects
+      .toThrow(/append-only/i)
     await expect(sql`delete from domain_events where event_id = 'event-initial'`)
-      .rejects.toThrow(/append-only/i)
+      .rejects
+      .toThrow(/append-only/i)
   })
 })
 

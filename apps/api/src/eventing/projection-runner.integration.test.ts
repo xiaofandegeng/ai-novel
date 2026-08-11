@@ -1,6 +1,6 @@
 import type { AppendBatch, PendingEvent, StreamRef } from './event-types'
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
+import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../db'
 import { projectionCheckpoints } from '../db/schema'
 import { resetTestDatabase } from '../test/database'

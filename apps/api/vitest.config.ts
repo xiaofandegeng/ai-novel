@@ -14,6 +14,7 @@ process.env.DATABASE_URL = databaseUrl
 export default defineConfig({
   test: {
     environment: 'node',
+    fileParallelism: false,
     globalSetup: ['./test/global-setup.ts'],
     coverage: {
       provider: 'v8',

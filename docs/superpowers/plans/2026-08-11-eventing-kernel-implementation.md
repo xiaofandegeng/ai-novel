@@ -427,7 +427,7 @@ git commit -m "feat(api): add ordered projection runners"
 - Consumes: `OutboxIntent`, `eventOutbox`.
 - Produces: `EventStoreSession.enqueueOutbox()`, `OutboxHandlerRegistry.register()` and `OutboxWorker.runOnce()`.
 
-- [ ] **Step 1: Write failing Outbox tests**
+- [x] **Step 1: Write failing Outbox tests**
 
 ```ts
 it('leases and completes one available message', async () => {
@@ -451,12 +451,12 @@ it('does not deliver one lease to two workers', async () => {
 
 Also test expired lease recovery, unknown handler failure, maximum-attempt terminal failure, and duplicate enqueue ID idempotency.
 
-- [ ] **Step 2: Run tests and observe missing worker failure**
+- [x] **Step 2: Run tests and observe missing worker failure**
 
 Run: `pnpm --filter @ai-novel/api test -- src/eventing/outbox-worker.integration.test.ts`  
 Expected: FAIL.
 
-- [ ] **Step 3: Implement enqueue and worker behavior**
+- [x] **Step 3: Implement enqueue and worker behavior**
 
 ```ts
 export class OutboxWorker {
@@ -474,12 +474,12 @@ export class OutboxWorker {
 
 Claim rows with `FOR UPDATE SKIP LOCKED`, set `processing` and lease fields in one transaction, execute outside the claim transaction, then mark `completed`, return to `pending` with exponential backoff, or mark terminal `failed`.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run: `pnpm --filter @ai-novel/api test -- src/eventing/outbox-worker.integration.test.ts`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit Outbox infrastructure**
+- [x] **Step 5: Commit Outbox infrastructure**
 
 ```bash
 git add apps/api/src/eventing

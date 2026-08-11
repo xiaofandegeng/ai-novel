@@ -1,11 +1,10 @@
+import type { EventingTransaction, EventStore } from './event-store'
 import type { StoredEvent } from './event-types'
-import type { EventingTransaction } from './event-store'
 import { asc, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { projectionCheckpoints } from '../db/schema'
 import { errorMessage } from '../shared/utils'
 import { DuplicateProjectionError, UnknownProjectionError } from './errors'
-import { EventStore } from './event-store'
 
 export interface ProjectionDefinition {
   name: string
