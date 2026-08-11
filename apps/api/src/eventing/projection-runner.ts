@@ -70,7 +70,7 @@ export class ProjectionRunner {
         const events = await session.readAll(lastPosition, limit)
         const updatedAt = new Date().toISOString()
 
-        await upsertCheckpoint(session.transaction, {
+        await upsertProjectionCheckpoint(session.transaction, {
           projectionName,
           lastGlobalPosition: lastPosition,
           status: 'running',
@@ -84,7 +84,7 @@ export class ProjectionRunner {
         }
 
         const finalPosition = events.at(-1)?.globalPosition ?? lastPosition
-        await upsertCheckpoint(session.transaction, {
+        await upsertProjectionCheckpoint(session.transaction, {
           projectionName,
           lastGlobalPosition: finalPosition,
           status: 'idle',
@@ -119,7 +119,7 @@ export class ProjectionRunner {
     const definition = this.registry.get(projectionName)
     await this.store.withTransaction(async (session) => {
       await definition.reset?.(session.transaction, projectId)
-      await upsertCheckpoint(session.transaction, {
+      await upsertProjectionCheckpoint(session.transaction, {
         projectionName,
         lastGlobalPosition: 0,
         status: 'idle',
@@ -139,7 +139,7 @@ export class ProjectionRunner {
   }
 }
 
-async function upsertCheckpoint(
+export async function upsertProjectionCheckpoint(
   transaction: EventingTransaction,
   checkpoint: typeof projectionCheckpoints.$inferInsert,
 ): Promise<void> {

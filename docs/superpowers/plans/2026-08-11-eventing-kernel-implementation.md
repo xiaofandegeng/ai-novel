@@ -655,7 +655,7 @@ git commit -m "feat(api): add aggregate snapshot repository"
 - Consumes: `ProjectionRegistry`, Event Store global reads and checkpoints.
 - Produces: `replayProjection(name, options)` and `replayAll(options)`.
 
-- [ ] **Step 1: Write failing replay tests**
+- [x] **Step 1: Write failing replay tests**
 
 ```ts
 it('resets and rebuilds one projection deterministically', async () => {
@@ -674,12 +674,12 @@ it('can replay only one project while preserving other project rows', async () =
 
 Also test an empty event store, bounded batch sizes, checkpoint reset, and failure leaving a diagnostic error.
 
-- [ ] **Step 2: Run tests and observe missing replay failure**
+- [x] **Step 2: Run tests and observe missing replay failure**
 
 Run: `pnpm --filter @ai-novel/api test -- src/eventing/replay.integration.test.ts`  
 Expected: FAIL.
 
-- [ ] **Step 3: Implement replay functions**
+- [x] **Step 3: Implement replay functions**
 
 ```ts
 export interface ReplayOptions {
@@ -699,12 +699,12 @@ export function replayAll(options?: ReplayOptions): Promise<ReplayResult[]>
 
 Reset the selected projection and its checkpoint, read events in `globalPosition` order, apply matching handlers, and record the final position. Project-scoped replay requires the projection definition to provide a project-scoped reset function.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 Run: `pnpm --filter @ai-novel/api test -- src/eventing/replay.integration.test.ts`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit replay support**
+- [x] **Step 5: Commit replay support**
 
 ```bash
 git add apps/api/src/eventing
