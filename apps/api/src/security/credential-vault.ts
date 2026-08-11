@@ -1,4 +1,5 @@
 import type { CredentialKind } from '../db/schema'
+import type { EventingTransaction } from '../eventing'
 import { Buffer } from 'node:buffer'
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import process from 'node:process'
@@ -166,6 +167,14 @@ export class CredentialVault {
       updatedAt: timestamp,
     }
   }
+}
+
+export async function deleteProjectCredentials(
+  transaction: EventingTransaction,
+  projectId: string,
+): Promise<void> {
+  await transaction.delete(credentialVaultEntries)
+    .where(eq(credentialVaultEntries.projectId, projectId))
 }
 
 function aad(input: {

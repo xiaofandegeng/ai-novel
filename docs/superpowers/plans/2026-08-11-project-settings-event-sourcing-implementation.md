@@ -78,12 +78,12 @@
 - Modify: `apps/api/src/modules/ai/ai.service.ts`
 - Modify: `apps/api/src/modules/ai/settings.routes.ts`
 
-- [ ] Test `ProjectSettingsChanged`, `AIProviderSelected`, and `CredentialReferenceChanged` decisions.
-- [ ] Persist new secrets before dispatch, then emit only credential refs/suffixes; compensate unused new credentials on command failure.
-- [ ] Project settings into a secret-free project read model.
-- [ ] Resolve effective settings by `projectId`, decrypting credentials only at the AI client boundary.
-- [ ] Move settings get/update/test routes under `/api/projects/:projectId/settings/ai`.
-- [ ] Commit: `feat(api): event source project ai settings`.
+- [x] Test `ProjectSettingsChanged`, `AIProviderSelected`, and `CredentialReferenceChanged` decisions.
+- [x] Persist new secrets before dispatch, then emit only credential refs/suffixes; compensate unused new credentials on command failure.
+- [x] Project settings into a secret-free project read model.
+- [x] Resolve effective settings by `projectId`, decrypting credentials only at the AI client boundary.
+- [x] Move settings get/update/test routes under `/api/projects/:projectId/settings/ai`.
+- [x] Commit: `feat(api): event source project ai settings`.
 
 ## Task 6: Propagate project settings through AI execution
 
@@ -123,7 +123,7 @@
 - Modify: `docs/architecture/overview.md`
 - Modify: `docs/guides/local-development.md`
 
-- [ ] Use the route project ID for every settings request.
+- [x] Use the route project ID for every settings request.
 - [ ] Add architecture gates preventing direct Project and ProjectSettings projection writes outside their projectors.
 - [ ] Run desktop and mobile settings-route browser checks.
 - [ ] Run `pnpm db:generate`, `pnpm db:migrate`, `pnpm check`, and `pnpm test:coverage`.

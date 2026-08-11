@@ -1,13 +1,22 @@
 import type { AIProviderId, UpdateAIProviderSettingsInput } from '@ai-novel/shared'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
+import type { JsonObject } from '../../eventing'
+import type { ProjectAISettingsSnapshot } from './project-settings.eventing'
 import { AI_PROVIDER_PRESETS } from '@ai-novel/shared'
 import { eq } from 'drizzle-orm'
 import OpenAI from 'openai'
 import { getAIEnvironmentConfig } from '../../config/environment'
 import { db } from '../../db'
-import { aiSettings } from '../../db/schema'
-import { errorMessage, now } from '../../shared/utils'
+import { aiSettings, projectAISettings, projectReadModels } from '../../db/schema'
+import { DomainCommandError } from '../../eventing'
+import { commandBus } from '../../eventing-runtime'
+import { CredentialVault } from '../../security/credential-vault'
+import { errorMessage, generateId } from '../../shared/utils'
 import { AIUsageService } from './ai-usage.service'
+import {
+  CHANGE_PROJECT_AI_SETTINGS_COMMAND,
+  PROJECT_SETTINGS_AGGREGATE_TYPE,
+} from './project-settings.eventing'
 
 interface AIMetadata {
   projectId?: string
@@ -101,7 +110,7 @@ export function sanitizeAISettings(settings: EffectiveAISettings) {
   }
 }
 
-export async function getEffectiveAISettings(): Promise<EffectiveAISettings> {
+async function getLegacyEffectiveAISettings(): Promise<EffectiveAISettings> {
   const fallback = defaultAISettings()
   const [saved] = await db.select().from(aiSettings).where(eq(aiSettings.id, GLOBAL_AI_SETTINGS_ID))
 
@@ -134,8 +143,54 @@ export async function getEffectiveAISettings(): Promise<EffectiveAISettings> {
   }
 }
 
-export async function getAISettings() {
-  return sanitizeAISettings(await getEffectiveAISettings())
+export async function getEffectiveAISettings(projectId?: string): Promise<EffectiveAISettings> {
+  if (!projectId)
+    return getLegacyEffectiveAISettings()
+
+  await assertProjectExists(projectId)
+  const fallback = defaultAISettings()
+  const [saved] = await db.select()
+    .from(projectAISettings)
+    .where(eq(projectAISettings.projectId, projectId))
+    .limit(1)
+  if (!saved)
+    return fallback
+
+  const vault = saved.credentialRef || saved.embeddingCredentialRef
+    ? CredentialVault.fromEnvironment()
+    : null
+  const apiKey = saved.credentialRef && vault
+    ? await vault.resolve({
+        credentialRef: saved.credentialRef,
+        projectId,
+        kind: 'chat',
+      })
+    : null
+  const embeddingApiKey = saved.embeddingCredentialRef && vault
+    ? await vault.resolve({
+        credentialRef: saved.embeddingCredentialRef,
+        projectId,
+        kind: 'embedding',
+      })
+    : apiKey
+
+  return {
+    provider: saved.provider,
+    baseUrl: saved.baseUrl,
+    model: saved.model,
+    apiKey,
+    temperature: saved.temperature,
+    embeddingProvider: saved.embeddingProvider,
+    embeddingBaseUrl: saved.embeddingBaseUrl,
+    embeddingModel: saved.embeddingModel,
+    embeddingApiKey,
+    embeddingEnabled: saved.embeddingEnabled,
+    updatedAt: saved.updatedAt,
+  }
+}
+
+export async function getAISettings(projectId: string) {
+  return sanitizeAISettings(await getEffectiveAISettings(projectId))
 }
 
 export function listAIProviderPresets() {
@@ -188,52 +243,143 @@ function normalizeAISettingsInput(input: UpdateAIProviderSettingsInput, current:
   return { provider, baseUrl, model, embeddingProvider, embeddingBaseUrl, embeddingModel }
 }
 
-export async function updateAISettings(input: UpdateAIProviderSettingsInput) {
-  const current = await getEffectiveAISettings()
-  const timestamp = now()
+export interface AISettingsCommandOptions {
+  commandId?: string
+  correlationId?: string
+}
+
+export async function updateAISettings(
+  projectId: string,
+  input: UpdateAIProviderSettingsInput,
+  options: AISettingsCommandOptions = {},
+) {
+  const [saved] = await db.select()
+    .from(projectAISettings)
+    .where(eq(projectAISettings.projectId, projectId))
+    .limit(1)
+  const current = await getEffectiveAISettings(projectId)
   const normalized = normalizeAISettingsInput(input, current)
-  const next = {
-    id: GLOBAL_AI_SETTINGS_ID,
+  const newCredentials: string[] = []
+  const vaultSecrets = {
+    chat: input.apiKey?.trim() || (!saved && !input.clearApiKey ? current.apiKey : null),
+    embedding: input.embeddingApiKey?.trim()
+      || (!saved && !input.clearEmbeddingApiKey ? current.embeddingApiKey : null),
+  }
+  const vault = vaultSecrets.chat || vaultSecrets.embedding
+    ? CredentialVault.fromEnvironment()
+    : null
+
+  const chatCredential = vaultSecrets.chat && vault
+    ? await vault.store({ projectId, kind: 'chat', secret: vaultSecrets.chat })
+    : null
+  if (chatCredential)
+    newCredentials.push(chatCredential.credentialRef)
+
+  let embeddingCredential
+  try {
+    embeddingCredential = vaultSecrets.embedding && vault
+      ? await vault.store({ projectId, kind: 'embedding', secret: vaultSecrets.embedding })
+      : null
+    if (embeddingCredential)
+      newCredentials.push(embeddingCredential.credentialRef)
+  }
+  catch (error: unknown) {
+    await deleteCredentials(newCredentials, projectId)
+    throw error
+  }
+
+  const next: JsonObject = {
     provider: normalized.provider,
     baseUrl: normalized.baseUrl,
     model: normalized.model,
-    apiKey: input.clearApiKey ? null : input.apiKey?.trim() || current.apiKey || null,
     temperature: typeof input.temperature === 'number'
       ? Math.min(100, Math.max(0, Math.round(input.temperature)))
       : current.temperature,
-
+    credentialRef: input.clearApiKey
+      ? null
+      : chatCredential?.credentialRef ?? saved?.credentialRef ?? null,
+    credentialSuffix: input.clearApiKey
+      ? null
+      : chatCredential?.maskedSuffix ?? saved?.credentialSuffix ?? null,
     embeddingProvider: normalized.embeddingProvider,
     embeddingBaseUrl: normalized.embeddingBaseUrl,
     embeddingModel: normalized.embeddingModel,
-    embeddingApiKey: input.clearEmbeddingApiKey ? null : input.embeddingApiKey?.trim() || current.embeddingApiKey || null,
+    embeddingCredentialRef: input.clearEmbeddingApiKey
+      ? null
+      : embeddingCredential?.credentialRef ?? saved?.embeddingCredentialRef ?? null,
+    embeddingCredentialSuffix: input.clearEmbeddingApiKey
+      ? null
+      : embeddingCredential?.maskedSuffix ?? saved?.embeddingCredentialSuffix ?? null,
     embeddingEnabled: typeof input.embeddingEnabled === 'boolean' ? input.embeddingEnabled : current.embeddingEnabled,
-
-    createdAt: timestamp,
-    updatedAt: timestamp,
   }
 
-  const [row] = await db
-    .insert(aiSettings)
-    .values(next)
-    .onConflictDoUpdate({
-      target: aiSettings.id,
-      set: {
-        provider: next.provider,
-        baseUrl: next.baseUrl,
-        model: next.model,
-        apiKey: next.apiKey,
-        temperature: next.temperature,
-        embeddingProvider: next.embeddingProvider,
-        embeddingBaseUrl: next.embeddingBaseUrl,
-        embeddingModel: next.embeddingModel,
-        embeddingApiKey: next.embeddingApiKey,
-        embeddingEnabled: next.embeddingEnabled,
-        updatedAt: timestamp,
-      },
+  let result: ProjectAISettingsSnapshot
+  try {
+    const commandId = options.commandId ?? generateId()
+    result = await commandBus.dispatch<ProjectAISettingsSnapshot>({
+      commandId,
+      commandType: CHANGE_PROJECT_AI_SETTINGS_COMMAND,
+      aggregateType: PROJECT_SETTINGS_AGGREGATE_TYPE,
+      aggregateId: projectId,
+      projectId,
+      correlationId: options.correlationId ?? commandId,
+      payload: next,
     })
-    .returning()
+  }
+  catch (error: unknown) {
+    await deleteCredentials(newCredentials, projectId)
+    throw error
+  }
 
-  return sanitizeAISettings(row)
+  await deleteUnusedCredentials({
+    projectId,
+    saved,
+    result,
+    newCredentials,
+  })
+
+  return getAISettings(projectId)
+}
+
+async function assertProjectExists(projectId: string): Promise<void> {
+  const [project] = await db.select({ id: projectReadModels.id })
+    .from(projectReadModels)
+    .where(eq(projectReadModels.id, projectId))
+    .limit(1)
+  if (!project)
+    throw new DomainCommandError('PROJECT_NOT_FOUND', 'Project not found')
+}
+
+async function deleteCredentials(credentialRefs: string[], projectId: string): Promise<void> {
+  if (!credentialRefs.length)
+    return
+  const vault = CredentialVault.fromEnvironment()
+  await Promise.all(credentialRefs.map(ref => vault.delete(ref, projectId)))
+}
+
+async function deleteUnusedCredentials(input: {
+  projectId: string
+  saved: typeof projectAISettings.$inferSelect | undefined
+  result: ProjectAISettingsSnapshot
+  newCredentials: string[]
+}): Promise<void> {
+  const referenced = new Set([
+    input.result.credentialRef,
+    input.result.embeddingCredentialRef,
+  ].filter((value): value is string => Boolean(value)))
+  const obsolete = new Set(
+    input.newCredentials.filter(ref => !referenced.has(ref)),
+  )
+  if (input.saved?.credentialRef && input.saved.credentialRef !== input.result.credentialRef)
+    obsolete.add(input.saved.credentialRef)
+  if (
+    input.saved?.embeddingCredentialRef
+    && input.saved.embeddingCredentialRef !== input.result.embeddingCredentialRef
+  ) {
+    obsolete.add(input.saved.embeddingCredentialRef)
+  }
+
+  await deleteCredentials([...obsolete], input.projectId)
 }
 
 export function createOpenAIClient(settings: { apiKey?: string | null, baseUrl: string }) {
@@ -243,8 +389,8 @@ export function createOpenAIClient(settings: { apiKey?: string | null, baseUrl: 
   })
 }
 
-export async function testAIConnection(input?: UpdateAIProviderSettingsInput) {
-  const saved = await getEffectiveAISettings()
+export async function testAIConnection(projectId: string, input?: UpdateAIProviderSettingsInput) {
+  const saved = await getEffectiveAISettings(projectId)
   const normalized = input ? normalizeAISettingsInput(input, saved) : saved
   const settings = {
     provider: normalized.provider,
@@ -279,8 +425,8 @@ export async function testAIConnection(input?: UpdateAIProviderSettingsInput) {
   }
 }
 
-export async function testEmbeddingConnection(input?: UpdateAIProviderSettingsInput) {
-  const saved = await getEffectiveAISettings()
+export async function testEmbeddingConnection(projectId: string, input?: UpdateAIProviderSettingsInput) {
+  const saved = await getEffectiveAISettings(projectId)
   const normalized = input ? normalizeAISettingsInput(input, saved) : saved
   const settings = {
     provider: normalized.embeddingProvider,

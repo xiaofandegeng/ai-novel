@@ -7,22 +7,22 @@ import type {
 } from '@ai-novel/shared'
 import { apiGet, apiPost, apiPut } from '../../../shared/api/client'
 
-export function fetchAISettings() {
-  return apiGet<AIProviderSettings>('/api/settings/ai')
+export function fetchAISettings(projectId: string) {
+  return apiGet<AIProviderSettings>(`/api/projects/${projectId}/settings/ai`)
 }
 
 export function fetchAIProviderPresets() {
   return apiGet<AIProviderPreset[]>('/api/settings/ai/providers')
 }
 
-export function updateAISettings(data: UpdateAIProviderSettingsInput) {
-  return apiPut<AIProviderSettings>('/api/settings/ai', data)
+export function updateAISettings(projectId: string, data: UpdateAIProviderSettingsInput) {
+  return apiPut<AIProviderSettings>(`/api/projects/${projectId}/settings/ai`, data)
 }
 
-export function testAISettings(data: UpdateAIProviderSettingsInput) {
-  return apiPost<AIProviderTestResult>('/api/settings/ai/test', data)
+export function testAISettings(projectId: string, data: UpdateAIProviderSettingsInput) {
+  return apiPost<AIProviderTestResult>(`/api/projects/${projectId}/settings/ai/test`, data)
 }
 
-export function testEmbeddingSettings(data: UpdateAIProviderSettingsInput) {
-  return apiPost<AIEmbeddingTestResult>('/api/settings/ai/test-embedding', data)
+export function testEmbeddingSettings(projectId: string, data: UpdateAIProviderSettingsInput) {
+  return apiPost<AIEmbeddingTestResult>(`/api/projects/${projectId}/settings/ai/test-embedding`, data)
 }

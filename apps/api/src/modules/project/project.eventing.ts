@@ -22,10 +22,10 @@ export const CREATE_PROJECT_COMMAND = 'CreateProject'
 export const UPDATE_PROJECT_COMMAND = 'UpdateProject'
 export const DELETE_PROJECT_COMMAND = 'DeleteProject'
 
-const PROJECT_CREATED = 'ProjectCreated'
-const PROJECT_DETAILS_CHANGED = 'ProjectDetailsChanged'
-const PROJECT_DELETION_REQUESTED = 'ProjectDeletionRequested'
-const PROJECT_DELETED = 'ProjectDeleted'
+export const PROJECT_CREATED = 'ProjectCreated'
+export const PROJECT_DETAILS_CHANGED = 'ProjectDetailsChanged'
+export const PROJECT_DELETION_REQUESTED = 'ProjectDeletionRequested'
+export const PROJECT_DELETED = 'ProjectDeleted'
 
 const PROJECT_STATUSES: readonly ProjectStatus[] = [
   'planning',
@@ -49,7 +49,7 @@ export type ProjectSnapshot = JsonObject & {
   updatedAt: string
 }
 
-type ProjectState = ProjectSnapshot & {
+export type ProjectState = ProjectSnapshot & {
   exists: boolean
   deleted: boolean
 }

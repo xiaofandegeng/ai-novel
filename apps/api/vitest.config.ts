@@ -10,6 +10,7 @@ if (!databaseName.endsWith('_test'))
   throw new Error(`Refusing to run tests against non-test database: ${databaseName}`)
 
 process.env.DATABASE_URL = databaseUrl
+process.env.AI_CREDENTIAL_MASTER_KEY ??= 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc='
 
 export default defineConfig({
   test: {
