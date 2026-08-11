@@ -71,7 +71,7 @@ apps/api/src/
 ```text
 app/index
   → modules
-    → eventing（领域迁移完成后承接写命令）
+    → eventing（已迁移领域的写命令）
       → config + db + shared
     → config + db + shared（尚未迁移领域的查询与写入）
     → other domain modules (explicit imports only)
@@ -92,7 +92,7 @@ eventing
 
 ### 事件溯源内核
 
-事件内核已完成，但产品领域仍处于迁移前状态；当前 HTTP 契约和既有业务表行为没有切换。领域迁移后的写链统一为：
+事件内核已完成，Project、项目 AI 设置与项目 Prompt 覆盖已切换为事件事实来源；章节、人物、叙事和自动化领域仍在后续批次迁移。已迁移领域的写链统一为：
 
 ```text
 route → command handler → aggregate repository
@@ -109,7 +109,10 @@ route → command handler → aggregate repository
 - 同步投影与事件追加同事务；异步投影按全局位置维护 checkpoint。
 - 外部副作用只能通过 Outbox worker 租约领取，失败按退避策略重试，超过上限进入终态失败。
 - 投影重放先重置目标读模型，再按 `global_position` 顺序重建；失败时重建事务回滚，并留下诊断 checkpoint。
-- `src/architecture.test.ts` 禁止 `eventing` 反向导入 `modules`，也禁止其他生产源码直接访问事件内核表。
+- `project_read_models`、`project_ai_settings` 与 `project_prompt_overrides` 都是可重放投影；`novel_projects` 暂时作为未迁移外键的兼容投影。
+- 项目 AI 凭据只以 AES-256-GCM 密文保存在 credential vault；事件、命令回执和设置投影只保存引用与末四位掩码。
+- AI 执行入口必须显式传递 `projectId`，不能读取全局表或其他项目的凭据。
+- `src/architecture.test.ts` 禁止 `eventing` 反向导入 `modules`、其他生产源码直接访问事件内核表，以及非投影器直接写已迁移读模型。
 
 ## 4. 前端结构
 

@@ -107,11 +107,11 @@
 - Modify: `apps/api/src/modules/ai/prompt-templates.routes.ts`
 - Modify: `apps/api/src/eventing-runtime.ts`
 
-- [ ] Test `PromptTemplateSelected` / prompt override events and project ownership.
-- [ ] Route override upserts through Command Bus while retaining `project_prompt_overrides` as projection.
-- [ ] Keep global prompt template catalog and prompt run audit records outside the ProjectSettings aggregate.
-- [ ] Verify project-scoped replay preserves other projects.
-- [ ] Commit: `feat(api): event source project prompt overrides`.
+- [x] Test `PromptTemplateSelected` / prompt override events and project ownership.
+- [x] Route override upserts through Command Bus while retaining `project_prompt_overrides` as projection.
+- [x] Keep global prompt template catalog and prompt run audit records outside the ProjectSettings aggregate.
+- [x] Verify project-scoped replay preserves other projects.
+- [x] Commit: `feat(api): event source project prompt overrides`.
 
 ## Task 8: Web client cutover and phase verification
 
@@ -124,11 +124,11 @@
 - Modify: `docs/guides/local-development.md`
 
 - [x] Use the route project ID for every settings request.
-- [ ] Add architecture gates preventing direct Project and ProjectSettings projection writes outside their projectors.
-- [ ] Run desktop and mobile settings-route browser checks.
-- [ ] Run `pnpm db:generate`, `pnpm db:migrate`, `pnpm check`, and `pnpm test:coverage`.
-- [ ] Do not run the destructive final seed/cutover yet; chapters and remaining domains still depend on legacy projections.
-- [ ] Commit: `test: verify project settings event sourcing phase`.
+- [x] Add architecture gates preventing direct Project and ProjectSettings projection writes outside their projectors.
+- [x] Run desktop and mobile settings-route browser checks.
+- [x] Run `pnpm db:generate`, `pnpm db:migrate`, `pnpm check`, and `pnpm test:coverage`.
+- [x] Do not run the destructive final seed/cutover yet; chapters and remaining domains still depend on legacy projections.
+- [x] Commit: `test: verify project settings event sourcing phase`.
 
 ## Phase exit criteria
 

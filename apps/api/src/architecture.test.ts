@@ -82,6 +82,29 @@ describe('api architecture boundaries', () => {
     )
   })
 
+  it('restricts event-sourced projection writes to projectors and destructive seed setup', () => {
+    const projectionTables = [
+      'novelProjects',
+      'projectReadModels',
+      'projectAISettings',
+      'projectPromptOverrides',
+    ]
+    const applicationFiles = sourceFiles(sourceRoot)
+      .filter(file => !file.endsWith('.test.ts'))
+      .filter(file => !file.includes('/db/schema/'))
+      .filter(file => !file.endsWith('/scripts/seed.ts'))
+      .filter(file => !file.endsWith('.eventing.ts'))
+
+    for (const file of applicationFiles) {
+      const source = readFileSync(file, 'utf8')
+      for (const table of projectionTables) {
+        expect(source, `${relative(sourceRoot, file)} writes ${table}`)
+          .not
+          .toMatch(new RegExp(`\\.(?:insert|update|delete)\\(${table}\\)`))
+      }
+    }
+  })
+
   it('keeps HTTP envelopes out of the general utility barrel', () => {
     const utilityBarrel = readFileSync(join(sourceRoot, 'shared/utils/index.ts'), 'utf8')
     expect(utilityBarrel).not.toMatch(/\b(?:fail|success)\b/)

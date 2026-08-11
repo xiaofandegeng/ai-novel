@@ -62,7 +62,7 @@ TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/ai_novel_test
 pnpm db:migrate
 ```
 
-这一步不会把现有项目、章节、人物等业务表切换为事件事实来源，也不会清空现有数据。已确认的全量清空与领域切换将在后续领域迁移阶段通过独立流程执行。
+这一步会创建事件内核以及当前已落地的项目级读模型。Project、项目 AI 设置和项目 Prompt 覆盖已使用事件作为事实来源；章节、人物、叙事与自动化仍在后续批次迁移。迁移命令本身不会清空数据，已确认的全量清空只在所有领域完成后执行一次。
 
 事件内核集成测试始终连接 `_test` 数据库：
 
@@ -71,7 +71,7 @@ pnpm --filter @ai-novel/api exec vitest run src/eventing
 pnpm --filter @ai-novel/api test:coverage
 ```
 
-Outbox worker 和投影重放目前是 API 内基础设施，还没有注册产品领域 handler 或独立常驻进程。领域接入时应从组合根创建 `OutboxWorker` / `ProjectionReplay`，不得在 route 内直接操作 Outbox 或 checkpoint。重放规则是先调用投影的 project-aware `reset`，再以受限 `batchSize` 按全局位置扫描；失败会回滚读模型并记录诊断状态。
+Outbox worker 和投影重放由 API 事件内核提供；Project、项目 AI 设置和项目 Prompt 覆盖的 handler/projector 已在 `eventing-runtime.ts` 注册。不得在 route 内直接操作 Event Store、Outbox 或 checkpoint。重放规则是先调用投影的 project-aware `reset`，再以受限 `batchSize` 按全局位置扫描；失败会回滚读模型并记录诊断状态。
 
 ### AI 与 Embedding
 
@@ -88,9 +88,12 @@ AI_EMBEDDING_PROVIDER=openai-compatible
 AI_EMBEDDING_BASE_URL=https://api.openai.com/v1
 AI_EMBEDDING_MODEL=text-embedding-3-small
 AI_EMBEDDING_API_KEY=sk-xxx
+
+# 保存项目 API Key 时必填；必须是 32 字节随机值的 base64 编码
+AI_CREDENTIAL_MASTER_KEY=base64-encoded-32-byte-key
 ```
 
-API Key 保存后不会在页面中回显。
+API Key 保存后使用 AES-256-GCM 加密，不会进入事件、命令回执或项目设置投影，也不会在页面中回显。所有 AI 执行接口都要求明确的项目 ID。
 
 ## 4. 启动
 
