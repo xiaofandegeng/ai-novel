@@ -92,7 +92,7 @@ eventing
 
 ### 事件溯源内核
 
-事件内核已完成，Project、项目 AI 设置与项目 Prompt 覆盖已切换为事件事实来源；章节、人物、叙事和自动化领域仍在后续批次迁移。已迁移领域的写链统一为：
+事件内核已完成，Project、项目 AI 设置、项目 Prompt 覆盖、故事结构与 Chapter 已切换为事件事实来源；人物、叙事知识和自动化运行领域仍在后续批次迁移。已迁移领域的写链统一为：
 
 ```text
 route → command handler → aggregate repository
@@ -106,10 +106,14 @@ route → command handler → aggregate repository
 - `domain_events` 是迁移后领域的唯一事实来源，数据库触发器禁止任何 `UPDATE` 和 `DELETE`。
 - `aggregate_snapshots` 只加速聚合恢复，可以删除重建。
 - 同一 `command_id` 返回首次完成或拒绝的回执，避免重复追加事件和副作用。
+- 事件读取、快照读取和命令写入都校验 `projectId`；相同聚合 ID 不能通过另一个项目作用域加载。
 - 同步投影与事件追加同事务；异步投影按全局位置维护 checkpoint。
 - 外部副作用只能通过 Outbox worker 租约领取，失败按退避策略重试，超过上限进入终态失败。
 - 投影重放先重置目标读模型，再按 `global_position` 顺序重建；失败时重建事务回滚，并留下诊断 checkpoint。
-- `project_read_models`、`project_ai_settings` 与 `project_prompt_overrides` 都是可重放投影；`novel_projects` 暂时作为未迁移外键的兼容投影。
+- `project_read_models`、`project_ai_settings`、`project_prompt_overrides`、`story_bibles`、`volumes`、`acts`、`chapters`、`chapter_scenes` 与 `chapter_versions` 都是可重放投影；`novel_projects` 暂时作为未迁移外键的兼容投影。
+- 每个项目只有一个 `StoryStructure` 聚合；每个章节是独立 `Chapter` 聚合，场景是 Chapter 内部实体。批量场景替换在同一章节流中原子提交。
+- 章节版本由 `ChapterContentApplied` 或显式 `ChapterVersionRecorded` 事件派生，版本表不接受更新或删除。删除卷只解除章节的卷关联，不级联删除章节。
+- 自动规划、写作任务、变更集和后处理不得直接修改章节投影，接受的结果必须先通过 Chapter 命令。
 - 项目 AI 凭据只以 AES-256-GCM 密文保存在 credential vault；事件、命令回执和设置投影只保存引用与末四位掩码。
 - AI 执行入口必须显式传递 `projectId`，不能读取全局表或其他项目的凭据。
 - `src/architecture.test.ts` 禁止 `eventing` 反向导入 `modules`、其他生产源码直接访问事件内核表，以及非投影器直接写已迁移读模型。
@@ -200,4 +204,4 @@ autonomous run
 - 不恢复旧式多页面 CRUD 工作台。
 - 不引入只有静态方法的“万能工具类”；优先使用职责单一的纯函数模块。
 - 不为了目录整齐复制服务或契约。
-- 不在事件内核阶段改变 HTTP 路径或产品行为；领域事实来源切换在后续迁移批次完成。
+- 不为事件溯源暴露内部事件存储 HTTP 接口；产品 API 继续围绕领域资源和可审查操作设计。

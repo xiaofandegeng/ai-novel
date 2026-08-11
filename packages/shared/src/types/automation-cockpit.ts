@@ -167,6 +167,7 @@ export interface AutomationCockpitPayload {
 
 export interface CockpitChapterDetail {
   id: string
+  chapterNumber: number
   title: string
   content?: string | null
   summary?: string | null

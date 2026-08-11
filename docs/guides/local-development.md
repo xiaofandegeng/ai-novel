@@ -62,7 +62,7 @@ TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/ai_novel_test
 pnpm db:migrate
 ```
 
-这一步会创建事件内核以及当前已落地的项目级读模型。Project、项目 AI 设置和项目 Prompt 覆盖已使用事件作为事实来源；章节、人物、叙事与自动化仍在后续批次迁移。迁移命令本身不会清空数据，已确认的全量清空只在所有领域完成后执行一次。
+这一步会创建事件内核以及当前已落地的读模型。Project、项目 AI 设置、项目 Prompt 覆盖、故事圣经、卷、幕、章节、场景和章节版本已使用事件作为事实来源；人物、叙事知识与自动化运行仍在后续批次迁移。`0030` 会把章节到卷的删除行为改为 `SET NULL`，确保结构投影重放不会级联删除章节。迁移命令本身不会清空数据，已确认的全量清空只在所有领域完成后执行一次。
 
 事件内核集成测试始终连接 `_test` 数据库：
 
@@ -71,7 +71,7 @@ pnpm --filter @ai-novel/api exec vitest run src/eventing
 pnpm --filter @ai-novel/api test:coverage
 ```
 
-Outbox worker 和投影重放由 API 事件内核提供；Project、项目 AI 设置和项目 Prompt 覆盖的 handler/projector 已在 `eventing-runtime.ts` 注册。不得在 route 内直接操作 Event Store、Outbox 或 checkpoint。重放规则是先调用投影的 project-aware `reset`，再以受限 `batchSize` 按全局位置扫描；失败会回滚读模型并记录诊断状态。
+Outbox worker 和投影重放由 API 事件内核提供；Project、设置、Prompt、StoryStructure 和 Chapter 的 handler/projector 已在 `eventing-runtime.ts` 注册。不得在 route 内直接操作 Event Store、Outbox 或 checkpoint，也不得从自动化服务直接写这些领域的投影表。重放规则是先调用投影的 project-aware `reset`，再以受限 `batchSize` 按全局位置扫描；失败会回滚读模型并记录诊断状态。章节版本是不可变投影，删除接口固定返回冲突响应。
 
 ### AI 与 Embedding
 

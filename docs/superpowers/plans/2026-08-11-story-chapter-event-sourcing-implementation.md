@@ -114,12 +114,12 @@
 - Modify: `docs/architecture/overview.md`
 - Modify: `docs/guides/local-development.md`
 
-- [ ] Prevent direct writes to story/chapter projection tables outside registered projectors and seed/reset tooling.
-- [ ] Verify project-scoped replay for every new projection.
-- [ ] Run browser checks for story structure and chapter editing at desktop and mobile widths.
-- [ ] Run `pnpm db:generate`, `pnpm db:migrate`, `pnpm check`, and `pnpm test:coverage`.
-- [ ] Do not run the destructive final database clear yet; later product domains still depend on their legacy tables.
-- [ ] Commit: `test: verify story chapter event sourcing phase`.
+- [x] Prevent direct writes to story/chapter projection tables outside registered projectors and seed/reset tooling.
+- [x] Verify project-scoped replay for every new projection.
+- [x] Run browser checks for story structure and chapter editing at desktop and mobile widths.
+- [x] Run `pnpm db:generate`, `pnpm db:migrate`, `pnpm check`, and `pnpm test:coverage`.
+- [x] Do not run the destructive final database clear yet; later product domains still depend on their legacy tables.
+- [x] Commit: `test: verify story chapter event sourcing phase`.
 
 ## Phase exit criteria
 

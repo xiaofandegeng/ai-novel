@@ -632,6 +632,7 @@ export class AutomationCockpitService {
 
     return {
       id: chapter.id,
+      chapterNumber: chapter.chapterNumber,
       title: chapter.title,
       content: chapter.draft,
       summary: chapter.summary,

@@ -42,7 +42,8 @@ describe('cockpit component contracts', () => {
 
   it('saves the edited chapter text from the drawer', async () => {
     const detail: CockpitChapterDetail = {
-      id: '1',
+      id: 'chapter-uuid',
+      chapterNumber: 1,
       title: '归港',
       content: '旧正文',
       scenes: [],
@@ -65,6 +66,8 @@ describe('cockpit component contracts', () => {
     })
 
     expect(wrapper.emitted('save')).toEqual([['修改后的正文']])
+    expect(document.body.textContent).toContain('第 1 章：归港')
+    expect(document.body.textContent).not.toContain('chapter-uuid 章')
   })
 
   it('emits review decisions only for actionable narrative events', async () => {
