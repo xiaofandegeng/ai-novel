@@ -1,9 +1,19 @@
+import type { ChapterCommandOptions } from './chapter.commands'
+import type { SceneSnapshot } from './chapter.eventing'
 import { and, asc, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { chapterScenes } from '../../db/schema'
+import { DomainCommandError } from '../../eventing'
 import { assertChapterBelongsToProject } from '../../shared/ownership'
-import { generateId, now, updatedFields } from '../../shared/utils'
+import { generateId } from '../../shared/utils'
 import { runScenePostprocess } from '../automation/chapter-postprocess.service'
+import { compactChapterPayload, dispatchChapterCommand } from './chapter.commands'
+import {
+  CHANGE_SCENE_COMMAND,
+  DELETE_SCENE_COMMAND,
+  PLAN_SCENES_COMMAND,
+  REORDER_SCENES_COMMAND,
+} from './chapter.eventing'
 
 export type CreateSceneInput = Omit<
   typeof chapterScenes.$inferInsert,
@@ -14,31 +24,6 @@ export type SceneInput = Partial<CreateSceneInput>
 export interface SceneOrderInput {
   id: string
   orderIndex: number
-}
-
-function sceneFields(input: SceneInput) {
-  return {
-    sceneNumber: input.sceneNumber,
-    title: input.title,
-    location: input.location,
-    timeline: input.timeline,
-    purpose: input.purpose,
-    summary: input.summary,
-    characters: input.characters,
-    targetWords: input.targetWords,
-    content: input.content,
-    orderIndex: input.orderIndex,
-    status: input.status,
-    conflict: input.conflict,
-    beatType: input.beatType,
-    entryHook: input.entryHook,
-    turningPoint: input.turningPoint,
-    exitHook: input.exitHook,
-    emotionStart: input.emotionStart,
-    emotionEnd: input.emotionEnd,
-    conflictLevel: input.conflictLevel,
-    requiredElements: input.requiredElements,
-  }
 }
 
 async function selectScenes(projectId: string, chapterId: string) {
@@ -58,95 +43,86 @@ export async function bulkCreateScenes(
   chapterId: string,
   scenes: SceneInput[],
   mode: 'append' | 'replace' = 'append',
+  options: ChapterCommandOptions = {},
 ) {
-  await assertChapterBelongsToProject(projectId, chapterId)
-  return db.transaction(async (tx) => {
-    if (mode === 'replace') {
-      await tx.delete(chapterScenes).where(and(
-        eq(chapterScenes.projectId, projectId),
-        eq(chapterScenes.chapterId, chapterId),
-      ))
-    }
-    const existingCount = mode === 'replace'
-      ? 0
-      : (await tx.select({ id: chapterScenes.id }).from(chapterScenes).where(and(
-          eq(chapterScenes.projectId, projectId),
-          eq(chapterScenes.chapterId, chapterId),
-        ))).length
-    await tx.insert(chapterScenes).values(scenes.map((scene, index) => ({
-      id: generateId(),
-      projectId,
-      chapterId,
-      sceneNumber: scene.sceneNumber ?? existingCount + index + 1,
-      title: scene.title || null,
-      location: scene.location || null,
-      timeline: scene.timeline || null,
-      purpose: scene.purpose || null,
-      summary: scene.summary || null,
-      characters: scene.characters || null,
-      targetWords: scene.targetWords ?? null,
-      content: scene.content || null,
-      orderIndex: scene.orderIndex ?? existingCount + index + 1,
-      status: scene.status || 'planned',
-      conflict: scene.conflict || null,
-      beatType: scene.beatType || null,
-      entryHook: scene.entryHook || null,
-      turningPoint: scene.turningPoint || null,
-      exitHook: scene.exitHook || null,
-      emotionStart: scene.emotionStart || null,
-      emotionEnd: scene.emotionEnd || null,
-      conflictLevel: scene.conflictLevel ?? null,
-      requiredElements: scene.requiredElements || null,
-      updatedAt: now(),
-    })))
-    return tx.select().from(chapterScenes).where(and(
-      eq(chapterScenes.projectId, projectId),
-      eq(chapterScenes.chapterId, chapterId),
-    )).orderBy(asc(chapterScenes.orderIndex), asc(chapterScenes.sceneNumber))
-  })
-}
-
-export async function createScene(projectId: string, chapterId: string, input: CreateSceneInput) {
-  await assertChapterBelongsToProject(projectId, chapterId)
-  const [row] = await db.insert(chapterScenes).values({
-    id: generateId(),
+  const result = await dispatchChapterCommand<{ scenes: SceneSnapshot[] }>(
+    PLAN_SCENES_COMMAND,
     projectId,
     chapterId,
-    ...sceneFields(input),
-    sceneNumber: input.sceneNumber,
-    orderIndex: input.orderIndex,
-    status: input.status || 'planned',
-  }).returning()
-  return row
+    {
+      mode,
+      scenes: scenes.map(scene => ({ id: generateId(), ...compactChapterPayload(scene) })),
+    },
+    options,
+  )
+  return result.scenes
 }
 
-export async function reorderScenes(projectId: string, chapterId: string, orders: SceneOrderInput[]) {
-  await assertChapterBelongsToProject(projectId, chapterId)
-  await db.transaction(async (tx) => {
-    for (const item of orders) {
-      const [row] = await tx.update(chapterScenes).set({
-        orderIndex: item.orderIndex,
-        updatedAt: now(),
-      }).where(and(
-        eq(chapterScenes.id, item.id),
-        eq(chapterScenes.projectId, projectId),
-        eq(chapterScenes.chapterId, chapterId),
-      )).returning()
-      if (!row)
-        throw new Error('SCENE_NOT_FOUND')
+export async function createScene(
+  projectId: string,
+  chapterId: string,
+  input: CreateSceneInput,
+  options: ChapterCommandOptions = {},
+) {
+  const id = generateId()
+  const result = await dispatchChapterCommand<{ scenes: SceneSnapshot[] }>(
+    PLAN_SCENES_COMMAND,
+    projectId,
+    chapterId,
+    { mode: 'append', scenes: [{ id, ...compactChapterPayload(input) }] },
+    options,
+  )
+  return result.scenes.find(scene => scene.id === id)!
+}
+
+export async function reorderScenes(
+  projectId: string,
+  chapterId: string,
+  orders: SceneOrderInput[],
+  options: ChapterCommandOptions = {},
+) {
+  try {
+    const result = await dispatchChapterCommand<{ scenes: SceneSnapshot[] }>(
+      REORDER_SCENES_COMMAND,
+      projectId,
+      chapterId,
+      { orders },
+      options,
+    )
+    return result.scenes
+  }
+  catch (error: unknown) {
+    if (error instanceof DomainCommandError && error.code === 'SCENE_NOT_FOUND')
+      throw new Error('SCENE_NOT_FOUND')
+    throw error
+  }
+}
+
+export async function updateScene(
+  projectId: string,
+  chapterId: string,
+  id: string,
+  input: SceneInput,
+  options: ChapterCommandOptions = {},
+) {
+  try {
+    return await dispatchChapterCommand<SceneSnapshot>(
+      CHANGE_SCENE_COMMAND,
+      projectId,
+      chapterId,
+      { id, ...compactChapterPayload(input) },
+      options,
+    )
+  }
+  catch (error: unknown) {
+    if (
+      error instanceof DomainCommandError
+      && (error.code === 'SCENE_NOT_FOUND' || error.code === 'CHAPTER_NOT_FOUND')
+    ) {
+      return null
     }
-  })
-  return selectScenes(projectId, chapterId)
-}
-
-export async function updateScene(projectId: string, chapterId: string, id: string, input: SceneInput) {
-  await assertChapterBelongsToProject(projectId, chapterId)
-  const [row] = await db.update(chapterScenes).set(updatedFields(sceneFields(input))).where(and(
-    eq(chapterScenes.id, id),
-    eq(chapterScenes.projectId, projectId),
-    eq(chapterScenes.chapterId, chapterId),
-  )).returning()
-  return row ?? null
+    throw error
+  }
 }
 
 export async function postprocessScene(
@@ -159,12 +135,28 @@ export async function postprocessScene(
   return runScenePostprocess({ projectId, chapterId, sceneId, content })
 }
 
-export async function deleteScene(projectId: string, chapterId: string, id: string) {
-  await assertChapterBelongsToProject(projectId, chapterId)
-  const [row] = await db.delete(chapterScenes).where(and(
-    eq(chapterScenes.id, id),
-    eq(chapterScenes.projectId, projectId),
-    eq(chapterScenes.chapterId, chapterId),
-  )).returning()
-  return row ?? null
+export async function deleteScene(
+  projectId: string,
+  chapterId: string,
+  id: string,
+  options: ChapterCommandOptions = {},
+) {
+  try {
+    return await dispatchChapterCommand<SceneSnapshot>(
+      DELETE_SCENE_COMMAND,
+      projectId,
+      chapterId,
+      { id },
+      options,
+    )
+  }
+  catch (error: unknown) {
+    if (
+      error instanceof DomainCommandError
+      && (error.code === 'SCENE_NOT_FOUND' || error.code === 'CHAPTER_NOT_FOUND')
+    ) {
+      return null
+    }
+    throw error
+  }
 }

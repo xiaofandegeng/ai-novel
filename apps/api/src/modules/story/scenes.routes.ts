@@ -1,7 +1,14 @@
 import type { Hono } from 'hono'
 import type { CreateSceneInput, SceneInput, SceneOrderInput } from './scenes.service'
+import { httpCommandOptions } from '../../shared/http/command-options'
 import { fail, success } from '../../shared/http/responses'
 import { errorMessage } from '../../shared/utils'
+import {
+  CHANGE_SCENE_COMMAND,
+  DELETE_SCENE_COMMAND,
+  PLAN_SCENES_COMMAND,
+  REORDER_SCENES_COMMAND,
+} from './chapter.eventing'
 import {
   bulkCreateScenes,
   createScene,
@@ -30,11 +37,14 @@ export function registerSceneRoutes(app: Hono) {
         return c.json(fail(`Scene at index ${index} has invalid orderIndex`), 400)
     }
     try {
+      const projectId = c.req.param('projectId')
+      const chapterId = c.req.param('chapterId')
       const rows = await bulkCreateScenes(
-        c.req.param('projectId'),
-        c.req.param('chapterId'),
+        projectId,
+        chapterId,
         body.scenes,
         body.mode,
+        httpCommandOptions(c, PLAN_SCENES_COMMAND, projectId, chapterId, 'bulk'),
       )
       return c.json(success(rows), 201)
     }
@@ -44,10 +54,13 @@ export function registerSceneRoutes(app: Hono) {
   })
 
   app.post('/api/projects/:projectId/chapters/:chapterId/scenes', async (c) => {
+    const projectId = c.req.param('projectId')
+    const chapterId = c.req.param('chapterId')
     const row = await createScene(
-      c.req.param('projectId'),
-      c.req.param('chapterId'),
+      projectId,
+      chapterId,
       await c.req.json<CreateSceneInput>(),
+      httpCommandOptions(c, PLAN_SCENES_COMMAND, projectId, chapterId, 'single'),
     )
     return c.json(success(row), 201)
   })
@@ -57,7 +70,14 @@ export function registerSceneRoutes(app: Hono) {
     if (!Array.isArray(body.orders))
       return c.json(fail('Invalid scene orders'), 400)
     try {
-      const rows = await reorderScenes(c.req.param('projectId'), c.req.param('chapterId'), body.orders)
+      const projectId = c.req.param('projectId')
+      const chapterId = c.req.param('chapterId')
+      const rows = await reorderScenes(
+        projectId,
+        chapterId,
+        body.orders,
+        httpCommandOptions(c, REORDER_SCENES_COMMAND, projectId, chapterId),
+      )
       return c.json(success(rows))
     }
     catch (error: unknown) {
@@ -68,11 +88,15 @@ export function registerSceneRoutes(app: Hono) {
   })
 
   app.patch('/api/projects/:projectId/chapters/:chapterId/scenes/:id', async (c) => {
+    const projectId = c.req.param('projectId')
+    const chapterId = c.req.param('chapterId')
+    const id = c.req.param('id')
     const row = await updateScene(
-      c.req.param('projectId'),
-      c.req.param('chapterId'),
-      c.req.param('id'),
+      projectId,
+      chapterId,
+      id,
       await c.req.json<SceneInput>(),
+      httpCommandOptions(c, CHANGE_SCENE_COMMAND, projectId, chapterId, id),
     )
     return row ? c.json(success(row)) : c.json(fail('Scene not found'), 404)
   })
@@ -96,7 +120,15 @@ export function registerSceneRoutes(app: Hono) {
   })
 
   app.delete('/api/projects/:projectId/chapters/:chapterId/scenes/:id', async (c) => {
-    const row = await deleteScene(c.req.param('projectId'), c.req.param('chapterId'), c.req.param('id'))
+    const projectId = c.req.param('projectId')
+    const chapterId = c.req.param('chapterId')
+    const id = c.req.param('id')
+    const row = await deleteScene(
+      projectId,
+      chapterId,
+      id,
+      httpCommandOptions(c, DELETE_SCENE_COMMAND, projectId, chapterId, id),
+    )
     return row ? c.json(success(row, 'Scene deleted')) : c.json(fail('Scene not found'), 404)
   })
 }

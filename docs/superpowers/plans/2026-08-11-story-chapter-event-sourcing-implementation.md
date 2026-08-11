@@ -64,11 +64,11 @@
 - Modify: `apps/api/src/modules/story/scenes.service.ts`
 - Modify: `apps/api/src/modules/story/scenes.routes.ts`
 
-- [ ] Define scene plan/create/change/reorder/delete and `SceneContentApplied` events inside the Chapter stream.
-- [ ] Make bulk append/replace one atomic chapter command.
-- [ ] Keep scene ordering deterministic and reject unknown scene IDs.
-- [ ] Project scenes into `chapter_scenes` and verify replay equality.
-- [ ] Commit: `feat(api): event source chapter scenes`.
+- [x] Define scene plan/create/change/reorder/delete and `SceneContentApplied` events inside the Chapter stream.
+- [x] Make bulk append/replace one atomic chapter command.
+- [x] Keep scene ordering deterministic and reject unknown scene IDs.
+- [x] Project scenes into `chapter_scenes` and verify replay equality.
+- [x] Commit: `feat(api): event source chapter scenes`.
 
 ## Task 5: Derived chapter version history
 

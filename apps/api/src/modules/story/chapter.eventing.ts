@@ -11,7 +11,7 @@ import type {
   StreamRef,
 } from '../../eventing'
 import { and, eq, ne } from 'drizzle-orm'
-import { chapters } from '../../db/schema'
+import { chapters, chapterScenes } from '../../db/schema'
 import { DomainCommandError } from '../../eventing'
 import { generateId, now } from '../../shared/utils'
 import {
@@ -30,6 +30,10 @@ export const CHAPTER_PROJECTION = 'chapters'
 export const CREATE_CHAPTER_COMMAND = 'CreateChapter'
 export const CHANGE_CHAPTER_COMMAND = 'ChangeChapter'
 export const DELETE_CHAPTER_COMMAND = 'DeleteChapter'
+export const PLAN_SCENES_COMMAND = 'PlanScenes'
+export const CHANGE_SCENE_COMMAND = 'ChangeScene'
+export const REORDER_SCENES_COMMAND = 'ReorderScenes'
+export const DELETE_SCENE_COMMAND = 'DeleteScene'
 
 export const CHAPTER_CREATED = 'ChapterCreated'
 export const CHAPTER_RENAMED = 'ChapterRenamed'
@@ -38,6 +42,11 @@ export const CHAPTER_DETAILS_CHANGED = 'ChapterDetailsChanged'
 export const CHAPTER_CONTENT_APPLIED = 'ChapterContentApplied'
 export const CHAPTER_COMPLETED = 'ChapterCompleted'
 export const CHAPTER_DELETED = 'ChapterDeleted'
+export const SCENE_PLANNED = 'ScenePlanned'
+export const SCENE_CHANGED = 'SceneChanged'
+export const SCENE_REORDERED = 'SceneReordered'
+export const SCENE_CONTENT_APPLIED = 'SceneContentApplied'
+export const SCENE_DELETED = 'SceneDeleted'
 
 const CHAPTER_STATUSES: readonly ChapterStatus[] = [
   'not_started',
@@ -54,6 +63,78 @@ const FULL_CHAPTER_EVENTS = [
   CHAPTER_CONTENT_APPLIED,
   CHAPTER_COMPLETED,
 ] as const
+
+const FULL_SCENE_EVENTS = [
+  SCENE_PLANNED,
+  SCENE_CHANGED,
+  SCENE_REORDERED,
+  SCENE_CONTENT_APPLIED,
+] as const
+
+type SceneStatus = 'planned' | 'drafting' | 'reviewed' | 'completed'
+type SceneBeatType = 'hook' | 'setup' | 'reveal' | 'conflict' | 'reversal' | 'payoff' | 'transition' | 'cliffhanger'
+
+const SCENE_STATUSES: readonly SceneStatus[] = ['planned', 'drafting', 'reviewed', 'completed']
+const SCENE_BEAT_TYPES: readonly SceneBeatType[] = [
+  'hook',
+  'setup',
+  'reveal',
+  'conflict',
+  'reversal',
+  'payoff',
+  'transition',
+  'cliffhanger',
+]
+
+export type SceneSnapshot = JsonObject & {
+  id: string
+  projectId: string
+  chapterId: string
+  sceneNumber: number
+  title: string | null
+  location: string | null
+  timeline: string | null
+  purpose: string | null
+  summary: string | null
+  characters: string | null
+  targetWords: number | null
+  content: string | null
+  orderIndex: number
+  status: SceneStatus
+  conflict: string | null
+  beatType: SceneBeatType | null
+  entryHook: string | null
+  turningPoint: string | null
+  exitHook: string | null
+  emotionStart: string | null
+  emotionEnd: string | null
+  conflictLevel: number | null
+  requiredElements: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+const SCENE_DETAIL_FIELDS = [
+  'sceneNumber',
+  'title',
+  'location',
+  'timeline',
+  'purpose',
+  'summary',
+  'characters',
+  'targetWords',
+  'orderIndex',
+  'status',
+  'conflict',
+  'beatType',
+  'entryHook',
+  'turningPoint',
+  'exitHook',
+  'emotionStart',
+  'emotionEnd',
+  'conflictLevel',
+  'requiredElements',
+] as const satisfies readonly (keyof SceneSnapshot)[]
 
 export type ChapterSnapshot = JsonObject & {
   id: string
@@ -79,6 +160,7 @@ export type ChapterSnapshot = JsonObject & {
 export type ChapterState = ChapterSnapshot & {
   exists: boolean
   deleted: boolean
+  scenes: Record<string, SceneSnapshot>
 }
 
 export interface ChapterEventingRuntime {
@@ -113,6 +195,7 @@ export const chapterAggregate: AggregateDefinition<ChapterState> = {
     updatedAt: '',
     exists: false,
     deleted: false,
+    scenes: {},
   }),
   evolve: (state, event) => {
     if (FULL_CHAPTER_EVENTS.includes(event.eventType as typeof FULL_CHAPTER_EVENTS[number])) {
@@ -120,7 +203,21 @@ export const chapterAggregate: AggregateDefinition<ChapterState> = {
         ...readChapterEvent(event.payload),
         exists: true,
         deleted: false,
+        scenes: state.scenes ?? {},
       }
+    }
+    if (FULL_SCENE_EVENTS.includes(event.eventType as typeof FULL_SCENE_EVENTS[number])) {
+      const scene = readSceneEvent(event.payload)
+      return {
+        ...state,
+        scenes: { ...(state.scenes ?? {}), [scene.id]: scene },
+      }
+    }
+    if (event.eventType === SCENE_DELETED) {
+      const { scene } = readDeletedSceneEvent(event.payload)
+      const nextScenes = { ...(state.scenes ?? {}) }
+      delete nextScenes[scene.id]
+      return { ...state, scenes: nextScenes }
     }
     if (event.eventType === CHAPTER_DELETED)
       return { ...state, deleted: true }
@@ -148,6 +245,20 @@ function registerEvents(events: EventRegistry): void {
     currentSchemaVersion: 1,
     upcasters: {},
     validate: validateDeletedEvent,
+  })
+  for (const eventType of FULL_SCENE_EVENTS) {
+    events.register({
+      eventType,
+      currentSchemaVersion: 1,
+      upcasters: {},
+      validate: payload => ({ scene: readSceneEvent(readObject(payload)) }),
+    })
+  }
+  events.register({
+    eventType: SCENE_DELETED,
+    currentSchemaVersion: 1,
+    upcasters: {},
+    validate: validateDeletedSceneEvent,
   })
 }
 
@@ -230,13 +341,136 @@ function registerCommands(runtime: ChapterEventingRuntime): void {
       result: chapter,
     }
   })
+
+  runtime.commands.register(PLAN_SCENES_COMMAND, async (command, context) => {
+    const stream = chapterStream(command)
+    const loaded = await loadActiveChapter(runtime, command, context.session)
+    const inputs = objectArray(command.payload, 'scenes')
+    if (inputs.length === 0)
+      throw new DomainCommandError('INVALID_SCENE', 'scenes must be a non-empty array')
+    const mode = command.payload.mode ?? 'append'
+    if (mode !== 'append' && mode !== 'replace')
+      throw new DomainCommandError('INVALID_SCENE', 'mode must be append or replace')
+
+    const timestamp = now()
+    const currentScenes = Object.values(loaded.state.scenes ?? {})
+    const events: PendingEvent[] = []
+    if (mode === 'replace') {
+      for (const scene of currentScenes)
+        events.push(deletedSceneEvent(scene, command, timestamp))
+    }
+    const existingCount = mode === 'replace' ? 0 : currentScenes.length
+    const existingIds = new Set(mode === 'replace' ? [] : currentScenes.map(scene => scene.id))
+    const planned = inputs.map((input, index) => {
+      const id = 'id' in input ? requiredString(input, 'id') : generateId()
+      if (existingIds.has(id))
+        throw new DomainCommandError('SCENE_ALREADY_EXISTS', 'Scene already exists')
+      existingIds.add(id)
+      return createSceneSnapshot(
+        command,
+        { ...input, id },
+        existingCount + index + 1,
+        timestamp,
+      )
+    })
+    events.push(...planned.map(scene => sceneEvent(SCENE_PLANNED, scene, command, timestamp)))
+    const result = mode === 'replace'
+      ? planned
+      : sortScenes([...currentScenes, ...planned])
+    return {
+      streams: [{ stream, expectedVersion: loaded.version, events }],
+      result: { scenes: result },
+    }
+  })
+
+  runtime.commands.register(CHANGE_SCENE_COMMAND, async (command, context) => {
+    const stream = chapterStream(command)
+    const loaded = await loadActiveChapter(runtime, command, context.session)
+    const id = requiredString(command.payload, 'id')
+    const current = loaded.state.scenes[id]
+    if (!current)
+      throw new DomainCommandError('SCENE_NOT_FOUND', 'Scene not found')
+    const timestamp = now()
+    const scene = changeSceneSnapshot(current, command.payload, timestamp)
+    const changedDetails = SCENE_DETAIL_FIELDS.some(field => (
+      field in command.payload && scene[field] !== current[field]
+    ))
+    const contentChanged = 'content' in command.payload && scene.content !== current.content
+    const events: PendingEvent[] = []
+    if (changedDetails || !contentChanged)
+      events.push(sceneEvent(SCENE_CHANGED, scene, command, timestamp))
+    if (contentChanged)
+      events.push(sceneEvent(SCENE_CONTENT_APPLIED, scene, command, timestamp))
+    return {
+      streams: [{ stream, expectedVersion: loaded.version, events }],
+      result: scene,
+    }
+  })
+
+  runtime.commands.register(REORDER_SCENES_COMMAND, async (command, context) => {
+    const stream = chapterStream(command)
+    const loaded = await loadActiveChapter(runtime, command, context.session)
+    const orders = objectArray(command.payload, 'orders')
+    const seen = new Set<string>()
+    const timestamp = now()
+    const changed = orders.map((order) => {
+      const id = requiredString(order, 'id')
+      if (seen.has(id))
+        throw new DomainCommandError('INVALID_SCENE_ORDER', 'Scene order contains duplicate IDs')
+      seen.add(id)
+      const current = loaded.state.scenes[id]
+      if (!current)
+        throw new DomainCommandError('SCENE_NOT_FOUND', 'Scene not found')
+      return {
+        ...current,
+        orderIndex: requiredInteger(order, 'orderIndex', 0),
+        updatedAt: timestamp,
+      }
+    })
+    const changedById = Object.fromEntries(changed.map(scene => [scene.id, scene]))
+    const result = sortScenes(Object.values(loaded.state.scenes).map(scene => (
+      changedById[scene.id] ?? scene
+    )))
+    return {
+      streams: [{
+        stream,
+        expectedVersion: loaded.version,
+        events: changed.map(scene => sceneEvent(SCENE_REORDERED, scene, command, timestamp)),
+      }],
+      result: { scenes: result },
+    }
+  })
+
+  runtime.commands.register(DELETE_SCENE_COMMAND, async (command, context) => {
+    const stream = chapterStream(command)
+    const loaded = await loadActiveChapter(runtime, command, context.session)
+    const id = requiredString(command.payload, 'id')
+    const scene = loaded.state.scenes[id]
+    if (!scene)
+      throw new DomainCommandError('SCENE_NOT_FOUND', 'Scene not found')
+    const timestamp = now()
+    return {
+      streams: [{
+        stream,
+        expectedVersion: loaded.version,
+        events: [deletedSceneEvent(scene, command, timestamp)],
+      }],
+      result: scene,
+    }
+  })
 }
 
 function registerProjection(projections: ProjectionRegistry): void {
   projections.register({
     name: CHAPTER_PROJECTION,
     mode: 'sync',
-    handles: [...FULL_CHAPTER_EVENTS, CHAPTER_DELETED, PROJECT_DELETED],
+    handles: [
+      ...FULL_CHAPTER_EVENTS,
+      ...FULL_SCENE_EVENTS,
+      CHAPTER_DELETED,
+      SCENE_DELETED,
+      PROJECT_DELETED,
+    ],
     project: async (transaction, event) => {
       if (event.eventType === PROJECT_DELETED) {
         await transaction.delete(chapters).where(eq(chapters.projectId, event.aggregateId))
@@ -248,6 +482,23 @@ function registerProjection(projections: ProjectionRegistry): void {
           eq(chapters.projectId, chapter.projectId),
           eq(chapters.id, chapter.id),
         ))
+        return
+      }
+      if (event.eventType === SCENE_DELETED) {
+        const { scene } = readDeletedSceneEvent(event.payload)
+        await transaction.delete(chapterScenes).where(and(
+          eq(chapterScenes.projectId, scene.projectId),
+          eq(chapterScenes.chapterId, scene.chapterId),
+          eq(chapterScenes.id, scene.id),
+        ))
+        return
+      }
+      if (FULL_SCENE_EVENTS.includes(event.eventType as typeof FULL_SCENE_EVENTS[number])) {
+        const scene = readSceneEvent(event.payload)
+        await transaction.insert(chapterScenes).values(scene).onConflictDoUpdate({
+          target: chapterScenes.id,
+          set: scene,
+        })
         return
       }
       const chapter = readChapterEvent(event.payload)
@@ -292,6 +543,21 @@ async function assertActiveProject(
   })
   if (!project.state.exists || project.state.deleted)
     throw new DomainCommandError('PROJECT_NOT_FOUND', 'Project not found')
+}
+
+async function loadActiveChapter(
+  runtime: ChapterEventingRuntime,
+  command: CommandEnvelope,
+  session: Parameters<AggregateRepository['loadInSession']>[0],
+) {
+  await assertActiveProject(runtime, command, session)
+  const loaded = await runtime.aggregates.loadInSession(
+    session,
+    chapterAggregate,
+    chapterStream(command),
+  )
+  assertActiveChapter(loaded.state)
+  return loaded
 }
 
 async function assertVolumeExists(
@@ -426,6 +692,107 @@ function changeChapterSnapshot(
   }
 }
 
+function createSceneSnapshot(
+  command: CommandEnvelope,
+  input: JsonObject,
+  fallbackIndex: number,
+  timestamp: string,
+): SceneSnapshot {
+  return {
+    id: requiredString(input, 'id'),
+    projectId: command.projectId!,
+    chapterId: command.aggregateId,
+    sceneNumber: 'sceneNumber' in input
+      ? requiredInteger(input, 'sceneNumber', 1)
+      : fallbackIndex,
+    title: nullableString(input, 'title'),
+    location: nullableString(input, 'location'),
+    timeline: nullableString(input, 'timeline'),
+    purpose: nullableString(input, 'purpose'),
+    summary: nullableString(input, 'summary'),
+    characters: nullableString(input, 'characters'),
+    targetWords: nullableInteger(input, 'targetWords', 0),
+    content: nullableString(input, 'content'),
+    orderIndex: 'orderIndex' in input
+      ? requiredInteger(input, 'orderIndex', 0)
+      : fallbackIndex,
+    status: sceneStatus(input.status ?? 'planned'),
+    conflict: nullableString(input, 'conflict'),
+    beatType: sceneBeatType(input.beatType),
+    entryHook: nullableString(input, 'entryHook'),
+    turningPoint: nullableString(input, 'turningPoint'),
+    exitHook: nullableString(input, 'exitHook'),
+    emotionStart: nullableString(input, 'emotionStart'),
+    emotionEnd: nullableString(input, 'emotionEnd'),
+    conflictLevel: nullableInteger(input, 'conflictLevel', 0),
+    requiredElements: nullableString(input, 'requiredElements'),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+}
+
+function changeSceneSnapshot(
+  current: SceneSnapshot,
+  input: JsonObject,
+  timestamp: string,
+): SceneSnapshot {
+  return {
+    ...current,
+    sceneNumber: 'sceneNumber' in input
+      ? requiredInteger(input, 'sceneNumber', 1)
+      : current.sceneNumber,
+    title: optionalNullableString(input, 'title', current.title),
+    location: optionalNullableString(input, 'location', current.location),
+    timeline: optionalNullableString(input, 'timeline', current.timeline),
+    purpose: optionalNullableString(input, 'purpose', current.purpose),
+    summary: optionalNullableString(input, 'summary', current.summary),
+    characters: optionalNullableString(input, 'characters', current.characters),
+    targetWords: 'targetWords' in input
+      ? nullableInteger(input, 'targetWords', 0)
+      : current.targetWords,
+    content: optionalNullableString(input, 'content', current.content),
+    orderIndex: 'orderIndex' in input
+      ? requiredInteger(input, 'orderIndex', 0)
+      : current.orderIndex,
+    status: 'status' in input ? sceneStatus(input.status) : current.status,
+    conflict: optionalNullableString(input, 'conflict', current.conflict),
+    beatType: 'beatType' in input ? sceneBeatType(input.beatType) : current.beatType,
+    entryHook: optionalNullableString(input, 'entryHook', current.entryHook),
+    turningPoint: optionalNullableString(input, 'turningPoint', current.turningPoint),
+    exitHook: optionalNullableString(input, 'exitHook', current.exitHook),
+    emotionStart: optionalNullableString(input, 'emotionStart', current.emotionStart),
+    emotionEnd: optionalNullableString(input, 'emotionEnd', current.emotionEnd),
+    conflictLevel: 'conflictLevel' in input
+      ? nullableInteger(input, 'conflictLevel', 0)
+      : current.conflictLevel,
+    requiredElements: optionalNullableString(input, 'requiredElements', current.requiredElements),
+    updatedAt: timestamp,
+  }
+}
+
+function sceneEvent(
+  eventType: string,
+  scene: SceneSnapshot,
+  command: CommandEnvelope,
+  occurredAt: string,
+): PendingEvent {
+  return pendingEvent(eventType, { scene }, command, occurredAt)
+}
+
+function deletedSceneEvent(
+  scene: SceneSnapshot,
+  command: CommandEnvelope,
+  occurredAt: string,
+): PendingEvent {
+  return pendingEvent(SCENE_DELETED, { scene, deletedAt: occurredAt }, command, occurredAt)
+}
+
+function sortScenes(scenes: SceneSnapshot[]): SceneSnapshot[] {
+  return [...scenes].sort((left, right) => (
+    left.orderIndex - right.orderIndex || left.sceneNumber - right.sceneNumber
+  ))
+}
+
 function chapterEvent(
   eventType: string,
   chapter: ChapterSnapshot,
@@ -475,6 +842,37 @@ function readChapterEvent(payload: JsonObject): ChapterSnapshot {
   }
 }
 
+function readSceneEvent(payload: JsonObject): SceneSnapshot {
+  const value = 'scene' in payload ? readObject(payload.scene) : payload
+  return {
+    id: requiredString(value, 'id'),
+    projectId: requiredString(value, 'projectId'),
+    chapterId: requiredString(value, 'chapterId'),
+    sceneNumber: requiredInteger(value, 'sceneNumber', 1),
+    title: nullableString(value, 'title'),
+    location: nullableString(value, 'location'),
+    timeline: nullableString(value, 'timeline'),
+    purpose: nullableString(value, 'purpose'),
+    summary: nullableString(value, 'summary'),
+    characters: nullableString(value, 'characters'),
+    targetWords: nullableInteger(value, 'targetWords', 0),
+    content: nullableString(value, 'content'),
+    orderIndex: requiredInteger(value, 'orderIndex', 0),
+    status: sceneStatus(value.status),
+    conflict: nullableString(value, 'conflict'),
+    beatType: sceneBeatType(value.beatType),
+    entryHook: nullableString(value, 'entryHook'),
+    turningPoint: nullableString(value, 'turningPoint'),
+    exitHook: nullableString(value, 'exitHook'),
+    emotionStart: nullableString(value, 'emotionStart'),
+    emotionEnd: nullableString(value, 'emotionEnd'),
+    conflictLevel: nullableInteger(value, 'conflictLevel', 0),
+    requiredElements: nullableString(value, 'requiredElements'),
+    createdAt: requiredString(value, 'createdAt'),
+    updatedAt: requiredString(value, 'updatedAt'),
+  }
+}
+
 function validateDeletedEvent(payload: unknown): JsonObject {
   const value = readObject(payload)
   return {
@@ -487,6 +885,22 @@ function readDeletedEvent(payload: JsonObject): { chapter: ChapterSnapshot, dele
   const value = validateDeletedEvent(payload)
   return {
     chapter: readChapterEvent(readObject(value.chapter)),
+    deletedAt: requiredString(value, 'deletedAt'),
+  }
+}
+
+function validateDeletedSceneEvent(payload: unknown): JsonObject {
+  const value = readObject(payload)
+  return {
+    scene: readSceneEvent(readObject(value.scene)),
+    deletedAt: requiredString(value, 'deletedAt'),
+  }
+}
+
+function readDeletedSceneEvent(payload: JsonObject): { scene: SceneSnapshot, deletedAt: string } {
+  const value = validateDeletedSceneEvent(payload)
+  return {
+    scene: readSceneEvent(readObject(value.scene)),
     deletedAt: requiredString(value, 'deletedAt'),
   }
 }
@@ -546,10 +960,40 @@ function requiredInteger(record: JsonObject, key: string, minimum: number): numb
   return value as number
 }
 
+function nullableInteger(record: JsonObject, key: string, minimum: number): number | null {
+  const value = record[key]
+  if (value === undefined || value === null)
+    return null
+  if (!Number.isInteger(value) || (value as number) < minimum)
+    throw new DomainCommandError('INVALID_SCENE', `${key} must be null or an integer >= ${minimum}`)
+  return value as number
+}
+
 function chapterStatus(value: unknown): ChapterStatus {
   if (!CHAPTER_STATUSES.includes(value as ChapterStatus))
     throw new DomainCommandError('INVALID_CHAPTER', `Unsupported chapter status: ${String(value)}`)
   return value as ChapterStatus
+}
+
+function sceneStatus(value: unknown): SceneStatus {
+  if (!SCENE_STATUSES.includes(value as SceneStatus))
+    throw new DomainCommandError('INVALID_SCENE', `Unsupported scene status: ${String(value)}`)
+  return value as SceneStatus
+}
+
+function sceneBeatType(value: unknown): SceneBeatType | null {
+  if (value === undefined || value === null)
+    return null
+  if (!SCENE_BEAT_TYPES.includes(value as SceneBeatType))
+    throw new DomainCommandError('INVALID_SCENE', `Unsupported scene beat type: ${String(value)}`)
+  return value as SceneBeatType
+}
+
+function objectArray(record: JsonObject, key: string): JsonObject[] {
+  const value = record[key]
+  if (!Array.isArray(value))
+    throw new DomainCommandError('INVALID_SCENE', `${key} must be an array`)
+  return value.map(readObject)
 }
 
 function readObject(value: unknown): JsonObject {
