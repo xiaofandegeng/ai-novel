@@ -501,7 +501,7 @@ git commit -m "feat(api): add durable event outbox"
 - Consumes: Event Store transaction sessions, `ProjectionRegistry`, `CommandEnvelope`, `CommandDecision`, `commandReceipts`, Outbox enqueue.
 - Produces: `CommandBus.register()` and `CommandBus.dispatch<TResult>()`.
 
-- [ ] **Step 1: Write failing Command Bus tests**
+- [x] **Step 1: Write failing Command Bus tests**
 
 ```ts
 it('appends events, projects them, enqueues effects, and stores the result atomically', async () => {
@@ -533,12 +533,12 @@ it('rolls back events, projections, outbox, and receipt when a sync projector fa
 
 Also test unknown commands, persisted `DomainCommandError`, transient errors not becoming terminal receipts, and project metadata propagation.
 
-- [ ] **Step 2: Run tests and observe missing Command Bus failure**
+- [x] **Step 2: Run tests and observe missing Command Bus failure**
 
 Run: `pnpm --filter @ai-novel/api test -- src/eventing/command-bus.integration.test.ts`  
 Expected: FAIL.
 
-- [ ] **Step 3: Implement the handler registry and dispatch transaction**
+- [x] **Step 3: Implement the handler registry and dispatch transaction**
 
 ```ts
 export type CommandHandler<TPayload extends JsonObject, TResult> = (
@@ -558,7 +558,7 @@ export class CommandBus {
 
 `dispatch` checks a receipt, executes the handler, appends events, runs synchronous projectors, enqueues effects and inserts the completed receipt in one database transaction. Store deterministic `DomainCommandError` failures in a separate transaction; do not persist infrastructure or concurrency failures as terminal command results.
 
-- [ ] **Step 4: Run focused tests and typecheck**
+- [x] **Step 4: Run focused tests and typecheck**
 
 Run: `pnpm --filter @ai-novel/api test -- src/eventing/command-bus.integration.test.ts`  
 Expected: PASS.
@@ -566,7 +566,7 @@ Expected: PASS.
 Run: `pnpm --filter @ai-novel/api typecheck`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit Command Bus**
+- [x] **Step 5: Commit Command Bus**
 
 ```bash
 git add apps/api/src/eventing
