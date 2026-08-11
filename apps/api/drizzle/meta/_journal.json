@@ -183,6 +183,13 @@
       "when": 1779349615000,
       "tag": "0025_add_auto_decision_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786441850400,
+      "tag": "0026_goofy_vapor",
+      "breakpoints": true
     }
   ]
 }

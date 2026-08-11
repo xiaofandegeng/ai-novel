@@ -232,7 +232,7 @@ git commit -m "feat(api): add eventing contracts and registry"
 - Consumes: `AppendBatch`, `StoredEvent`, `StreamRef`, `AggregateSnapshot`.
 - Produces: `EventingTransaction`, `EventStore.withTransaction<T>()` and `EventStoreSession` methods `loadStream`, `appendBatch`, `readAll`, `getSnapshot`, `putSnapshot`.
 
-- [ ] **Step 1: Write failing Event Store integration tests**
+- [x] **Step 1: Write failing Event Store integration tests**
 
 ```ts
 describe('EventStore', () => {
@@ -275,12 +275,12 @@ describe('EventStore', () => {
 
 Also test duplicate `eventId`, monotonic `globalPosition`, stream filtering, snapshot replacement, and database rejection of direct `UPDATE`/`DELETE` on `domain_events`.
 
-- [ ] **Step 2: Run the focused integration test and observe failure**
+- [x] **Step 2: Run the focused integration test and observe failure**
 
 Run: `pnpm --filter @ai-novel/api test -- src/eventing/event-store.integration.test.ts`  
 Expected: FAIL because the eventing schema and Event Store are missing.
 
-- [ ] **Step 3: Define the Drizzle schema**
+- [x] **Step 3: Define the Drizzle schema**
 
 Implement these exported tables with the exact names from the design:
 
@@ -295,14 +295,14 @@ export const eventOutbox = pgTable('event_outbox', { /* lease and retry fields *
 
 Use composite primary or unique indexes exactly as specified in the design document. Use `jsonb` for payload, metadata, snapshots and command results. Use timestamp string mode consistently with the existing schema.
 
-- [ ] **Step 4: Generate and harden the migration**
+- [x] **Step 4: Generate and harden the migration**
 
 Run: `pnpm db:generate`  
 Expected: a new migration containing only eventing tables and indexes.
 
 Append SQL defining a trigger function that raises an exception for `UPDATE` or `DELETE` on `domain_events`, then attach it as a `BEFORE UPDATE OR DELETE` trigger.
 
-- [ ] **Step 5: Implement the Event Store transaction session**
+- [x] **Step 5: Implement the Event Store transaction session**
 
 ```ts
 export class EventStore {
@@ -324,7 +324,7 @@ export interface EventStoreSession {
 
 For `appendBatch`, sort streams by `aggregateType/aggregateId`, lock or conditionally update each stream head, validate every expected version, then insert all events. Convert unique stream-version and event-ID violations to typed errors without exposing raw SQL details.
 
-- [ ] **Step 6: Run migration and focused tests**
+- [x] **Step 6: Run migration and focused tests**
 
 Run: `pnpm db:migrate`  
 Expected: migration succeeds on the configured development database without deleting existing tables.
@@ -332,7 +332,7 @@ Expected: migration succeeds on the configured development database without dele
 Run: `pnpm --filter @ai-novel/api test -- src/eventing/event-store.integration.test.ts`  
 Expected: all Event Store tests PASS.
 
-- [ ] **Step 7: Commit Event Store infrastructure**
+- [x] **Step 7: Commit Event Store infrastructure**
 
 ```bash
 git add apps/api/src/db/schema apps/api/src/eventing/event-store.ts apps/api/src/eventing/event-store.integration.test.ts apps/api/drizzle
