@@ -45,11 +45,11 @@
 - Modify: `apps/api/src/modules/project/projects.routes.ts`
 - Modify: `apps/api/src/app.integration.test.ts`
 
-- [ ] Add failing HTTP tests for Event Store writes and `Idempotency-Key` retries.
-- [ ] Keep list/detail queries on the project projection.
-- [ ] Route create/update/delete through Command Bus; preserve current status codes and response payloads.
-- [ ] Map missing/deleted projects to the current 404 contract and validation errors to 400.
-- [ ] Commit: `refactor(api): route project writes through command bus`.
+- [x] Add failing HTTP tests for Event Store writes and `Idempotency-Key` retries.
+- [x] Keep list/detail queries on the project projection.
+- [x] Route create/update/delete through Command Bus; preserve current status codes and response payloads.
+- [x] Map missing/deleted projects to the current 404 contract and validation errors to 400.
+- [x] Commit: `refactor(api): route project writes through command bus`.
 
 ## Task 4: Encrypted project credential vault
 

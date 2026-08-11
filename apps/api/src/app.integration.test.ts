@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from './app'
 import { db, sql } from './db'
@@ -5,6 +6,7 @@ import {
   aiContextSnapshots,
   chapterChangeSetItems,
   chapterChangeSets,
+  domainEvents,
   promptTemplates,
   storyStructureTemplates,
 } from './db/schema'
@@ -88,6 +90,52 @@ describe('http application boundary', () => {
     const deleteResponse = await app.request(`/api/projects/${created.data.id}`, { method: 'DELETE' })
     expect(deleteResponse.status).toBe(200)
     expect((await app.request(`/api/projects/${created.data.id}`)).status).toBe(404)
+  })
+
+  it('routes idempotent project writes through the event store', async () => {
+    const createRequest = () => app.request('/api/projects', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'project-create-retry',
+      },
+      body: JSON.stringify({ title: '幂等项目' }),
+    })
+    const firstCreate = await createRequest()
+    const firstBody = await firstCreate.json() as { data: { id: string } }
+    const secondCreate = await createRequest()
+    await expect(secondCreate.json()).resolves.toEqual(firstBody)
+
+    const projectId = firstBody.data.id
+    const updateRequest = () => app.request(`/api/projects/${projectId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'project-update-retry',
+      },
+      body: JSON.stringify({ title: '幂等项目·修订' }),
+    })
+    await updateRequest()
+    await updateRequest()
+
+    const deleteRequest = () => app.request(`/api/projects/${projectId}`, {
+      method: 'DELETE',
+      headers: { 'Idempotency-Key': 'project-delete-retry' },
+    })
+    const firstDelete = await deleteRequest()
+    const firstDeleteBody = await firstDelete.json()
+    const secondDelete = await deleteRequest()
+    await expect(secondDelete.json()).resolves.toEqual(firstDeleteBody)
+
+    const events = await db.select()
+      .from(domainEvents)
+      .where(eq(domainEvents.aggregateId, projectId))
+    expect(events.map(event => event.eventType)).toEqual([
+      'ProjectCreated',
+      'ProjectDetailsChanged',
+      'ProjectDeletionRequested',
+      'ProjectDeleted',
+    ])
   })
 
   it('rejects project creation without a title at the HTTP boundary', async () => {

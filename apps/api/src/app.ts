@@ -20,6 +20,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.use('*', cors({
     origin: corsOrigins,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    allowHeaders: ['Content-Type', 'Idempotency-Key', 'X-Correlation-ID'],
   }))
 
   registerApiModules(app)
