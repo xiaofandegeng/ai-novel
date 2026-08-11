@@ -150,6 +150,24 @@ describe('projectionReplay', () => {
         { projectionName: 'kernel-replay-second', processedEvents: 3, lastGlobalPosition: 3 },
       ])
   })
+
+  it('rejects invalid batch sizes and projections without reset support', async () => {
+    const registry = registryWith(replayDefinition())
+    const replay = new ProjectionReplay(registry, store)
+    await expect(replay.replayProjection('kernel-replay', { batchSize: 0 }))
+      .rejects
+      .toThrow('positive integer')
+    await expect(replay.replayProjection('kernel-replay', { batchSize: 0.5 }))
+      .rejects
+      .toThrow('positive integer')
+
+    const withoutReset = replayDefinition('kernel-no-reset')
+    delete withoutReset.reset
+    registry.register(withoutReset)
+    await expect(replay.replayProjection('kernel-no-reset'))
+      .rejects
+      .toThrow('does not support replay reset')
+  })
 })
 
 function replayDefinition(name = 'kernel-replay'): ProjectionDefinition {

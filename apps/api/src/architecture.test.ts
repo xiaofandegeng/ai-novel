@@ -60,6 +60,28 @@ describe('api architecture boundaries', () => {
     expect(sharedSources).not.toMatch(/from ['"].*modules\//)
   })
 
+  it('keeps eventing infrastructure independent from domain modules', () => {
+    const eventingSources = sourceFiles(join(sourceRoot, 'eventing'))
+      .filter(file => !file.endsWith('.test.ts'))
+      .map(file => readFileSync(file, 'utf8'))
+      .join('\n')
+
+    expect(eventingSources).not.toMatch(/from ['"].*modules\//)
+  })
+
+  it('restricts eventing table access to eventing infrastructure and schema declarations', () => {
+    const nonEventingSources = sourceFiles(sourceRoot)
+      .filter(file => !file.endsWith('.test.ts'))
+      .filter(file => !file.includes('/eventing/'))
+      .filter(file => !file.includes('/db/schema/'))
+      .map(file => readFileSync(file, 'utf8'))
+      .join('\n')
+
+    expect(nonEventingSources).not.toMatch(
+      /\b(?:domainEvents|aggregateStreams|aggregateSnapshots|eventOutbox|commandReceipts|projectionCheckpoints)\b/,
+    )
+  })
+
   it('keeps HTTP envelopes out of the general utility barrel', () => {
     const utilityBarrel = readFileSync(join(sourceRoot, 'shared/utils/index.ts'), 'utf8')
     expect(utilityBarrel).not.toMatch(/\b(?:fail|success)\b/)

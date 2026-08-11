@@ -184,6 +184,42 @@ describe('commandBus', () => {
       .rejects
       .toBeInstanceOf(UnknownCommandTypeError)
   })
+
+  it('rejects duplicate handler registration', () => {
+    const bus = new CommandBus(store, new ProjectionRegistry())
+    const handler = async () => ({ streams: [], result: {} })
+    bus.register('CreateKernelThing', handler)
+
+    expect(() => bus.register('CreateKernelThing', handler)).toThrow('already registered')
+  })
+
+  it('supports an unscoped command with causation metadata', async () => {
+    const unscopedStream: StreamRef = {
+      aggregateType: 'KernelCommandTest',
+      aggregateId: 'thing-unscoped',
+    }
+    const bus = new CommandBus(store, new ProjectionRegistry())
+    bus.register('CreateUnscopedKernelThing', async () => ({
+      streams: [{
+        stream: unscopedStream,
+        expectedVersion: 0,
+        events: [pending('event-unscoped', 'KernelThingCreated')],
+      }],
+      result: { id: unscopedStream.aggregateId },
+    }))
+
+    await expect(bus.dispatch({
+      ...command(),
+      commandId: 'command-unscoped',
+      commandType: 'CreateUnscopedKernelThing',
+      aggregateId: unscopedStream.aggregateId,
+      projectId: undefined,
+      causationId: 'command-parent',
+    })).resolves.toEqual({ id: 'thing-unscoped' })
+    await expect(store.loadStream(unscopedStream)).resolves.toMatchObject([
+      { eventId: 'event-unscoped', causationId: 'command-parent' },
+    ])
+  })
 })
 
 function command(): CommandEnvelope {

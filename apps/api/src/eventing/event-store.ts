@@ -80,6 +80,8 @@ function createSession(transaction: EventingTransaction): EventStoreSession {
     },
     async appendBatch(batch) {
       const streams = normalizeStreams(batch)
+      if (streams.length === 0)
+        return []
       const versions = new Map<string, number>()
 
       for (const append of [...streams].sort(compareStreams)) {

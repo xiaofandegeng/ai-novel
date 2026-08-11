@@ -727,7 +727,7 @@ git commit -m "feat(api): add deterministic projection replay"
 - Consumes: completed Eventing Kernel.
 - Produces: enforceable dependency boundaries and documented migration/replay workflow.
 
-- [ ] **Step 1: Add failing architecture tests**
+- [x] **Step 1: Add failing architecture tests**
 
 ```ts
 it('keeps eventing independent from domain modules', () => {
@@ -748,16 +748,16 @@ it('restricts eventing table writes to eventing infrastructure', () => {
 })
 ```
 
-- [ ] **Step 2: Run architecture tests and confirm the new gate is active**
+- [x] **Step 2: Run architecture tests and confirm the new gate is active**
 
 Run: `pnpm --filter @ai-novel/api test -- src/architecture.test.ts`  
 Expected: PASS after the kernel boundaries are correct; deliberately importing a domain module in a temporary local edit must make the first assertion fail, then remove that edit.
 
-- [ ] **Step 3: Add Eventing coverage inclusion and thresholds**
+- [x] **Step 3: Add Eventing coverage inclusion and thresholds**
 
 Add `src/eventing/**/*.ts` to Vitest coverage includes. Exclude only barrel exports and test helpers. Set per-file or directory thresholds so Eventing statements and branches are at least 90% without lowering existing global thresholds.
 
-- [ ] **Step 4: Document the kernel**
+- [x] **Step 4: Document the kernel**
 
 Update architecture documentation with the dependency direction:
 
@@ -770,12 +770,12 @@ eventing -X→ modules
 
 Document additive migration, `_test` database guard, outbox worker behavior and projection replay commands. Do not describe product domains as migrated during this phase.
 
-- [ ] **Step 5: Mark completed plan checkboxes and run focused coverage**
+- [x] **Step 5: Mark completed plan checkboxes and run focused coverage**
 
 Run: `pnpm --filter @ai-novel/api test:coverage`  
 Expected: all API tests pass and Eventing statements/branches meet 90%.
 
-- [ ] **Step 6: Run the repository verification gate**
+- [x] **Step 6: Run the repository verification gate**
 
 Run: `pnpm check`  
 Expected: lint, typecheck, build and all tests PASS.
@@ -786,7 +786,7 @@ Expected: all workspace coverage gates PASS.
 Run: `git diff --check`  
 Expected: no whitespace errors.
 
-- [ ] **Step 7: Commit phase verification and documentation**
+- [x] **Step 7: Commit phase verification and documentation**
 
 ```bash
 git add apps/api/src/architecture.test.ts apps/api/vitest.config.ts docs

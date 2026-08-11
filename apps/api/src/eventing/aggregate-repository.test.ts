@@ -126,6 +126,22 @@ describe('aggregateRepository', () => {
       state: { count: 2 },
     })
   })
+
+  it('rejects aggregate definitions with mismatched or invalid version settings', async () => {
+    const repository = new AggregateRepository(store, new EventRegistry())
+    await expect(repository.load({
+      ...titleDefinition(),
+      aggregateType: 'DifferentAggregate',
+    }, stream)).rejects.toThrow('cannot load stream')
+    await expect(repository.load({
+      ...titleDefinition(),
+      snapshotEvery: 0,
+    }, stream)).rejects.toThrow('Snapshot interval')
+    await expect(repository.load({
+      ...titleDefinition(),
+      snapshotSchemaVersion: 0.5,
+    }, stream)).rejects.toThrow('Snapshot schema version')
+  })
 })
 
 function titleDefinition(): AggregateDefinition<JsonObject> {

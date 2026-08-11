@@ -49,6 +49,7 @@ apps/api/src/
 ├── db/
 │   ├── index.ts             PostgreSQL / Drizzle 连接
 │   └── schema/              按数据领域拆分的 schema
+├── eventing/                Event Store、Command Bus、投影、快照、Outbox 与重放内核
 ├── modules/
 │   ├── ai/                  Provider、上下文、提示词、知识检索
 │   ├── automation/          自动运行、写作任务、变更集与章后处理
@@ -70,7 +71,9 @@ apps/api/src/
 ```text
 app/index
   → modules
-    → config + db + shared
+    → eventing（领域迁移完成后承接写命令）
+      → config + db + shared
+    → config + db + shared（尚未迁移领域的查询与写入）
     → other domain modules (explicit imports only)
 db
   → config
@@ -78,12 +81,35 @@ shared
   → db only when enforcing ownership
 config
   → no domain module
+eventing
+  → no domain module
 ```
 
 - `modules/index.ts` 是 HTTP surface 的组合根，保持路由注册顺序显式可审查。
 - 路由与其业务服务同处一个领域目录；`*.routes.ts` 只处理协议，`*.service.ts` 负责业务与数据库组合。
 - 跨领域能力必须显式导入，禁止重新建立全局 `routes/` 或 `services/` 大平铺目录。
 - 真正跨领域且无业务归属的逻辑才进入 `shared`，不能把领域服务包装成“工具类”。
+
+### 事件溯源内核
+
+事件内核已完成，但产品领域仍处于迁移前状态；当前 HTTP 契约和既有业务表行为没有切换。领域迁移后的写链统一为：
+
+```text
+route → command handler → aggregate repository
+  → command bus transaction
+    → append-only event store
+    → synchronous projectors
+    → command receipt
+    → outbox enqueue
+```
+
+- `domain_events` 是迁移后领域的唯一事实来源，数据库触发器禁止任何 `UPDATE` 和 `DELETE`。
+- `aggregate_snapshots` 只加速聚合恢复，可以删除重建。
+- 同一 `command_id` 返回首次完成或拒绝的回执，避免重复追加事件和副作用。
+- 同步投影与事件追加同事务；异步投影按全局位置维护 checkpoint。
+- 外部副作用只能通过 Outbox worker 租约领取，失败按退避策略重试，超过上限进入终态失败。
+- 投影重放先重置目标读模型，再按 `global_position` 顺序重建；失败时重建事务回滚，并留下诊断 checkpoint。
+- `src/architecture.test.ts` 禁止 `eventing` 反向导入 `modules`，也禁止其他生产源码直接访问事件内核表。
 
 ## 4. 前端结构
 
@@ -161,7 +187,9 @@ autonomous run
 
 - 跨端模型和输入输出放在 `packages/shared`。
 - schema 放在 `apps/api/src/db/schema`；迁移历史放在 `apps/api/drizzle`，不得作为旧文件清理。
+- 事件内核 migration 是增量基础设施变更；产品领域切换与已确认的数据清空必须在独立迁移阶段执行，不能混入普通结构整理。
 - 单元测试与被测模块相邻；架构边界由各应用的 `src/architecture.test.ts` 自动验证；跨 feature 测试放在 `features` 根；API HTTP 集成测试保留在 `src/app.integration.test.ts`。
+- 事件内核单独维持语句、分支、函数和行至少 90% 的覆盖率门禁。
 - 全仓验收执行 `pnpm check`，覆盖率门禁执行 `pnpm test:coverage`。
 
 ## 8. 架构非目标
@@ -169,4 +197,4 @@ autonomous run
 - 不恢复旧式多页面 CRUD 工作台。
 - 不引入只有静态方法的“万能工具类”；优先使用职责单一的纯函数模块。
 - 不为了目录整齐复制服务或契约。
-- 不在本轮结构整理中改变 HTTP 路径、数据库 schema 或产品行为。
+- 不在事件内核阶段改变 HTTP 路径或产品行为；领域事实来源切换在后续迁移批次完成。

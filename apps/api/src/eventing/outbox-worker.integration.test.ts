@@ -4,6 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../db'
 import { eventOutbox } from '../db/schema'
 import { resetTestDatabase } from '../test/database'
+import { DuplicateOutboxHandlerError } from './errors'
 import { EventStore } from './event-store'
 import { OutboxHandlerRegistry, OutboxWorker } from './outbox-worker'
 
@@ -146,6 +147,29 @@ describe('outboxWorker', () => {
     })
     const rows = await db.select().from(eventOutbox)
     expect(rows).toHaveLength(1)
+  })
+
+  it('rejects duplicate handlers and invalid worker limits', () => {
+    const handlers = new OutboxHandlerRegistry()
+    const handler = async () => {}
+    handlers.register('kernel-handler', handler)
+    expect(() => handlers.register('kernel-handler', handler)).toThrow(DuplicateOutboxHandlerError)
+
+    expect(() => new OutboxWorker({ workerId: 'worker', handlers, leaseMs: 0 }))
+      .toThrow('leaseMs must be a positive integer')
+    expect(() => new OutboxWorker({ workerId: 'worker', handlers, maxAttempts: 0.5 }))
+      .toThrow('maxAttempts must be a positive integer')
+    expect(() => new OutboxWorker({ workerId: 'worker', handlers, batchSize: 0 }))
+      .toThrow('batchSize must be a positive integer')
+  })
+
+  it('uses safe defaults and returns zero when no message is available', async () => {
+    const worker = new OutboxWorker({
+      workerId: 'worker-defaults',
+      handlers: new OutboxHandlerRegistry(),
+    })
+
+    await expect(worker.runOnce()).resolves.toBe(0)
   })
 })
 

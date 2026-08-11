@@ -124,6 +124,85 @@ describe('eventStore', () => {
     await expect(store.readAll(2, 10)).resolves.toMatchObject([{ eventId: 'event-3' }])
   })
 
+  it('appends to an existing stream at its current version', async () => {
+    await appendInitialEvent(store)
+
+    const stored = await store.withTransaction(session => session.appendBatch(createBatch([
+      {
+        stream: firstStream,
+        expectedVersion: 1,
+        events: [pending('event-follow-up', 'KernelTestChanged')],
+      },
+    ], 'command-follow-up')))
+
+    expect(stored).toMatchObject([{ eventId: 'event-follow-up', aggregateVersion: 2 }])
+    await expect(store.loadStream(firstStream, 1)).resolves.toMatchObject([
+      { eventId: 'event-follow-up', aggregateVersion: 2 },
+    ])
+  })
+
+  it('accepts an empty append batch as an explicit no-op', async () => {
+    await expect(store.withTransaction(session => session.appendBatch(createBatch([]))))
+      .resolves
+      .toEqual([])
+  })
+
+  it('rejects duplicate streams, invalid versions, and empty stream appends', async () => {
+    const duplicateStreams = createBatch([
+      {
+        stream: firstStream,
+        expectedVersion: 0,
+        events: [pending('event-duplicate-a', 'KernelTestCreated')],
+      },
+      {
+        stream: firstStream,
+        expectedVersion: 0,
+        events: [pending('event-duplicate-b', 'KernelTestChanged')],
+      },
+    ])
+    await expect(store.withTransaction(session => session.appendBatch(duplicateStreams)))
+      .rejects
+      .toThrow('duplicate stream')
+
+    for (const expectedVersion of [-1, 0.5]) {
+      await expect(store.withTransaction(session => session.appendBatch(createBatch([
+        {
+          stream: firstStream,
+          expectedVersion,
+          events: [pending(`event-version-${expectedVersion}`, 'KernelTestCreated')],
+        },
+      ])))).rejects.toThrow('Invalid expected version')
+    }
+
+    await expect(store.withTransaction(session => session.appendBatch(createBatch([
+      { stream: firstStream, expectedVersion: 0, events: [] },
+    ])))).rejects.toThrow('empty stream append')
+  })
+
+  it('preserves optional causation metadata without inventing a project scope', async () => {
+    const unscopedStream: StreamRef = {
+      aggregateType: 'KernelTest',
+      aggregateId: 'unscoped',
+    }
+    const stored = await store.withTransaction(session => session.appendBatch({
+      ...createBatch([{
+        stream: unscopedStream,
+        expectedVersion: 0,
+        events: [pending('event-unscoped', 'KernelTestCreated')],
+      }]),
+      causationId: 'command-parent',
+    }))
+
+    expect(stored[0]).toMatchObject({ causationId: 'command-parent' })
+    expect(stored[0]).not.toHaveProperty('projectId')
+    await expect(store.withTransaction(session => session.getSnapshot(unscopedStream)))
+      .resolves
+      .toBeNull()
+    await expect(store.withTransaction(session => session.enqueueOutbox([])))
+      .resolves
+      .toBeUndefined()
+  })
+
   it('stores and replaces the latest aggregate snapshot', async () => {
     const firstSnapshot: AggregateSnapshot = {
       ...firstStream,
