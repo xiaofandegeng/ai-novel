@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getAIEnvironmentConfig, getDatabaseUrl, getServerConfig } from './environment'
+import {
+  getAIEnvironmentConfig,
+  getCredentialMasterKey,
+  getDatabaseUrl,
+  getServerConfig,
+} from './environment'
 
 describe('runtime environment config', () => {
   afterEach(() => vi.unstubAllEnvs())
@@ -38,5 +43,11 @@ describe('runtime environment config', () => {
 
     expect(getServerConfig().port).toBe(-1.5)
     expect(getAIEnvironmentConfig().temperature).toBeNaN()
+  })
+
+  it('exposes the credential master key only to the security boundary', () => {
+    vi.stubEnv('AI_CREDENTIAL_MASTER_KEY', 'base64-key')
+
+    expect(getCredentialMasterKey()).toBe('base64-key')
   })
 })

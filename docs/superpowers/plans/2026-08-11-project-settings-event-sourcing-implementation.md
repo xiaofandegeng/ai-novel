@@ -62,11 +62,11 @@
 - Modify: `.env.example`
 - Generate: `apps/api/drizzle/*`
 
-- [ ] Add failing encryption, decryption, replacement, deletion, and wrong-key tests.
-- [ ] Require `AI_CREDENTIAL_MASTER_KEY` for persisted credentials and accept a 32-byte base64 key.
-- [ ] Store AES-256-GCM ciphertext, IV, auth tag, masked suffix, and key version; never return ciphertext from settings APIs.
-- [ ] Add a project ownership index and cascade cleanup through explicit service logic.
-- [ ] Commit: `feat(api): add encrypted project credential vault`.
+- [x] Add failing encryption, decryption, replacement, deletion, and wrong-key tests.
+- [x] Require `AI_CREDENTIAL_MASTER_KEY` for persisted credentials and accept a 32-byte base64 key.
+- [x] Store AES-256-GCM ciphertext, IV, auth tag, masked suffix, and key version; never return ciphertext from settings APIs.
+- [x] Add a project ownership index and cascade cleanup through explicit service logic.
+- [x] Commit: `feat(api): add encrypted project credential vault`.
 
 ## Task 5: Project-scoped AI settings aggregate and projection
 

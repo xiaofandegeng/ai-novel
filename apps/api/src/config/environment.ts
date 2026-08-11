@@ -59,4 +59,8 @@ export function getAIEnvironmentConfig(env: RuntimeEnvironment = process.env) {
   }
 }
 
+export function getCredentialMasterKey(env: RuntimeEnvironment = process.env): string | undefined {
+  return env.AI_CREDENTIAL_MASTER_KEY
+}
+
 loadEnvironmentFiles()
