@@ -27,13 +27,16 @@
 - Create: `apps/api/src/modules/project/project.eventing.ts`
 - Create: `apps/api/src/modules/project/project.eventing.integration.test.ts`
 - Create: `apps/api/src/eventing-runtime.ts`
+- Create: `apps/api/src/db/schema/project-read-model.ts`
+- Modify: `apps/api/src/db/schema/index.ts`
+- Generate: `apps/api/drizzle/*`
 
-- [ ] Write failing tests for `CreateProject`, `UpdateProject`, and `DeleteProject` decisions.
-- [ ] Register `ProjectCreated`, `ProjectDetailsChanged`, `ProjectDeletionRequested`, and `ProjectDeleted` with strict payload validation.
-- [ ] Implement a pure Project aggregate and optimistic expected versions.
-- [ ] Register a synchronous projector that treats `novel_projects` only as a read model.
-- [ ] Verify replay recreates the same normalized project rows.
-- [ ] Commit: `feat(api): event source project lifecycle`.
+- [x] Write failing tests for `CreateProject`, `UpdateProject`, and `DeleteProject` decisions.
+- [x] Register `ProjectCreated`, `ProjectDetailsChanged`, `ProjectDeletionRequested`, and `ProjectDeleted` with strict payload validation.
+- [x] Implement a pure Project aggregate and optimistic expected versions.
+- [x] Register a synchronous projector for replayable `project_read_models`; maintain `novel_projects` from the same events only as a temporary foreign-key compatibility projection.
+- [x] Verify replay recreates the same normalized project rows.
+- [x] Commit: `feat(api): event source project lifecycle`.
 
 ## Task 3: Switch Project HTTP writes to commands
 

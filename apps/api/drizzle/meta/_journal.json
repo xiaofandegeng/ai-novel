@@ -190,6 +190,13 @@
       "when": 1786441850400,
       "tag": "0026_goofy_vapor",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1786444118552,
+      "tag": "0027_clumsy_tyrannus",
+      "breakpoints": true
     }
   ]
 }
