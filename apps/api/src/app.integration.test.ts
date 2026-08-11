@@ -324,16 +324,28 @@ describe('http application boundary', () => {
       updatedAt: timestamp,
     })
 
-    const saveResponse = await app.request(`/api/projects/${projectId}/prompt-overrides`, {
+    const saveRequest = () => app.request(`/api/projects/${projectId}/prompt-overrides`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'prompt-override-retry',
+      },
       body: JSON.stringify({
         templateKey: 'draft_generate',
         overrideUserPromptTemplate: '续写 {{title}}',
-        enabled: true,
+        enabled: 1,
       }),
     })
+    const saveResponse = await saveRequest()
     expect(saveResponse.status).toBe(201)
+    expect((await saveRequest()).status).toBe(201)
+
+    const promptEvents = (await db.select().from(domainEvents))
+      .filter(event => event.aggregateType === 'ProjectPromptOverride')
+    expect(promptEvents.map(event => event.eventType)).toEqual([
+      'PromptTemplateSelected',
+      'ProjectPromptOverrideChanged',
+    ])
 
     const renderResponse = await app.request(`/api/projects/${projectId}/prompt-templates/draft_generate/test`, {
       method: 'POST',
