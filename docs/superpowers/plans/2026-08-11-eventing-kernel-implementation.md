@@ -353,7 +353,7 @@ git commit -m "feat(api): add append-only event store"
 - Consumes: `StoredEvent`, Event Store `readAll`, `projectionCheckpoints`.
 - Produces: `ProjectionRegistry.register()`, `ProjectionRegistry.projectSync()`, `ProjectionRunner.runBatch()` and `ProjectionRunner.reset()`.
 
-- [ ] **Step 1: Write failing projection tests**
+- [x] **Step 1: Write failing projection tests**
 
 ```ts
 it('runs matching synchronous projectors in event order', async () => {
@@ -378,12 +378,12 @@ it('resumes an async projection after its checkpoint', async () => {
 
 Also test duplicate projection names, a handler failure leaving the checkpoint unchanged, and reset returning a checkpoint to zero.
 
-- [ ] **Step 2: Run the tests and observe missing runner failure**
+- [x] **Step 2: Run the tests and observe missing runner failure**
 
 Run: `pnpm --filter @ai-novel/api test -- src/eventing/projection-runner.integration.test.ts`  
 Expected: FAIL because projection infrastructure is missing.
 
-- [ ] **Step 3: Implement projection definitions and registry**
+- [x] **Step 3: Implement projection definitions and registry**
 
 ```ts
 export interface ProjectionDefinition {
@@ -397,7 +397,7 @@ export interface ProjectionDefinition {
 
 `projectSync` sorts events by global position and calls only matching `sync` definitions. `runBatch` reads after the stored checkpoint and advances it only in the same successful projection transaction.
 
-- [ ] **Step 4: Run focused tests and typecheck**
+- [x] **Step 4: Run focused tests and typecheck**
 
 Run: `pnpm --filter @ai-novel/api test -- src/eventing/projection-runner.integration.test.ts`  
 Expected: PASS.
@@ -405,7 +405,7 @@ Expected: PASS.
 Run: `pnpm --filter @ai-novel/api typecheck`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit projection infrastructure**
+- [x] **Step 5: Commit projection infrastructure**
 
 ```bash
 git add apps/api/src/eventing

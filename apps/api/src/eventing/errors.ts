@@ -85,3 +85,15 @@ export class DomainCommandError extends EventingError {
     super(message, code)
   }
 }
+
+export class DuplicateProjectionError extends EventingError {
+  constructor(readonly projectionName: string) {
+    super(`Projection already registered: ${projectionName}`, 'DUPLICATE_PROJECTION')
+  }
+}
+
+export class UnknownProjectionError extends EventingError {
+  constructor(readonly projectionName: string) {
+    super(`Unknown projection: ${projectionName}`, 'UNKNOWN_PROJECTION')
+  }
+}
