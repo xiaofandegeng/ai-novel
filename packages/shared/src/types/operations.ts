@@ -23,7 +23,7 @@ export interface AuthoringEvent {
   sceneId?: string | null
   eventType: AuthoringEventType
   source: AuthoringEventSource
-  payload?: any
+  payload?: unknown
   createdAt: string
 }
 
@@ -54,7 +54,7 @@ export interface PromptTemplate {
   taskType: string
   version: string
   content: string
-  variablesSchema?: any
+  variablesSchema?: unknown
   status: 'active' | 'deprecated'
   createdAt: string
   updatedAt: string
@@ -99,6 +99,6 @@ export interface AuthoringReport {
     successRate: number
     acceptanceRate: number
   }
-  topRisks: any[]
+  topRisks: unknown[]
   suggestions: string[]
 }

@@ -9,7 +9,7 @@ export interface AutoDecisionResult {
   action: 'continue' | 'repair' | 'isolate' | 'skip' | 'stop_run'
   riskLevel: AutoRiskLevel
   reason: string
-  report: Record<string, any>
+  report: Record<string, unknown>
 }
 
 /**
@@ -37,16 +37,17 @@ export async function decideNextAction(input: {
 
   // 2. 根据步骤类型进行风险评估
   let riskLevel: AutoRiskLevel = 'none'
-  let report: Record<string, any> = {}
+  let report: Record<string, unknown> = {}
   let reason = '自动通过：风险较低'
 
   switch (step.stepType) {
     case 'consistency_check': {
       const consistencyData = tryParseJson(step.output)
       if (consistencyData) {
-        riskLevel = mapConsistencyRisk(consistencyData.overallStatus)
+        const status = stringValue(consistencyData.overallStatus)
+        riskLevel = mapConsistencyRisk(status)
         report = consistencyData
-        reason = `一致性检查结果: ${consistencyData.overallStatus}`
+        reason = `一致性检查结果: ${status}`
       }
       break
     }
@@ -54,9 +55,11 @@ export async function decideNextAction(input: {
     case 'validate_plan': {
       const validateData = tryParseJson(step.output)
       if (validateData) {
-        riskLevel = validateData.status === 'blocked' ? 'high' : (validateData.status === 'warning' ? 'medium' : 'low')
+        const status = stringValue(validateData.status)
+        const issueCount = Array.isArray(validateData.issues) ? validateData.issues.length : 0
+        riskLevel = status === 'blocked' ? 'high' : (status === 'warning' ? 'medium' : 'low')
         report = validateData
-        reason = `大纲校验结果: ${validateData.status}，包含 ${validateData.issues?.length || 0} 个问题`
+        reason = `大纲校验结果: ${status}，包含 ${issueCount} 个问题`
       }
       break
     }
@@ -65,7 +68,7 @@ export async function decideNextAction(input: {
       // 变更集审查通常由 LLM 或规则给出风险评分
       const reviewData = tryParseJson(step.output)
       if (reviewData) {
-        riskLevel = reviewData.riskLevel || 'medium'
+        riskLevel = isAutoRiskLevel(reviewData.riskLevel) ? reviewData.riskLevel : 'medium'
         report = reviewData
         reason = `变更集风险评估: ${riskLevel}`
       }
@@ -103,15 +106,26 @@ export async function decideNextAction(input: {
   }
 }
 
-function tryParseJson(str: string | null): any {
+function tryParseJson(str: string | null): Record<string, unknown> | null {
   if (!str)
     return null
   try {
-    return JSON.parse(str)
+    const value: unknown = JSON.parse(str)
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : null
   }
   catch {
     return null
   }
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : 'unknown'
+}
+
+function isAutoRiskLevel(value: unknown): value is AutoRiskLevel {
+  return value === 'none' || value === 'low' || value === 'medium' || value === 'high' || value === 'critical'
 }
 
 function mapConsistencyRisk(status: string): AutoRiskLevel {

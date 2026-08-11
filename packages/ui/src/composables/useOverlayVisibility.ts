@@ -9,7 +9,7 @@ export function useOverlayVisibility(modelValue: Ref<boolean>, close: () => void
 
   watch(modelValue, (open) => {
     document.body.style.overflow = open ? 'hidden' : ''
-  })
+  }, { immediate: true })
 
   onMounted(() => document.addEventListener('keydown', onKeydown))
   onUnmounted(() => {

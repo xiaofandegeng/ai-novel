@@ -4,7 +4,9 @@ import { db } from '../db'
 import { chapterScenes } from '../db/schema'
 import { runScenePostprocess } from '../services/chapter-postprocess.service'
 import { assertChapterBelongsToProject } from '../services/ownership.service'
-import { fail, generateId, now, success, updatedFields } from '../utils'
+import { errorMessage, fail, generateId, now, success, updatedFields } from '../utils'
+
+type SceneInput = Partial<Omit<typeof chapterScenes.$inferInsert, 'chapterId' | 'id' | 'projectId'>>
 
 export function registerSceneRoutes(app: Hono) {
   app.get('/api/projects/:projectId/chapters/:chapterId/scenes', async (c) => {
@@ -21,7 +23,7 @@ export function registerSceneRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
     const chapterId = c.req.param('chapterId')
     await assertChapterBelongsToProject(projectId, chapterId)
-    const body = await c.req.json() as { scenes: any[], mode?: 'append' | 'replace' }
+    const body = await c.req.json() as { scenes: SceneInput[], mode?: 'append' | 'replace' }
 
     if (!Array.isArray(body.scenes) || body.scenes.length === 0)
       return c.json(fail('scenes must be a non-empty array'), 400)
@@ -84,8 +86,8 @@ export function registerSceneRoutes(app: Hono) {
       })
       return c.json(success(resultRows), 201)
     }
-    catch (error: any) {
-      return c.json(fail(`Bulk create failed: ${error.message}`), 500)
+    catch (error: unknown) {
+      return c.json(fail(`Bulk create failed: ${errorMessage(error)}`), 500)
     }
   })
 
@@ -145,8 +147,8 @@ export function registerSceneRoutes(app: Hono) {
         }
       })
     }
-    catch (error: any) {
-      if (error.message === 'SCENE_NOT_FOUND')
+    catch (error: unknown) {
+      if (errorMessage(error) === 'SCENE_NOT_FOUND')
         return c.json(fail('Scene not found'), 404)
       throw error
     }
@@ -212,8 +214,8 @@ export function registerSceneRoutes(app: Hono) {
       })
       return c.json(success(result))
     }
-    catch (e: any) {
-      return c.json(fail(e.message), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error)), 500)
     }
   })
 

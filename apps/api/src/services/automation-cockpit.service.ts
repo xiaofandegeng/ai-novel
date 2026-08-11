@@ -2,6 +2,7 @@ import type {
   AutomationCockpitPayload,
   CockpitChapterDetail,
   CockpitChapterProgress,
+  CockpitChapterStep,
   CockpitCharacterState,
   CockpitConflictState,
   CockpitForeshadowingState,
@@ -53,6 +54,44 @@ const STEP_LABEL_MAP: Record<string, string> = {
   apply_change_set: '写回正文',
   auto_repair: '自动修复',
   done: '完成',
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function textField(payload: Record<string, unknown>, keys: string[], fallback: string): string {
+  for (const key of keys) {
+    const value = payload[key]
+    if (typeof value === 'string' && value.trim())
+      return value.trim()
+  }
+  return fallback
+}
+
+function numberField(payload: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = payload[key]
+    if (typeof value === 'number' && Number.isFinite(value))
+      return value
+  }
+  return null
+}
+
+interface StoredHealthRisk {
+  id?: string
+  type?: string
+  chapterId?: string | null
+  severity?: 'high' | 'medium' | 'low'
+  title?: string
+  actionLabel?: string
+  targetRoute?: string
+}
+
+function isStoredHealthRisk(value: unknown): value is StoredHealthRisk {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
 export class AutomationCockpitService {
@@ -189,8 +228,8 @@ export class AutomationCockpitService {
     if (latestRunRecord) {
       runSummary = {
         id: latestRunRecord.id,
-        status: latestRunRecord.status as any,
-        strategy: latestRunRecord.strategy as any,
+        status: latestRunRecord.status,
+        strategy: latestRunRecord.strategy,
         targetChapterCount: latestRunRecord.targetChapterCount || 0,
         completedChapterCount: latestRunRecord.completedChapterCount || 0,
         currentChapterId: latestRunRecord.currentChapterId || undefined,
@@ -202,8 +241,8 @@ export class AutomationCockpitService {
 
     // 4. 章节推进流水线 (Chapters Progress)
     // 只有当有运行中的 Run 或者是最近的 Run 时，查询其关联的任务与步骤
-    let runJobs: any[] = []
-    const stepsByJobId: Record<string, any[]> = {}
+    let runJobs: Array<typeof autonomousRunJobs.$inferSelect> = []
+    const stepsByJobId: Record<string, Array<typeof writingJobSteps.$inferSelect>> = {}
 
     if (activeRunId) {
       runJobs = await db
@@ -229,7 +268,7 @@ export class AutomationCockpitService {
       }
     }
 
-    const jobMapByChapterId = new Map<string, any>()
+    const jobMapByChapterId = new Map<string, typeof autonomousRunJobs.$inferSelect>()
     for (const job of runJobs) {
       if (job.chapterId) {
         jobMapByChapterId.set(job.chapterId, job)
@@ -240,10 +279,10 @@ export class AutomationCockpitService {
       const associatedJob = jobMapByChapterId.get(ch.id)
       if (associatedJob) {
         const steps = stepsByJobId[associatedJob.writingJobId] || []
-        const cockpitSteps = steps.map(s => ({
+        const cockpitSteps: CockpitChapterStep[] = steps.map(s => ({
           key: s.stepType,
           label: STEP_LABEL_MAP[s.stepType] || s.stepType,
-          status: s.status as any,
+          status: s.status,
           error: s.error || undefined,
           startedAt: s.startedAt || undefined,
           finishedAt: s.finishedAt || undefined,
@@ -253,7 +292,7 @@ export class AutomationCockpitService {
           id: ch.id,
           title: ch.title,
           orderIndex: ch.chapterNumber,
-          status: associatedJob.status as any,
+          status: associatedJob.status,
           wordCount: ch.draft?.length || 0,
           steps: cockpitSteps,
         }
@@ -264,7 +303,7 @@ export class AutomationCockpitService {
           id: ch.id,
           title: ch.title,
           orderIndex: ch.chapterNumber,
-          status: (ch.status === 'completed' ? 'completed' : 'pending') as any,
+          status: ch.status === 'completed' ? 'completed' : 'pending',
           wordCount: ch.draft?.length || 0,
           steps: [],
         }
@@ -295,7 +334,7 @@ export class AutomationCockpitService {
       personality: c.personality || null,
       relationshipPressure: '正常',
       lastChangedChapterId: null,
-      confidence: 85,
+      confidence: 0.85,
     }))
 
     // 6. 角色关系 (Relationships)
@@ -327,9 +366,9 @@ export class AutomationCockpitService {
     const cockpitConflicts: CockpitConflictState[] = conflictRecords.map(c => ({
       id: c.id,
       title: c.title,
-      type: c.type as any,
+      type: c.type,
       intensity: c.intensity,
-      status: c.status as any,
+      status: c.status,
       participants: c.participants || null,
       participantIds: c.participantIds || null,
       description: c.description || null,
@@ -349,8 +388,8 @@ export class AutomationCockpitService {
       setupChapterId: f.setupChapterId || null,
       expectedPayoffChapterId: f.expectedPayoffChapterId || null,
       payoffChapterId: f.payoffChapterId || null,
-      status: f.status as any,
-      importance: f.importance as any,
+      status: f.status,
+      importance: f.importance,
       relatedCharacters: f.relatedCharacters || null,
     }))
 
@@ -389,15 +428,17 @@ export class AutomationCockpitService {
 
     let overallScore = 100
     let riskCount = 0
-    const detailsList: any[] = []
+    const detailsList: NonNullable<CockpitHealthSummary['details']> = []
 
     const latestReport = healthReports[0]
     if (latestReport) {
       overallScore = latestReport.score
-      const metricsJson = (latestReport.metricsJson || {}) as any
-      const topRisks = metricsJson.topRisks || []
+      const metricsJson = asRecord(latestReport.metricsJson)
+      const topRisks = Array.isArray(metricsJson.topRisks)
+        ? metricsJson.topRisks.filter(isStoredHealthRisk)
+        : []
 
-      riskCount = topRisks.filter((r: any) => r.severity === 'high' || r.severity === 'medium').length
+      riskCount = topRisks.filter(r => r.severity === 'high' || r.severity === 'medium').length
 
       const typeLabelMap: Record<string, string> = {
         foreshadowing: '伏笔偏离',
@@ -409,13 +450,14 @@ export class AutomationCockpitService {
       }
 
       for (const risk of topRisks) {
+        const riskType = risk.type || 'unknown'
         const chapterId = this.extractChapterIdFromRisk(risk)
         const fixMeta = this.getRiskFixMeta({ type: risk.type, chapterId })
         detailsList.push({
           id: risk.id,
           type: risk.type,
           chapterId,
-          scope: typeLabelMap[risk.type] || risk.type || '未知指标',
+          scope: typeLabelMap[riskType] || riskType,
           score: undefined,
           riskLevel: risk.severity || 'low',
           description: risk.title,
@@ -446,16 +488,6 @@ export class AutomationCockpitService {
     // 11. 结构化回写事件流 (Events)
     const events = await this.getCockpitEvents(projectId, 100)
 
-    // 基于回写事件，进一步动态修正角色与关系的状态（让最新提取的变化动态展示在前端）
-    for (const ev of events) {
-      if (ev.status === 'auto_applied') {
-        // 如果是已被应用的角色状态修改事件，我们可以尝试更新我们的角色列表
-        if (ev.type === 'character_state' || ev.type === 'character_update') {
-          // 这里可以进行更高级的角色情绪合并，但在本期重构中我们先通过事件流展示它即可
-        }
-      }
-    }
-
     return {
       project: projectSummary,
       run: runSummary,
@@ -477,6 +509,15 @@ export class AutomationCockpitService {
       .where(eq(chapterChangeSetItems.projectId, projectId))
       .orderBy(desc(chapterChangeSetItems.createdAt))
       .limit(limit)
+
+    const chapterIds = Array.from(new Set(items.map(item => item.chapterId)))
+    const chapterRows = chapterIds.length > 0
+      ? await db
+          .select({ id: chapters.id, chapterNumber: chapters.chapterNumber })
+          .from(chapters)
+          .where(and(eq(chapters.projectId, projectId), inArray(chapters.id, chapterIds)))
+      : []
+    const chapterNumberById = new Map(chapterRows.map(chapter => [chapter.id, chapter.chapterNumber]))
 
     return items.map((item) => {
       // 映射状态为 CockpitNarrativeEvent 契约状态
@@ -504,38 +545,48 @@ export class AutomationCockpitService {
       let typeLabel: string = item.itemType
       let summaryText = ''
       try {
-        const payload = (item.payloadJson || {}) as any
+        const payload = asRecord(item.payloadJson)
         if (item.itemType === 'character_create') {
           typeLabel = '新增角色'
-          summaryText = `在文中抽取出全新人物角色 [${payload.name}]，身份设定为：${payload.role || '无'}`
+          summaryText = `在文中抽取出全新人物角色 [${textField(payload, ['name'], '未命名角色')}]，身份设定为：${textField(payload, ['role'], '无')}`
         }
         else if (item.itemType === 'character_update') {
           typeLabel = '更新角色'
-          summaryText = `更新人物 [${payload.name}] 档案设定。情绪：${payload.emotion || '平静'}，目标：${payload.goal || '无'}`
+          summaryText = `更新人物 [${textField(payload, ['name'], '未命名角色')}] 档案设定。情绪：${textField(payload, ['emotion'], '平静')}，目标：${textField(payload, ['goal'], '无')}`
         }
         else if (item.itemType === 'relationship_create') {
           typeLabel = '新增关系'
-          summaryText = `在文中发现 [${payload.sourceName || '主角'}] 与 [${payload.targetName}] 建立新联系：${payload.type}`
+          const sourceName = textField(payload, ['sourceName', 'characterAName'], '未知角色')
+          const targetName = textField(payload, ['targetName', 'characterBName'], '未知角色')
+          summaryText = `在文中发现 [${sourceName}] 与 [${targetName}] 建立新联系：${textField(payload, ['type'], '未分类')}`
         }
         else if (item.itemType === 'relationship_update') {
           typeLabel = '关系更新'
-          summaryText = `更新关系：[${payload.sourceName || '主角'}] 与 [${payload.targetName}] 冲突度更新为 ${payload.conflict || 0}，亲密更新为 ${payload.intimacy || 0}`
+          const sourceName = textField(payload, ['sourceName', 'characterAName'], '未知角色')
+          const targetName = textField(payload, ['targetName', 'characterBName'], '未知角色')
+          const relationshipStatus = textField(payload, ['status'], '关系已更新')
+          const strength = numberField(payload, ['strength', 'intimacy'])
+          summaryText = `更新关系：[${sourceName}] 与 [${targetName}] 当前为「${relationshipStatus}」${strength === null ? '' : `，关系强度 ${strength}`}`
         }
         else if (item.itemType === 'conflict_create') {
           typeLabel = '发现冲突'
-          summaryText = `抽取到全新矛盾冲突：[${payload.title}]。性质：${payload.type === 'internal' ? '内部' : '外部'}，强度：${payload.intensity}`
+          const conflictType = textField(payload, ['type'], 'external') === 'internal' ? '内部' : '外部'
+          const intensity = numberField(payload, ['intensity'])
+          summaryText = `抽取到全新矛盾冲突：[${textField(payload, ['title'], '未命名冲突')}]。性质：${conflictType}，强度：${intensity ?? '未标注'}`
         }
         else if (item.itemType === 'conflict_update') {
           typeLabel = '冲突演变'
-          summaryText = `矛盾关系演变：[${payload.title}] 演变至 [${payload.status}] 阶段，强度：${payload.intensity}`
+          const status = textField(payload, ['newStatus', 'status'], '状态已更新')
+          const intensity = numberField(payload, ['newIntensity', 'intensity'])
+          summaryText = `矛盾关系演变：[${textField(payload, ['title'], '未命名冲突')}] 演变至 [${status}] 阶段，强度：${intensity ?? '未标注'}`
         }
         else if (item.itemType === 'foreshadowing_create') {
           typeLabel = '埋下伏笔'
-          summaryText = `在章节正文中埋下重要伏笔 [${payload.title}]：${payload.description || ''}`
+          summaryText = `在章节正文中埋下重要伏笔 [${textField(payload, ['title'], '未命名伏笔')}]：${textField(payload, ['description'], '暂无说明')}`
         }
         else if (item.itemType === 'foreshadowing_payoff') {
           typeLabel = '回收伏笔'
-          summaryText = `回收了早期伏笔 [${payload.title}]，证明线索：${payload.notes || '无'}`
+          summaryText = `回收了早期伏笔 [${textField(payload, ['title'], '未命名伏笔')}]，证明线索：${textField(payload, ['notes'], '无')}`
         }
         else {
           summaryText = item.title
@@ -552,6 +603,7 @@ export class AutomationCockpitService {
         title: typeLabel,
         summary: summaryText,
         sourceChapterId: item.chapterId,
+        sourceChapterNumber: chapterNumberById.get(item.chapterId),
         confidence: item.riskLevel === 'low' ? 90 : item.riskLevel === 'medium' ? 70 : 50,
         changeSetId: item.changeSetId,
         createdAt: item.createdAt,
@@ -584,12 +636,12 @@ export class AutomationCockpitService {
       content: chapter.draft,
       summary: chapter.summary,
       notes: chapter.outline,
-      scenes: scenes.map(s => ({
+      scenes: scenes.map((s): CockpitChapterDetail['scenes'][number] => ({
         id: s.id,
         title: s.title || '未命名场景',
         summary: s.purpose || s.summary,
         content: s.content,
-        status: (s.status === 'completed' ? 'completed' : 'pending') as any,
+        status: s.status === 'completed' ? 'completed' : 'pending',
       })),
     }
   }

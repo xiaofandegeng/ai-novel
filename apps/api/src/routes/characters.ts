@@ -4,7 +4,7 @@ import { db } from '../db'
 import { characters } from '../db/schema'
 import { autoLinkCharacterToGraph } from '../services/character-auto-link.service'
 import { inferRelationshipsFromBios } from '../services/character-inference.service'
-import { fail, generateId, now, success, updatedFields } from '../utils'
+import { errorMessage, fail, generateId, now, success, updatedFields } from '../utils'
 
 export function registerCharacterRoutes(app: Hono) {
   app.post('/api/projects/:projectId/characters/infer-relationships', async (c) => {
@@ -13,8 +13,8 @@ export function registerCharacterRoutes(app: Hono) {
       const result = await inferRelationshipsFromBios(projectId)
       return c.json(success(result))
     }
-    catch (e: any) {
-      return c.json(fail(e.message || '推导失败'), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error, '推导失败')), 500)
     }
   })
 
@@ -25,8 +25,8 @@ export function registerCharacterRoutes(app: Hono) {
       const result = await autoLinkCharacterToGraph(projectId, id)
       return c.json(success(result))
     }
-    catch (e: any) {
-      return c.json(fail(e.message || '自动关联关系网失败'), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error, '自动关联关系网失败')), 500)
     }
   })
 

@@ -1,9 +1,8 @@
 import type { AIProviderPreset } from '@ai-novel/shared'
 import { useToast } from '@ai-novel/ui'
 import { computed, onMounted, ref } from 'vue'
-import * as settingsApi from '@/api/settings'
-import { getErrorMessage } from '@/utils/error-message'
-import { T, W } from '@/utils/toast-message'
+import * as settingsApi from '../../../api/settings'
+import { toErrorMessage } from '../../../utils/error-message'
 
 export function useAIProviderSettings(_projectId: string) {
   const toast = useToast()
@@ -116,7 +115,7 @@ export function useAIProviderSettings(_projectId: string) {
       loaded.value = true
     }
     catch {
-      toast.add(getErrorMessage('ai_config_load'), 'error')
+      toast.add('AI 配置加载失败', 'error')
     }
     finally {
       loading.value = false
@@ -161,7 +160,7 @@ export function useAIProviderSettings(_projectId: string) {
 
   async function handleSaveAI() {
     if (!loaded.value) {
-      toast.add(W.ai_config_loading, 'warning')
+      toast.add('AI 配置仍在加载，请稍后再保存', 'warning')
       return
     }
     saving.value = true
@@ -174,10 +173,10 @@ export function useAIProviderSettings(_projectId: string) {
       aiForm.value.hasApiKey = settings.hasApiKey
       aiForm.value.hasEmbeddingApiKey = settings.hasEmbeddingApiKey || false
       aiForm.value.temperature = String(settings.temperature)
-      toast.add(T.ai_config_saved, 'success')
+      toast.add('AI 配置已保存', 'success')
     }
     catch {
-      toast.add(getErrorMessage('ai_config_save'), 'error')
+      toast.add('AI 配置保存失败', 'error')
     }
     finally {
       saving.value = false
@@ -192,11 +191,11 @@ export function useAIProviderSettings(_projectId: string) {
       aiTestMessage.value = result.latencyMs
         ? `${result.message}，耗时 ${result.latencyMs}ms`
         : result.message
-      toast.add(result.ok ? T.ai_config_passed : W.ai_config_test_failed, result.ok ? 'success' : 'warning')
+      toast.add(result.ok ? 'AI 服务检测通过' : 'AI 服务检测未通过', result.ok ? 'success' : 'warning')
     }
     catch {
-      aiTestMessage.value = getErrorMessage('ai_config_test')
-      toast.add(getErrorMessage('ai_config_test'), 'error')
+      aiTestMessage.value = 'AI 服务检测失败'
+      toast.add('AI 服务检测失败', 'error')
     }
     finally {
       testing.value = false
@@ -213,8 +212,8 @@ export function useAIProviderSettings(_projectId: string) {
         : result.message
       toast.add(result.ok ? '向量化测试通过' : '向量化测试失败', result.ok ? 'success' : 'warning')
     }
-    catch (e: any) {
-      const msg = e.message || '向量化服务连接测试失败'
+    catch (error: unknown) {
+      const msg = toErrorMessage(error, '向量化服务连接测试失败')
       embeddingTestMessage.value = msg
       toast.add(msg, 'error')
     }

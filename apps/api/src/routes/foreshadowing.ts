@@ -102,7 +102,10 @@ export function registerForeshadowingRoutes(app: Hono) {
   app.put('/api/projects/:projectId/foreshadowing/:id/characters', async (c) => {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
-    const body = await c.req.json() as Array<{ characterId: string, relationType: any }>
+    const body = await c.req.json() as Array<{
+      characterId: string
+      relationType: 'protagonist' | 'antagonist' | 'victim' | 'witness' | 'related'
+    }>
 
     await assertForeshadowingBelongsToProject(projectId, id)
     await assertCharactersBelongToProject(projectId, body.map(p => p.characterId))

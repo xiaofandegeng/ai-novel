@@ -46,5 +46,5 @@ export interface HealthRisk {
   evidence?: string[]
   suggestions?: string[]
   fixActionType?: 'plan_scenes' | 'suggest_conflicts' | 'analyze_quality' | 'brainstorm_foreshadowing' | 'create_task'
-  fixActionPayload?: Record<string, any>
+  fixActionPayload?: Record<string, unknown>
 }

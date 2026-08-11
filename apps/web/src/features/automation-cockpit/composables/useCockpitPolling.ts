@@ -3,7 +3,7 @@ import { useAutomationCockpitStore } from '../stores/automation-cockpit.store'
 
 export function useCockpitPolling(projectId: string, intervalMs = 4000) {
   const store = useAutomationCockpitStore()
-  let timerId: any = null
+  let timerId: ReturnType<typeof setInterval> | null = null
 
   function startPolling() {
     if (timerId)

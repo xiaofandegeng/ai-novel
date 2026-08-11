@@ -1,8 +1,5 @@
 import type { Hono } from 'hono'
-import { and, desc, eq } from 'drizzle-orm'
 import { streamText } from 'hono/streaming'
-import { db } from '../db'
-import { aiContextSnapshots } from '../db/schema'
 import { renderAIContext } from '../services/ai-context-renderer'
 import { createAIContextSnapshot, estimateTokens } from '../services/ai-context-snapshot.service'
 import { buildProjectAIContext } from '../services/ai-context.service'
@@ -10,7 +7,7 @@ import { assertAIConfigured, getEffectiveAISettings, streamChat } from '../servi
 import { AuthoringEventService } from '../services/authoring-event.service'
 import { runConsistencyGuard } from '../services/consistency-guard.service'
 import { buildPersonaPromptForProject } from '../services/persona-prompt.service'
-import { fail, success } from '../utils'
+import { errorMessage, fail, success } from '../utils'
 
 export function registerAiRoutes(app: Hono) {
   // 统一 AI 生成接口 (基于上下文工程)
@@ -68,14 +65,14 @@ export function registerAiRoutes(app: Hono) {
             await stream.write(chunk)
           }
         }
-        catch (error: any) {
+        catch (error: unknown) {
           console.error('AI Generate Stream Error:', error)
-          await stream.write(`\n\n[Error: ${error.message}]`)
+          await stream.write(`\n\n[Error: ${errorMessage(error)}]`)
         }
       })
     }
-    catch (e: any) {
-      return c.json(fail(e.message), 400)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error)), 400)
     }
   })
 
@@ -88,8 +85,8 @@ export function registerAiRoutes(app: Hono) {
       const report = await runConsistencyGuard(projectId, input)
       return c.json(success(report))
     }
-    catch (e: any) {
-      return c.json(fail(e.message), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error)), 500)
     }
   })
 
@@ -102,8 +99,8 @@ export function registerAiRoutes(app: Hono) {
     try {
       await assertAIConfigured()
     }
-    catch (e: any) {
-      return c.json(fail(e.message), 400)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error)), 400)
     }
 
     const personaPrompt = projectId
@@ -116,27 +113,10 @@ export function registerAiRoutes(app: Hono) {
           await stream.write(chunk)
         }
       }
-      catch (error: any) {
+      catch (error: unknown) {
         console.error('AI Stream Error:', error)
-        await stream.write(`\n\n[Error: ${error.message}]`)
+        await stream.write(`\n\n[Error: ${errorMessage(error)}]`)
       }
     })
-  })
-
-  // 获取上下文快照列表
-  app.get('/api/projects/:projectId/context-snapshots', async (c) => {
-    const projectId = c.req.param('projectId')
-    const snapshots = await db.select().from(aiContextSnapshots).where(eq(aiContextSnapshots.projectId, projectId)).orderBy(desc(aiContextSnapshots.createdAt)).limit(50)
-    return c.json(success(snapshots))
-  })
-
-  // 获取单个快照详情
-  app.get('/api/projects/:projectId/context-snapshots/:id', async (c) => {
-    const projectId = c.req.param('projectId')
-    const id = c.req.param('id')
-    const [snapshot] = await db.select().from(aiContextSnapshots).where(and(eq(aiContextSnapshots.id, id), eq(aiContextSnapshots.projectId, projectId)))
-    if (!snapshot)
-      return c.json(fail('Snapshot not found'), 404)
-    return c.json(success(snapshot))
   })
 }

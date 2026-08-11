@@ -75,7 +75,7 @@ function formatDate(dateStr: string) {
               <div class="header-left">
                 <span class="event-type-badge">{{ ev.title }}</span>
                 <span class="event-time">{{ formatDate(ev.createdAt) }}</span>
-                <span v-if="ev.sourceChapterId" class="event-chapter">第 {{ ev.sourceChapterId }} 章</span>
+                <span v-if="ev.sourceChapterNumber" class="event-chapter">第 {{ ev.sourceChapterNumber }} 章</span>
               </div>
 
               <div class="header-right">

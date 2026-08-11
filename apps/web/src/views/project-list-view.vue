@@ -20,6 +20,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProjectLabels } from '../composables/useProjectLabels'
 import { useProjectStore } from '../stores/project.store'
+import { toErrorMessage } from '../utils/error-message'
 
 const router = useRouter()
 const projectStore = useProjectStore()
@@ -103,8 +104,8 @@ async function handleCreate() {
     toast.add('项目已创建', 'success')
     router.push(`/project/${p.id}`)
   }
-  catch (e: any) {
-    createError.value = e.message || '创建项目失败，请稍后重试'
+  catch (error: unknown) {
+    createError.value = toErrorMessage(error, '创建项目失败，请稍后重试')
   }
 }
 

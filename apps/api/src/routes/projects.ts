@@ -22,11 +22,15 @@ export function registerProjectRoutes(app: Hono) {
 
   app.post('/api/projects', async (c) => {
     const body = await c.req.json()
+    const title = typeof body.title === 'string' ? body.title.trim() : ''
+    if (!title)
+      return c.json(fail('Project title is required'), 400)
+
     const id = generateId()
     const timestamp = now()
     const [row] = await db.insert(novelProjects).values({
       id,
-      title: body.title,
+      title,
       description: body.description,
       genre: body.genre,
       theme: body.theme,
@@ -43,8 +47,11 @@ export function registerProjectRoutes(app: Hono) {
   app.patch('/api/projects/:id', async (c) => {
     const id = c.req.param('id')
     const body = await c.req.json()
+    if (body.title !== undefined && (typeof body.title !== 'string' || !body.title.trim()))
+      return c.json(fail('Project title is required'), 400)
+
     const fields = updatedFields({
-      title: body.title,
+      title: typeof body.title === 'string' ? body.title.trim() : body.title,
       description: body.description,
       genre: body.genre,
       theme: body.theme,

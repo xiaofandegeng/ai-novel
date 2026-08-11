@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Component } from 'vue'
 import {
   BookOpen,
   LayoutDashboard,
@@ -31,7 +32,7 @@ const menuItems = computed(() => [
 interface SidebarItem {
   name: string
   path: string
-  icon: any
+  icon: Component
   activeMatch: RegExp
 }
 

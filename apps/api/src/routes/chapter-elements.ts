@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { chapterElements } from '../db/schema'
 import { assertChapterBelongsToProject, assertCharactersBelongToProject } from '../services/ownership.service'
-import { fail, generateId, success, updatedFields } from '../utils'
+import { errorMessage, fail, generateId, success, updatedFields } from '../utils'
 
 interface NormalizedElement {
   elementType: 'character' | 'location' | 'item' | 'organization' | 'event'
@@ -13,6 +13,16 @@ interface NormalizedElement {
   importance: 'major' | 'normal' | 'minor'
   appearanceOrder: number | null
   notes: string | null
+}
+
+interface IncomingElement {
+  elementType: string
+  elementId?: string | null
+  elementName: string
+  relationType: string
+  importance?: string | null
+  appearanceOrder?: number | null
+  notes?: string | null
 }
 
 export function registerChapterElementRoutes(app: Hono) {
@@ -34,19 +44,19 @@ export function registerChapterElementRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
     const chapterId = c.req.param('chapterId')
     await assertChapterBelongsToProject(projectId, chapterId)
-    const body = await c.req.json()
+    const body = await c.req.json() as { elements?: IncomingElement[] }
     const incoming = Array.isArray(body.elements) ? body.elements : []
 
     // Validate empty names
-    if (incoming.some((el: any) => !el.elementName?.trim()))
+    if (incoming.some(el => !el.elementName?.trim()))
       return c.json(fail('章节元素名称不能为空'), 400)
 
     // Validate enum values
-    if (incoming.some((el: any) => !VALID_ELEMENT_TYPES.includes(el.elementType)))
+    if (incoming.some(el => !VALID_ELEMENT_TYPES.includes(el.elementType as typeof VALID_ELEMENT_TYPES[number])))
       return c.json(fail('章节元素类型不合法'), 400)
-    if (incoming.some((el: any) => !VALID_RELATION_TYPES.includes(el.relationType)))
+    if (incoming.some(el => !VALID_RELATION_TYPES.includes(el.relationType as typeof VALID_RELATION_TYPES[number])))
       return c.json(fail('章节元素关系类型不合法'), 400)
-    if (incoming.some((el: any) => el.importance && !VALID_IMPORTANCE.includes(el.importance)))
+    if (incoming.some(el => el.importance && !VALID_IMPORTANCE.includes(el.importance as typeof VALID_IMPORTANCE[number])))
       return c.json(fail('章节元素重要性不合法'), 400)
 
     // Check duplicates
@@ -59,20 +69,20 @@ export function registerChapterElementRoutes(app: Hono) {
     }
 
     // 校验 elementId 归属（针对角色类型）及名称一致性
-    const charElementsWithId = incoming.filter((el: any) => el.elementType === 'character' && el.elementId)
+    const charElementsWithId = incoming.filter(el => el.elementType === 'character' && el.elementId)
     let charMap: Record<string, string> = {}
     if (charElementsWithId.length > 0) {
-      const charIds = charElementsWithId.map((el: any) => el.elementId)
+      const charIds = charElementsWithId.map(el => el.elementId as string)
       try {
         const dbChars = await assertCharactersBelongToProject(projectId, charIds)
         charMap = Object.fromEntries(dbChars.map(c => [c.id, c.name]))
       }
-      catch (err: any) {
-        return c.json(fail(err.message || '包含不属于当前项目的角色ID'), 400)
+      catch (error: unknown) {
+        return c.json(fail(errorMessage(error, '包含不属于当前项目的角色ID')), 400)
       }
     }
 
-    const normalized: NormalizedElement[] = incoming.map((el: any) => ({
+    const normalized: NormalizedElement[] = incoming.map(el => ({
       elementType: el.elementType as 'character' | 'location' | 'item' | 'organization' | 'event',
       elementId: el.elementId || null,
       elementName: (el.elementId && charMap[el.elementId]) ? charMap[el.elementId] : el.elementName.trim(),
@@ -115,8 +125,8 @@ export function registerChapterElementRoutes(app: Hono) {
         const [dbChar] = await assertCharactersBelongToProject(projectId, [body.elementId])
         body.elementName = dbChar.name
       }
-      catch (err: any) {
-        return c.json(fail(err.message || '角色不属于当前项目'), 400)
+      catch (error: unknown) {
+        return c.json(fail(errorMessage(error, '角色不属于当前项目')), 400)
       }
     }
 
@@ -148,8 +158,8 @@ export function registerChapterElementRoutes(app: Hono) {
         const [dbChar] = await assertCharactersBelongToProject(projectId, [body.elementId])
         body.elementName = dbChar.name
       }
-      catch (err: any) {
-        return c.json(fail(err.message || '角色不属于当前项目'), 400)
+      catch (error: unknown) {
+        return c.json(fail(errorMessage(error, '角色不属于当前项目')), 400)
       }
     }
 

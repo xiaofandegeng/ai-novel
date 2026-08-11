@@ -15,12 +15,15 @@ catalogs:
   dev:
     '@antfu/eslint-config': ^4.14.1
     '@unocss/eslint-plugin': ^66.1.2
+    '@vitest/coverage-v8': 3.2.4
+    '@vue/test-utils': ^2.4.6
     eslint: ^9.26.0
     eslint-plugin-format: ^1.1.0
+    happy-dom: ^18.0.1
     lint-staged: ^15.5.2
     simple-git-hooks: ^2.13.0
     typescript: ^5.8.3
-    vitest: ^3.1.2
+    vitest: ^3.2.4
     vue-tsc: ^2.1.10
   frontend:
     '@iconify-json/lucide': ^1.2.36

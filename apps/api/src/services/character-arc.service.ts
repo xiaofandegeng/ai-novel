@@ -1,3 +1,4 @@
+import type { CreateCharacterArcEventInput, UpdateCharacterArcEventInput } from '@ai-novel/shared'
 import { and, asc, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { characterArcEvents } from '../db/schema'
@@ -20,18 +21,7 @@ export class CharacterArcService {
     ).orderBy(asc(characterArcEvents.createdAt))
   }
 
-  static async createEvent(projectId: string, data: {
-    characterId: string
-    chapterId?: string
-    sceneId?: string
-    eventType: string
-    beforeState?: string
-    afterState?: string
-    motivationChange?: string
-    relationshipImpact?: string
-    evidence?: string
-    sourceType?: string
-  }) {
+  static async createEvent(projectId: string, data: CreateCharacterArcEventInput) {
     await assertCharacterBelongsToProject(projectId, data.characterId)
     await assertOptionalChapterBelongsToProject(projectId, data.chapterId)
     await assertOptionalSceneBelongsToProject(projectId, data.sceneId)
@@ -44,29 +34,20 @@ export class CharacterArcService {
       characterId: data.characterId,
       chapterId: data.chapterId || null,
       sceneId: data.sceneId || null,
-      eventType: data.eventType as any,
+      eventType: data.eventType,
       beforeState: data.beforeState || null,
       afterState: data.afterState || null,
       motivationChange: data.motivationChange || null,
       relationshipImpact: data.relationshipImpact || null,
       evidence: data.evidence || null,
-      sourceType: (data.sourceType as any) || 'manual',
+      sourceType: data.sourceType || 'manual',
       createdAt: timestamp,
       updatedAt: timestamp,
     }).returning()
     return row
   }
 
-  static async updateEvent(projectId: string, id: string, data: {
-    eventType?: string
-    chapterId?: string | null
-    sceneId?: string | null
-    beforeState?: string | null
-    afterState?: string | null
-    motivationChange?: string | null
-    relationshipImpact?: string | null
-    evidence?: string | null
-  }) {
+  static async updateEvent(projectId: string, id: string, data: UpdateCharacterArcEventInput) {
     await assertOptionalChapterBelongsToProject(projectId, data.chapterId)
     await assertOptionalSceneBelongsToProject(projectId, data.sceneId)
 

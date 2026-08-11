@@ -21,6 +21,7 @@ import AIPromptSettings from '../features/settings/components/ai-prompt-settings
 import ProjectAIProviderSettings from '../features/settings/components/project-ai-provider-settings.vue'
 import ProjectExportPanel from '../features/settings/components/project-export-panel.vue'
 import { useAIProviderSettings } from '../features/settings/composables/useAIProviderSettings'
+import { toErrorMessage } from '../utils/error-message'
 
 const route = useRoute()
 const router = useRouter()
@@ -75,8 +76,8 @@ async function loadData() {
       targetWords: p.targetWords || 300000,
     })
   }
-  catch (e: any) {
-    toast.add(`数据加载失败: ${e.message}`, 'error')
+  catch (error: unknown) {
+    toast.add(`数据加载失败: ${toErrorMessage(error)}`, 'error')
   }
   finally {
     loading.value = false
@@ -89,8 +90,8 @@ async function handleSaveProject() {
     await updateProject(projectId, form)
     toast.add('设置已保存', 'success')
   }
-  catch (e: any) {
-    toast.add(`保存失败: ${e.message}`, 'error')
+  catch (error: unknown) {
+    toast.add(`保存失败: ${toErrorMessage(error)}`, 'error')
   }
   finally {
     saving.value = false
@@ -102,25 +103,18 @@ async function handleDelete() {
     await deleteProject(projectId)
     router.push('/')
   }
-  catch (e: any) {
-    toast.add(`删除失败: ${e.message}`, 'error')
+  catch (error: unknown) {
+    toast.add(`删除失败: ${toErrorMessage(error)}`, 'error')
   }
 }
 
 async function handleExport() {
   try {
-    const data = await exportProject(projectId)
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `plotpilot-project-${project.value?.title || projectId}-${new Date().toISOString().split('T')[0]}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+    await exportProject(projectId)
     toast.add('项目导出成功', 'success')
   }
-  catch (e: any) {
-    toast.add(`导出失败: ${e.message}`, 'error')
+  catch (error: unknown) {
+    toast.add(`导出失败: ${toErrorMessage(error)}`, 'error')
   }
 }
 

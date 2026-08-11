@@ -10,7 +10,7 @@ export class AuthoringEventService {
     source: AuthoringEventSource
     chapterId?: string | null
     sceneId?: string | null
-    payload?: any
+    payload?: unknown
   }) {
     const id = generateId()
     await db.insert(authoringEvents).values({

@@ -16,6 +16,7 @@ import {
   exportManuscript,
   exportProposal,
 } from '../../../api/export'
+import { toErrorMessage } from '../../../utils/error-message'
 
 const props = defineProps<{
   projectId: string
@@ -33,6 +34,14 @@ const options = reactive({
   includeAuthorNotes: false,
 })
 
+type ToggleOptionKey = 'includeOutline' | 'includeScenes' | 'includeUnfinishedChapters' | 'includeAuthorNotes'
+const toggleOptions: Array<{ key: ToggleOptionKey, label: string }> = [
+  { key: 'includeOutline', label: '包含大纲' },
+  { key: 'includeScenes', label: '包含场景' },
+  { key: 'includeUnfinishedChapters', label: '包含未完成章节' },
+  { key: 'includeAuthorNotes', label: '包含作者备注' },
+]
+
 async function handleExportManuscript() {
   exporting.value = true
   try {
@@ -45,8 +54,8 @@ async function handleExportManuscript() {
     })
     toast.add('手稿导出成功', 'success')
   }
-  catch (e: any) {
-    toast.add(`导出失败: ${e.message}`, 'error')
+  catch (error: unknown) {
+    toast.add(`导出失败: ${toErrorMessage(error)}`, 'error')
   }
   finally {
     exporting.value = false
@@ -59,8 +68,8 @@ async function handleQuickExport(fn: () => Promise<void>, label: string) {
     await fn()
     toast.add(`${label}导出成功`, 'success')
   }
-  catch (e: any) {
-    toast.add(`${label}导出失败: ${e.message}`, 'error')
+  catch (error: unknown) {
+    toast.add(`${label}导出失败: ${toErrorMessage(error)}`, 'error')
   }
   finally {
     exporting.value = false
@@ -130,18 +139,13 @@ const quickExports = [
         <label class="text-xs text-text-muted font-bold uppercase">内容选项</label>
         <div class="grid grid-cols-2 gap-3">
           <label
-            v-for="opt in [
-              { key: 'includeOutline', label: '包含大纲' },
-              { key: 'includeScenes', label: '包含场景' },
-              { key: 'includeUnfinishedChapters', label: '包含未完成章节' },
-              { key: 'includeAuthorNotes', label: '包含作者备注' },
-            ]"
+            v-for="opt in toggleOptions"
             :key="opt.key"
             class="flex cursor-pointer items-center gap-2 border border-border-light rounded-lg px-3 py-2 text-sm transition-colors hover:bg-bg-page/50"
-            :class="(options as any)[opt.key] ? 'border-primary/40 bg-primary/5' : ''"
+            :class="options[opt.key] ? 'border-primary/40 bg-primary/5' : ''"
           >
             <input
-              v-model="(options as any)[opt.key]"
+              v-model="options[opt.key]"
               type="checkbox"
               class="h-4 w-4 border-border-light rounded text-primary accent-primary"
             >

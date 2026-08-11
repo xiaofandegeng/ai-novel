@@ -2,6 +2,7 @@ import type { KnowledgeContextSnippet } from '@ai-novel/shared'
 import { and, eq, ilike, inArray, or } from 'drizzle-orm'
 import { db } from '../db'
 import { chapterMemories, characters, knowledgeChunks, storyBibles, storyFactTriples } from '../db/schema'
+import { timestampMs } from '../utils'
 import { searchSimilarEmbeddings } from './embedding.service'
 
 export interface RetrievedKnowledge extends KnowledgeContextSnippet {
@@ -87,7 +88,7 @@ export class KnowledgeRetrievalService {
       matchedTerms: terms.filter(t => (row.title?.includes(t) || row.summary?.includes(t))),
       vectorScore: 0,
       importance: row.importance || 5,
-      createdAt: new Date(row.createdAt),
+      createdAt: new Date(timestampMs(row.createdAt)),
     }))
 
     memoryRows.forEach(row => results.push({
@@ -99,7 +100,7 @@ export class KnowledgeRetrievalService {
       matchedTerms: terms.filter(t => row.summary?.includes(t)),
       vectorScore: 0,
       importance: 7,
-      createdAt: new Date(row.createdAt),
+      createdAt: new Date(timestampMs(row.createdAt)),
     }))
 
     return results
@@ -167,7 +168,7 @@ export class KnowledgeRetrievalService {
             matchedTerms: [],
             vectorScore: s.similarity,
             importance: c.importance || 5,
-            createdAt: new Date(c.createdAt),
+            createdAt: new Date(timestampMs(c.createdAt)),
           })
         }
       }
@@ -183,7 +184,7 @@ export class KnowledgeRetrievalService {
             matchedTerms: [],
             vectorScore: s.similarity,
             importance: Math.max(c.importance || 5, 8),
-            createdAt: new Date(c.createdAt),
+            createdAt: new Date(timestampMs(c.createdAt)),
           })
         }
       }
@@ -199,7 +200,7 @@ export class KnowledgeRetrievalService {
             matchedTerms: [],
             vectorScore: s.similarity,
             importance: 7,
-            createdAt: new Date(m.createdAt),
+            createdAt: new Date(timestampMs(m.createdAt)),
           })
         }
       }
@@ -215,7 +216,7 @@ export class KnowledgeRetrievalService {
             matchedTerms: [],
             vectorScore: s.similarity,
             importance: 9,
-            createdAt: new Date(f.createdAt),
+            createdAt: new Date(timestampMs(f.createdAt)),
           })
         }
       }
@@ -267,7 +268,7 @@ export class KnowledgeRetrievalService {
       ),
       vectorScore: 0,
       importance: 9,
-      createdAt: new Date(row.createdAt),
+      createdAt: new Date(timestampMs(row.createdAt)),
     }))
   }
 
@@ -290,7 +291,7 @@ export class KnowledgeRetrievalService {
       matchedTerms: terms.filter(t => r.name.includes(t)),
       vectorScore: 0,
       importance: 9, // 角色设定极高重要性
-      createdAt: new Date(r.createdAt),
+      createdAt: new Date(timestampMs(r.createdAt)),
     }))
   }
 
@@ -316,7 +317,7 @@ export class KnowledgeRetrievalService {
       matchedTerms,
       vectorScore: 0,
       importance: 10,
-      createdAt: new Date(b.createdAt),
+      createdAt: new Date(timestampMs(b.createdAt)),
     }]
   }
 
@@ -428,11 +429,4 @@ export class KnowledgeRetrievalService {
 
     return this.fuse(keyword, vector, characters, bible, facts, limit)
   }
-}
-
-/**
- * 保持向后兼容的导出函数
- */
-export async function retrieveKnowledgeForAI(input: RetrievalInput): Promise<RetrievedKnowledge[]> {
-  return KnowledgeRetrievalService.retrieve(input)
 }

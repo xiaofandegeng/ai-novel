@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CockpitChapterProgress } from '@ai-novel/shared'
+import type { TagVariant } from '@ai-novel/ui'
 import { NButton, NTag } from '@ai-novel/ui'
 import {
   AlertCircle,
@@ -7,6 +8,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  CircleSlash2,
   Clock,
   FileText,
   XCircle,
@@ -35,6 +37,7 @@ function getStepIcon(status: string) {
     case 'failed': return XCircle
     case 'running': return Clock
     case 'blocked': return AlertCircle
+    case 'skipped': return CircleSlash2
     default: return Clock
   }
 }
@@ -43,14 +46,14 @@ function getStepClass(status: string) {
   return `step-status-${status}`
 }
 
-function getChapterStatusTag(status: string) {
+function getChapterStatusTag(status: string): { type: TagVariant, text: string } {
   switch (status) {
     case 'completed': return { type: 'success', text: '已写完' }
     case 'running': return { type: 'primary', text: '推进中' }
-    case 'failed': return { type: 'danger', text: '推进失败' }
+    case 'failed': return { type: 'error', text: '推进失败' }
     case 'isolated': return { type: 'warning', text: '已隔离' }
     case 'skipped': return { type: 'info', text: '已略过' }
-    default: return { type: 'secondary', text: '待推进' }
+    default: return { type: 'default', text: '待推进' }
   }
 }
 </script>
@@ -95,7 +98,7 @@ function getChapterStatusTag(status: string) {
           <div class="flex items-center gap-3" @click.stop>
             <span v-if="ch.wordCount" class="text-xs text-text-muted">{{ ch.wordCount }} 字</span>
             <NTag
-              :variant="getChapterStatusTag(ch.status).type as any"
+              :variant="getChapterStatusTag(ch.status).type"
               size="sm"
             >
               {{ getChapterStatusTag(ch.status).text }}
@@ -128,13 +131,16 @@ function getChapterStatusTag(status: string) {
                 <component
                   :is="getStepIcon(step.status)"
                   :size="16"
-                  :class="{ 'spinning': step.status === 'running', 'text-green': step.status === 'completed', 'text-red': step.status === 'failed', 'text-yellow': step.status === 'blocked', 'text-gray': step.status === 'pending' }"
+                  :class="{ 'spinning': step.status === 'running', 'text-green': step.status === 'completed', 'text-red': step.status === 'failed', 'text-yellow': step.status === 'blocked', 'text-gray': step.status === 'pending' || step.status === 'skipped' }"
                 />
               </div>
               <div class="step-content flex-1">
                 <div class="flex items-center justify-between">
                   <span class="step-label text-xs font-medium">{{ step.label }}</span>
-                  <span v-if="step.finishedAt" class="step-time text-[10px] text-text-muted">
+                  <span v-if="step.status === 'skipped'" class="step-time text-[10px] text-text-muted">
+                    已略过
+                  </span>
+                  <span v-else-if="step.finishedAt" class="step-time text-[10px] text-text-muted">
                     已完成
                   </span>
                   <span v-else-if="step.status === 'running'" class="step-time running-pulse text-[10px] text-primary">

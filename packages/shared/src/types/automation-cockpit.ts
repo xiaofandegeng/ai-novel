@@ -21,7 +21,7 @@ export interface CockpitRunSummary {
 export interface CockpitChapterStep {
   key: string
   label: string
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'blocked'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'blocked' | 'skipped'
   error?: string
   startedAt?: string
   finishedAt?: string
@@ -48,6 +48,7 @@ export interface CockpitCharacterState {
   personality?: string | null
   relationshipPressure?: string | null
   lastChangedChapterId?: string | null
+  /** Normalized confidence from 0 to 1. */
   confidence?: number | null
 }
 
@@ -144,6 +145,8 @@ export interface CockpitNarrativeEvent {
   title: string
   summary: string
   sourceChapterId?: string
+  sourceChapterNumber?: number
+  /** Display percentage from 0 to 100. */
   confidence?: number
   changeSetId?: string
   createdAt: string

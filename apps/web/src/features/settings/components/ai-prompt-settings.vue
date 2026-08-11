@@ -6,6 +6,7 @@ import { Code, Layout, RefreshCw, Save, Terminal } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { promptTemplateApi } from '../../../api/prompt-templates'
 import { storyStructureApi } from '../../../api/story-structure'
+import { toErrorMessage } from '../../../utils/error-message'
 
 const props = defineProps<{
   projectId: string
@@ -39,8 +40,8 @@ async function loadData() {
       selectedTemplateKey.value = t[0].key
     }
   }
-  catch (e: any) {
-    toast.add(`加载失败: ${e.message}`, 'error')
+  catch (error: unknown) {
+    toast.add(`加载失败: ${toErrorMessage(error)}`, 'error')
   }
   finally {
     loading.value = false
@@ -80,8 +81,8 @@ async function handleSaveOverride() {
     const o = await promptTemplateApi.getOverrides(props.projectId)
     overrides.value = o
   }
-  catch (e: any) {
-    toast.add(`保存失败: ${e.message}`, 'error')
+  catch (error: unknown) {
+    toast.add(`保存失败: ${toErrorMessage(error)}`, 'error')
   }
 }
 
@@ -100,8 +101,8 @@ async function handleApplyStructure() {
     showApplyStructureConfirm.value = false
     pendingStructureTemplateId.value = null
   }
-  catch (e: any) {
-    toast.add(`应用失败: ${e.message}`, 'error')
+  catch (error: unknown) {
+    toast.add(`应用失败: ${toErrorMessage(error)}`, 'error')
   }
   finally {
     applyingStructure.value = false

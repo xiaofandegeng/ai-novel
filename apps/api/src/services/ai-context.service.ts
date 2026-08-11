@@ -26,7 +26,7 @@ import {
   volumes,
   writingPersonas,
 } from '../db/schema'
-import { retrieveKnowledgeForAI } from './knowledge-retrieval.service'
+import { KnowledgeRetrievalService } from './knowledge-retrieval.service'
 import { buildGlobalNarrativeControl } from './narrative-control.service'
 import { buildPersonaMemoryContext } from './persona-memory.service'
 import { buildPersonaPromptForProject } from './persona-prompt.service'
@@ -72,7 +72,7 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
   const [bible] = await db.select().from(storyBibles).where(eq(storyBibles.projectId, projectId))
 
   // 2. Fetch Current Chapter (if any)
-  let currentChapterData: any = null
+  let currentChapterData: typeof chapters.$inferSelect | null = null
   let volumeTitle: string | undefined
   if (chapterId) {
     const [chapter] = await db.select().from(chapters).where(and(eq(chapters.id, chapterId), eq(chapters.projectId, projectId)))
@@ -86,8 +86,8 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
   }
 
   // 2b. Fetch Current Scene (if sceneId provided)
-  let currentSceneData: any = null
-  let allChapterScenes: any[] = []
+  let currentSceneData: typeof chapterScenes.$inferSelect | null = null
+  let allChapterScenes: Array<typeof chapterScenes.$inferSelect> = []
   if (sceneId) {
     const [sceneRow] = await db.select().from(chapterScenes).where(
       and(eq(chapterScenes.id, sceneId), eq(chapterScenes.projectId, projectId)),
@@ -206,7 +206,6 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
   }
 
   // 6. Knowledge Snippets (Hybrid Retrieval)
-  // ... (lines 208-228 skipped in this replacement for brevity, I'll match them exactly) ...
   const searchTerms = buildKnowledgeSearchTerms({
     userInstruction,
     chapterTitle: currentChapterData?.title,
@@ -219,7 +218,7 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
 
   const factTripleSubjects = [...allCharacters.map(c => c.name), ...conflictSummaries.map(c => c.title)]
   const knowledgeSnippets = searchTerms.length > 0
-    ? await retrieveKnowledgeForAI({
+    ? await KnowledgeRetrievalService.retrieve({
         projectId,
         terms: searchTerms,
         factTripleSubjects,
@@ -234,7 +233,6 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
   const personaMemory = personaMemoryRes ? [personaMemoryRes] : []
 
   // 7. Assemble Nearby Chapters
-  // ... (lines 235-324 skipped) ...
   let nearbyChapters: BuiltAIContext['nearbyChapters'] | undefined
   if (currentChapterData) {
     const volumeId = currentChapterData.volumeId
@@ -407,7 +405,7 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
   }
 
   // 2c. Fetch Current Volume (if volumeId provided or via chapterId)
-  let currentVolumeData: any = null
+  let currentVolumeData: typeof volumes.$inferSelect | null = null
   const targetVolumeId = volumeId || currentChapterData?.volumeId
   if (targetVolumeId) {
     const [vol] = await db.select().from(volumes).where(and(eq(volumes.id, targetVolumeId), eq(volumes.projectId, projectId)))

@@ -20,7 +20,7 @@ export async function matchCharacterIdsFromText(projectId: string, text: string 
       continue
 
     // 优先全名匹配，其次包含匹配
-    const found = allCharacters.find((c: any) => c.name === trimmed || trimmed.includes(c.name))
+    const found = allCharacters.find(c => c.name === trimmed || trimmed.includes(c.name))
     if (found)
       matchedIds.add(found.id)
   }

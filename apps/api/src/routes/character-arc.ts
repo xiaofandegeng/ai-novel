@@ -1,6 +1,6 @@
 import type { Hono } from 'hono'
 import { CharacterArcService } from '../services/character-arc.service'
-import { fail, success } from '../utils'
+import { errorMessage, fail, success } from '../utils'
 
 export function registerCharacterArcRoutes(app: Hono) {
   app.get('/api/projects/:projectId/character-arc/:characterId', async (c) => {
@@ -10,8 +10,8 @@ export function registerCharacterArcRoutes(app: Hono) {
       const rows = await CharacterArcService.getCharacterTimeline(projectId, characterId)
       return c.json(success(rows))
     }
-    catch (e: any) {
-      return c.json(fail(e.message || '获取角色弧光时间线失败'), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error, '获取角色弧光时间线失败')), 500)
     }
   })
 
@@ -21,8 +21,8 @@ export function registerCharacterArcRoutes(app: Hono) {
       const rows = await CharacterArcService.getProjectTimeline(projectId)
       return c.json(success(rows))
     }
-    catch (e: any) {
-      return c.json(fail(e.message || '获取项目弧光时间线失败'), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error, '获取项目弧光时间线失败')), 500)
     }
   })
 
@@ -44,8 +44,8 @@ export function registerCharacterArcRoutes(app: Hono) {
       })
       return c.json(success(row), 201)
     }
-    catch (e: any) {
-      return c.json(fail(e.message || '创建弧光事件失败'), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error, '创建弧光事件失败')), 500)
     }
   })
 
@@ -68,8 +68,8 @@ export function registerCharacterArcRoutes(app: Hono) {
         return c.json(fail('弧光事件不存在'), 404)
       return c.json(success(row))
     }
-    catch (e: any) {
-      return c.json(fail(e.message || '更新弧光事件失败'), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error, '更新弧光事件失败')), 500)
     }
   })
 
@@ -82,8 +82,8 @@ export function registerCharacterArcRoutes(app: Hono) {
         return c.json(fail('弧光事件不存在'), 404)
       return c.json(success(row, '弧光事件已删除'))
     }
-    catch (e: any) {
-      return c.json(fail(e.message || '删除弧光事件失败'), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error, '删除弧光事件失败')), 500)
     }
   })
 }

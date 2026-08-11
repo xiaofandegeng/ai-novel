@@ -12,6 +12,7 @@
     "lint:fix": "eslint . --fix --cache --concurrency=auto",
     "format": "pnpm lint:fix",
     "test": "pnpm run -r test",
+    "test:coverage": "pnpm run -r test:coverage",
     "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test",
     "db:generate": "pnpm --filter @ai-novel/api db:generate",
     "db:init-vector": "pnpm --filter @ai-novel/api db:init-vector",
@@ -22,11 +23,13 @@
   "devDependencies": {
     "@antfu/eslint-config": "catalog:dev",
     "@unocss/eslint-plugin": "catalog:dev",
+    "@vitest/coverage-v8": "catalog:dev",
     "eslint": "catalog:dev",
     "eslint-plugin-format": "catalog:dev",
     "lint-staged": "catalog:dev",
     "simple-git-hooks": "catalog:dev",
-    "typescript": "catalog:dev"
+    "typescript": "catalog:dev",
+    "vitest": "catalog:dev"
   },
   "simple-git-hooks": {
     "pre-commit": "pnpm lint-staged"

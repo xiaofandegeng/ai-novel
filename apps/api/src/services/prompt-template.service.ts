@@ -45,7 +45,7 @@ export class PromptTemplateService {
   /**
    * 渲染模板，替换 {{variable}}
    */
-  static render(template: string, variables: Record<string, any>): string {
+  static render(template: string, variables: Record<string, unknown>): string {
     return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) => {
       return variables[key] !== undefined ? String(variables[key]) : match
     })

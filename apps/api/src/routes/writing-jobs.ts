@@ -9,7 +9,7 @@ import {
   retryStep,
   startJob,
 } from '../services/writing-job.service'
-import { fail, generateId, success } from '../utils'
+import { errorMessage, fail, generateId, success } from '../utils'
 
 export function registerWritingJobRoutes(app: Hono) {
   app.get('/api/projects/:projectId/writing-jobs', async (c) => {
@@ -98,8 +98,8 @@ export function registerWritingJobRoutes(app: Hono) {
         return c.json(fail('Job not found'), 404)
       return c.json(success(row))
     }
-    catch (e: any) {
-      return c.json(fail(e.message || 'Failed to start job'), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error, 'Failed to start job')), 500)
     }
   })
 
@@ -169,8 +169,8 @@ export function registerWritingJobRoutes(app: Hono) {
       const steps = await getJobSteps(jobId)
       return c.json(success({ job, steps }))
     }
-    catch (e: any) {
-      return c.json(fail(e.message || 'Failed to retry step'), 400)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error, 'Failed to retry step')), 400)
     }
   })
 }

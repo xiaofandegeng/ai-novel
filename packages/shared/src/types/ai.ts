@@ -130,7 +130,7 @@ export const AI_PROVIDER_PRESETS: AIProviderPreset[] = [
     label: '自定义 OpenAI 兼容源',
     description: '用于 DeepSeek、OpenRouter、本地网关、私有代理等 OpenAI 兼容接口。',
     baseUrl: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-4o-mini',
+    defaultModel: 'custom-model',
     apiKeyHint: '填写对应平台的 API Key。',
     models: [
       { label: '自定义模型', value: 'custom-model' },

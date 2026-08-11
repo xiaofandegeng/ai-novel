@@ -8,7 +8,7 @@ export interface PromptTemplate {
   version: string
   systemPrompt: string | null
   userPromptTemplate: string | null
-  outputSchema: any | null
+  outputSchema: Record<string, unknown> | null
 }
 
 export interface PromptOverride {
@@ -28,6 +28,6 @@ export const promptTemplateApi = {
   saveOverride: (projectId: string, data: Partial<PromptOverride>) =>
     apiPost<{ id: string }>(`/api/projects/${projectId}/prompt-overrides`, data),
 
-  testTemplate: (projectId: string, key: string, variables: Record<string, any>) =>
+  testTemplate: (projectId: string, key: string, variables: Record<string, unknown>) =>
     apiPost<{ system: string, user: string }>(`/api/projects/${projectId}/prompt-templates/${key}/test`, variables),
 }

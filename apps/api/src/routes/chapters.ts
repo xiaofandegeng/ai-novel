@@ -5,7 +5,7 @@ import { chapters } from '../db/schema'
 import { autoPlanScenesForChapter } from '../services/auto-repair.service'
 import * as postprocessService from '../services/chapter-postprocess.service'
 import { assertVolumeBelongsToProject } from '../services/ownership.service'
-import { fail, generateId, now, success, updatedFields } from '../utils'
+import { errorMessage, fail, generateId, now, success, updatedFields } from '../utils'
 
 export function registerChapterRoutes(app: Hono) {
   app.get('/api/projects/:projectId/chapters', async (c) => {
@@ -28,6 +28,12 @@ export function registerChapterRoutes(app: Hono) {
   app.post('/api/projects/:projectId/chapters', async (c) => {
     const projectId = c.req.param('projectId')
     const body = await c.req.json()
+    const title = typeof body.title === 'string' ? body.title.trim() : ''
+    if (!title)
+      return c.json(fail('Chapter title is required'), 400)
+    if (!Number.isInteger(body.chapterNumber) || body.chapterNumber < 1)
+      return c.json(fail('Chapter number must be a positive integer'), 400)
+
     if (body.volumeId) {
       try {
         await assertVolumeBelongsToProject(projectId, body.volumeId)
@@ -55,7 +61,7 @@ export function registerChapterRoutes(app: Hono) {
       projectId,
       volumeId: body.volumeId,
       chapterNumber: body.chapterNumber,
-      title: body.title,
+      title,
       outline: body.outline,
       draft: body.draft,
       summary: body.summary,
@@ -195,8 +201,8 @@ export function registerChapterRoutes(app: Hono) {
       })
       return c.json(success(result))
     }
-    catch (e: any) {
-      return c.json(fail(e.message), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error)), 500)
     }
   })
 
@@ -207,8 +213,8 @@ export function registerChapterRoutes(app: Hono) {
       const result = await autoPlanScenesForChapter(projectId, chapterId)
       return c.json(success(result))
     }
-    catch (e: any) {
-      return c.json(fail(e.message || '一键规划场景失败'), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error, '一键规划场景失败')), 500)
     }
   })
 }

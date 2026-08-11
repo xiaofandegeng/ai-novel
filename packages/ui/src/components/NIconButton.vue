@@ -60,6 +60,7 @@ function onClick(e: MouseEvent) {
   <span class="group relative inline-flex">
     <button
       :type="type"
+      :aria-label="label"
       :aria-disabled="isDisabled"
       :disabled="isDisabled"
       class="inline-flex items-center justify-center rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none"

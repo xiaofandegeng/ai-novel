@@ -13,7 +13,7 @@ import {
   resumeAutonomousRun,
   startAutonomousRun,
 } from '../services/autonomous-writing.service'
-import { fail, success } from '../utils'
+import { errorMessage, fail, success } from '../utils'
 
 export function registerAutonomousRunRoutes(app: Hono) {
   // Literal routes MUST be registered before :runId to avoid being shadowed
@@ -59,8 +59,8 @@ export function registerAutonomousRunRoutes(app: Hono) {
       const run = await createAutonomousRun(projectId, body)
       return c.json(success(run))
     }
-    catch (err: any) {
-      return c.json(fail(err.message), 400)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error)), 400)
     }
   })
 
@@ -71,8 +71,8 @@ export function registerAutonomousRunRoutes(app: Hono) {
       await startAutonomousRun(projectId, runId)
       return c.json(success(true))
     }
-    catch (err: any) {
-      return c.json(fail(err.message), 400)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error)), 400)
     }
   })
 
@@ -84,8 +84,8 @@ export function registerAutonomousRunRoutes(app: Hono) {
       await pauseAutonomousRun(projectId, runId, reason)
       return c.json(success(true))
     }
-    catch (err: any) {
-      return c.json(fail(err.message), 400)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error)), 400)
     }
   })
 
@@ -96,8 +96,8 @@ export function registerAutonomousRunRoutes(app: Hono) {
       await resumeAutonomousRun(projectId, runId)
       return c.json(success(true))
     }
-    catch (err: any) {
-      return c.json(fail(err.message), 400)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error)), 400)
     }
   })
 
@@ -108,8 +108,8 @@ export function registerAutonomousRunRoutes(app: Hono) {
       await abandonAutonomousRun(projectId, runId)
       return c.json(success(true))
     }
-    catch (err: any) {
-      return c.json(fail(err.message), 400)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error)), 400)
     }
   })
 

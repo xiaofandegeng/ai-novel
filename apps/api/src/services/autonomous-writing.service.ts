@@ -16,7 +16,7 @@ import {
   writingJobs,
   writingJobSteps,
 } from '../db/schema'
-import { generateId, now } from '../utils'
+import { generateId, now, timestampMs } from '../utils'
 import { getProjectHealthMetrics } from './health-metrics.service'
 
 const STEP_LABEL_ZH: Record<string, string> = {
@@ -154,7 +154,7 @@ export async function createAutonomousRun(
     const trulyActive = activeRuns.filter((r) => {
       if (r.status !== 'idle')
         return true
-      const created = r.createdAt ? new Date(r.createdAt).getTime() : 0
+      const created = r.createdAt ? timestampMs(r.createdAt) : 0
       return Date.now() - created < STALE_IDLE_MS
     })
 
@@ -433,7 +433,7 @@ export async function startAutonomousRun(projectId: string, runId: string): Prom
   const trulyActiveOther = otherActive.filter((r) => {
     if (r.status !== 'idle')
       return true
-    const created = r.createdAt ? new Date(r.createdAt).getTime() : 0
+    const created = r.createdAt ? timestampMs(r.createdAt) : 0
     return Date.now() - created < STALE_IDLE_MS
   })
   for (const r of otherActive) {
@@ -924,7 +924,7 @@ export async function getAutonomousRunInsight(projectId: string, runId: string) 
   // 截取前 10 条非草稿的剧情和设定变更事件
   const recentEvents = changeItems
     .filter(i => i.itemType !== 'draft')
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .sort((a, b) => timestampMs(b.createdAt) - timestampMs(a.createdAt))
     .slice(0, 10)
 
   // 进度统计

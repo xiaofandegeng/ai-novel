@@ -4,6 +4,7 @@ import { useToast } from '@ai-novel/ui'
 import { Activity, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { toErrorMessage } from '@/utils/error-message'
 import { repairCockpitHealthRisk } from '../api/automation-cockpit.api'
 
 defineProps<{
@@ -47,9 +48,9 @@ async function handleRepairRisk(item: CockpitHealthRiskDetail) {
     toast.add(result.message || '风险修复任务已启动。', 'success')
     emit('refresh')
   }
-  catch (err: any) {
-    console.error(err)
-    toast.add(err.message || '风险修复失败，请稍后重试。', 'error')
+  catch (error: unknown) {
+    console.error(error)
+    toast.add(toErrorMessage(error, '风险修复失败，请稍后重试。'), 'error')
   }
   finally {
     repairingRiskKey.value = ''

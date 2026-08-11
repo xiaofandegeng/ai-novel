@@ -18,6 +18,7 @@ import {
   qualityReports,
   storyFactTriples,
 } from '../db/schema'
+import { timestampMs } from '../utils'
 
 export interface ProjectHealthMetrics extends HealthMetrics {}
 
@@ -259,7 +260,7 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
   }
 
   const recentChangeSets = [...allChangeSets]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .sort((a, b) => timestampMs(b.createdAt) - timestampMs(a.createdAt))
     .slice(0, 5)
     .map(cs => ({
       id: cs.id,

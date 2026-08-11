@@ -1,6 +1,6 @@
 import type { Hono } from 'hono'
 import { AutomationCockpitService } from '../services/automation-cockpit.service'
-import { fail, success } from '../utils'
+import { errorMessage, fail, success } from '../utils'
 
 export function registerAutomationCockpitRoutes(app: Hono) {
   // 1. 获取驾驶舱首屏聚合数据
@@ -10,8 +10,8 @@ export function registerAutomationCockpitRoutes(app: Hono) {
       const data = await AutomationCockpitService.getCockpitData(projectId)
       return c.json(success(data))
     }
-    catch (e: any) {
-      return c.json(fail(e.message || '获取驾驶舱数据失败'), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error, '获取驾驶舱数据失败')), 500)
     }
   })
 
@@ -23,8 +23,8 @@ export function registerAutomationCockpitRoutes(app: Hono) {
       const events = await AutomationCockpitService.getCockpitEvents(projectId, limit)
       return c.json(success(events))
     }
-    catch (e: any) {
-      return c.json(fail(e.message || '获取事件流失败'), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error, '获取事件流失败')), 500)
     }
   })
 
@@ -38,8 +38,8 @@ export function registerAutomationCockpitRoutes(app: Hono) {
       }
       return c.json(success(detail))
     }
-    catch (e: any) {
-      return c.json(fail(e.message || '获取章节详情失败'), 500)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error, '获取章节详情失败')), 500)
     }
   })
 
@@ -51,8 +51,8 @@ export function registerAutomationCockpitRoutes(app: Hono) {
       const result = await AutomationCockpitService.repairHealthRisk(projectId, body)
       return c.json(success(result))
     }
-    catch (e: any) {
-      return c.json(fail(e.message || '风险自动修复失败'), 400)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error, '风险自动修复失败')), 400)
     }
   })
 }

@@ -66,6 +66,9 @@ ai-novel/
 | `pnpm build`          | 构建所有包                      |
 | `pnpm lint`           | 检查代码规范                    |
 | `pnpm lint:fix`       | 自动修复代码规范                |
+| `pnpm test`           | 运行全仓自动化测试              |
+| `pnpm test:coverage`  | 运行测试并校验覆盖率门禁        |
+| `pnpm check`          | 执行 lint、类型、构建和测试     |
 | `pnpm db:init-vector` | 初始化 PostgreSQL pgvector 扩展 |
 | `pnpm db:generate`    | 生成数据库迁移文件              |
 | `pnpm db:migrate`     | 应用数据库迁移                  |
@@ -74,6 +77,8 @@ ai-novel/
 ## 代码规范
 
 使用 `@antfu/eslint-config`，单引号、无分号、自动排序 import。提交时自动运行 lint-staged。
+
+API 集成测试默认使用当前系统用户连接本机 `ai_novel_test`，也可通过 `TEST_DATABASE_URL` 覆盖。测试启动器只接受以 `_test` 结尾的数据库名，并会在每个用例前清空测试表，禁止将开发库或生产库配置给它。
 
 ## 文档
 

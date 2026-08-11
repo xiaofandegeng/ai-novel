@@ -49,7 +49,7 @@ export interface AutonomousRunJob {
   status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'isolated'
   orderIndex: number
   isolationReason?: string | null
-  isolationReport?: Record<string, any> | null
+  isolationReport?: Record<string, unknown> | null
   stepSummary?: {
     totalSteps: number
     completedSteps: number
@@ -86,7 +86,7 @@ export interface AutonomousRunException {
   status: AutonomousExceptionStatus
   autoResolutionStrategy?: AutoResolutionStrategy | null
   resolution: string | null
-  resolutionReport?: Record<string, any> | null
+  resolutionReport?: Record<string, unknown> | null
   createdAt: string
   updatedAt: string
 }

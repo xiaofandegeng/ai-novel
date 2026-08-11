@@ -10,6 +10,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/scripts/seed.ts",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -25,6 +27,7 @@
     "@types/node": "catalog:backend",
     "drizzle-kit": "catalog:backend",
     "tsx": "catalog:backend",
-    "typescript": "catalog:dev"
+    "typescript": "catalog:dev",
+    "vitest": "catalog:dev"
   }
 }

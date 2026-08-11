@@ -47,7 +47,9 @@ useCockpitPolling(projectId, 4000)
 const chapterStore = useChapterStore()
 
 // 控制右侧看板 Tab 和章节详情抽屉
-const activeNarrativeTab = ref<'character' | 'relationship' | 'conflict' | 'foreshadowing' | 'plot' | 'health'>('character')
+const narrativeTabs = ['character', 'relationship', 'conflict', 'foreshadowing', 'plot', 'health'] as const
+type NarrativeTab = typeof narrativeTabs[number]
+const activeNarrativeTab = ref<NarrativeTab>('character')
 const drawerInitialTab = ref<'content' | 'outline' | 'scenes'>('content')
 
 const detailDrawerVisible = ref(false)
@@ -57,8 +59,8 @@ const activeChapterId = ref('')
 watch(
   () => route.query,
   (query) => {
-    if (query.tab && ['character', 'relationship', 'conflict', 'foreshadowing', 'plot', 'health'].includes(query.tab as string)) {
-      activeNarrativeTab.value = query.tab as any
+    if (typeof query.tab === 'string' && narrativeTabs.includes(query.tab as NarrativeTab)) {
+      activeNarrativeTab.value = query.tab as NarrativeTab
     }
     if (query.chapter) {
       if (query.tab === 'outline') {

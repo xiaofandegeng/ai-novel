@@ -1,6 +1,7 @@
 import type { AutomationCockpitPayload, CockpitChapterDetail } from '@ai-novel/shared'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { toErrorMessage } from '../../../utils/error-message'
 import * as api from '../api/automation-cockpit.api'
 
 export const useAutomationCockpitStore = defineStore('automationCockpit', () => {
@@ -16,9 +17,9 @@ export const useAutomationCockpitStore = defineStore('automationCockpit', () => 
       const res = await api.fetchAutomationCockpit(projectId)
       payload.value = res
     }
-    catch (e: any) {
-      error.value = e.message || '拉取驾驶舱数据失败'
-      console.error(e)
+    catch (caught: unknown) {
+      error.value = toErrorMessage(caught, '拉取驾驶舱数据失败')
+      console.error(caught)
     }
     finally {
       loading.value = false
@@ -30,8 +31,8 @@ export const useAutomationCockpitStore = defineStore('automationCockpit', () => 
       const res = await api.fetchCockpitChapterDetail(projectId, chapterId)
       chapterDetail.value = res
     }
-    catch (e: any) {
-      console.error('拉取章节详情失败', e)
+    catch (error: unknown) {
+      console.error('拉取章节详情失败', error)
     }
   }
 
@@ -44,8 +45,8 @@ export const useAutomationCockpitStore = defineStore('automationCockpit', () => 
           item.status = 'approved'
       }
     }
-    catch (e: any) {
-      console.error('采纳变更失败', e)
+    catch (error: unknown) {
+      console.error('采纳变更失败', error)
     }
   }
 
@@ -58,8 +59,8 @@ export const useAutomationCockpitStore = defineStore('automationCockpit', () => 
           item.status = 'ignored'
       }
     }
-    catch (e: any) {
-      console.error('拒绝变更失败', e)
+    catch (error: unknown) {
+      console.error('拒绝变更失败', error)
     }
   }
 

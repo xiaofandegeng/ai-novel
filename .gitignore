@@ -103,6 +103,8 @@ venv/
 
 # Testing
 /coverage
+**/coverage/
 /test-results
 **/playwright-report/
 **/test-results/
+.playwright-cli/

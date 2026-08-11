@@ -5,7 +5,7 @@ import type {
   CockpitHealthRiskRepairResult,
   CockpitNarrativeEvent,
 } from '@ai-novel/shared'
-import { apiGet, apiPost } from '@/api/client'
+import { apiGet, apiPost } from '../../../api/client'
 
 export async function fetchAutomationCockpit(projectId: string): Promise<AutomationCockpitPayload> {
   return apiGet<AutomationCockpitPayload>(`/api/projects/${projectId}/cockpit`)

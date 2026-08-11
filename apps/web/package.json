@@ -6,6 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
@@ -21,10 +23,13 @@
     "@unocss/preset-icons": "catalog:frontend",
     "@unocss/preset-wind": "catalog:frontend",
     "@vitejs/plugin-vue": "catalog:frontend",
+    "@vue/test-utils": "catalog:dev",
+    "happy-dom": "catalog:dev",
     "sass": "^1.99.0",
     "typescript": "catalog:dev",
     "unocss": "catalog:frontend",
     "vite": "catalog:frontend",
+    "vitest": "catalog:dev",
     "vue-tsc": "catalog:dev"
   }
 }

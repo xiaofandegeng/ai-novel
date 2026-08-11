@@ -28,7 +28,7 @@ export interface WritingJobStep {
   autoDecision: AutoDecision | null
   autoRiskLevel?: AutoRiskLevel | null
   autoDecisionReason: string | null
-  autoDecisionReport?: Record<string, any> | null
+  autoDecisionReport?: Record<string, unknown> | null
   input: string | null
   output: string | null
   error: string | null

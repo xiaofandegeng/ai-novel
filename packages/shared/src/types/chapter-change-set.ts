@@ -34,9 +34,9 @@ export interface ChapterChangeSet {
   riskSummary: string | null
   draftTitle: string | null
   draftContent: string | null
-  consistencyReportJson: any
-  extractedChangesJson: any
-  applyReportJson: any
+  consistencyReportJson: unknown
+  extractedChangesJson: unknown
+  applyReportJson: unknown
   beforeSnapshotId: string | null
   afterSnapshotId: string | null
   createdAt: string | Date
@@ -52,7 +52,7 @@ export interface ChapterChangeSetItem {
   itemType: ChangeSetItemType
   riskLevel: 'low' | 'medium' | 'high'
   title: string
-  payloadJson: any
+  payloadJson: unknown
   status: 'pending' | 'approved' | 'applied' | 'blocked' | 'rejected' | 'apply_failed'
   applyError: string | null
   createdAt: string | Date

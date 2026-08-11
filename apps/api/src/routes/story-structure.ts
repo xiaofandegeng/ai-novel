@@ -1,6 +1,6 @@
 import type { Hono } from 'hono'
 import { StoryStructureService } from '../services/story-structure.service'
-import { fail, success } from '../utils'
+import { errorMessage, fail, success } from '../utils'
 
 export function registerStoryStructureRoutes(app: Hono) {
   app.get('/api/story-structure/templates', async (c) => {
@@ -18,8 +18,8 @@ export function registerStoryStructureRoutes(app: Hono) {
       const acts = await StoryStructureService.applyTemplate(projectId, body.templateId)
       return c.json(success(acts), 201)
     }
-    catch (e: any) {
-      return c.json(fail(e.message), 400)
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error)), 400)
     }
   })
 }

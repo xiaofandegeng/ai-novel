@@ -79,7 +79,7 @@ const statusClass = computed(() => {
 function handleStart() {
   const input: CreateAutonomousRunInput = {
     strategy: strategy.value,
-    scopeType: scopeType.value as any,
+    scopeType: scopeType.value,
     targetWordsPerChapter: Number(targetWordsPerChapter.value) || 3000,
   }
   if (scopeType.value === 'next_n_chapters') {

@@ -1,6 +1,6 @@
 import type { CreateAutonomousRunInput } from '@ai-novel/shared'
 import { computed } from 'vue'
-import * as runsApi from '@/api/autonomous-runs'
+import * as runsApi from '../../../api/autonomous-runs'
 import { useAutomationCockpitStore } from '../stores/automation-cockpit.store'
 
 export function useAutomationCockpit(projectId: string) {
