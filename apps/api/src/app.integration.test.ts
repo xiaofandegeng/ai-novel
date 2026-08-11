@@ -659,7 +659,8 @@ describe('http application boundary', () => {
     })).body.data
     expect((await requestJson<Array<unknown>>(app, versionPath)).body.data).toHaveLength(1)
 
-    expect((await requestJson(app, `/api/projects/${projectId}/versions/${version.id}`, 'DELETE')).response.status).toBe(200)
+    expect((await requestJson(app, `/api/projects/${projectId}/versions/${version.id}`, 'DELETE')).response.status).toBe(409)
+    expect((await requestJson<Array<unknown>>(app, versionPath)).body.data).toHaveLength(1)
     expect((await requestJson(app, `${elementPath}/${currentElements[0].id}`, 'DELETE')).response.status).toBe(200)
     for (const row of bulk.body.data)
       expect((await requestJson(app, `${scenePath}/${row.id}`, 'DELETE')).response.status).toBe(200)

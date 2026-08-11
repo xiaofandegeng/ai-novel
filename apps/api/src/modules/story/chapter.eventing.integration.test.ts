@@ -2,7 +2,7 @@ import type { CommandEnvelope, JsonObject } from '../../eventing'
 import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../../db'
-import { chapters, chapterScenes } from '../../db/schema'
+import { chapters, chapterScenes, chapterVersions } from '../../db/schema'
 import {
   AggregateRepository,
   CommandBus,
@@ -17,6 +17,7 @@ import {
   registerProjectEventing,
 } from '../project/project.eventing'
 import {
+  APPLY_CHAPTER_CONTENT_COMMAND,
   CHANGE_CHAPTER_COMMAND,
   CHANGE_SCENE_COMMAND,
   CHAPTER_AGGREGATE_TYPE,
@@ -254,6 +255,34 @@ describe('chapter eventing', () => {
       'command-missing-scene',
     ))).rejects.toMatchObject({ code: 'SCENE_NOT_FOUND' })
   })
+
+  it('derives immutable versions from applied chapter content and replay', async () => {
+    await createProject(runtime.commands, 'project-1')
+    await createChapter(runtime.commands, 'project-1', 'chapter-1')
+
+    const applied = await runtime.commands.dispatch(chapterCommand(
+      APPLY_CHAPTER_CONTENT_COMMAND,
+      { content: '汽笛划破潮湿的夜。', note: '初稿快照' },
+      'command-apply-content',
+    )) as { versionId: string }
+
+    await expect(readChapter('project-1', 'chapter-1')).resolves.toMatchObject({
+      draft: '汽笛划破潮湿的夜。',
+    })
+    await expect(readVersion('project-1', applied.versionId)).resolves.toMatchObject({
+      chapterId: 'chapter-1',
+      content: '汽笛划破潮湿的夜。',
+      note: '初稿快照',
+      wordCount: 9,
+    })
+    const expected = await readVersion('project-1', applied.versionId)
+    await db.delete(chapterVersions).where(eq(chapterVersions.projectId, 'project-1'))
+
+    await new ProjectionReplay(runtime.projections, runtime.store)
+      .replayProjection(CHAPTER_PROJECTION, { projectId: 'project-1' })
+
+    await expect(readVersion('project-1', applied.versionId)).resolves.toEqual(expected)
+  })
 })
 
 function createRuntime() {
@@ -350,4 +379,12 @@ function listScenes(projectId: string, chapterId: string) {
     eq(chapterScenes.projectId, projectId),
     eq(chapterScenes.chapterId, chapterId),
   )).orderBy(chapterScenes.orderIndex)
+}
+
+async function readVersion(projectId: string, id: string) {
+  const [row] = await db.select().from(chapterVersions).where(and(
+    eq(chapterVersions.projectId, projectId),
+    eq(chapterVersions.id, id),
+  )).limit(1)
+  return row
 }

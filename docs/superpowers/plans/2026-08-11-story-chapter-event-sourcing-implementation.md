@@ -78,11 +78,11 @@
 - Modify: `apps/api/src/modules/story/versions.routes.ts`
 - Modify: chapter eventing tests
 
-- [ ] Derive immutable version rows from chapter content application events.
-- [ ] Replace manual snapshot creation with an explicit Chapter command/event.
-- [ ] Remove version deletion as a product write; retain compatibility response only if the UI still calls it, with a clear immutable-history error.
-- [ ] Verify replay reproduces version content, note, word count, and ordering.
-- [ ] Commit: `feat(api): derive chapter versions from events`.
+- [x] Derive immutable version rows from chapter content application events.
+- [x] Replace manual snapshot creation with an explicit Chapter command/event.
+- [x] Remove version deletion as a product write; retain compatibility response only if the UI still calls it, with a clear immutable-history error.
+- [x] Verify replay reproduces version content, note, word count, and ordering.
+- [x] Commit: `feat(api): derive chapter versions from events`.
 
 ## Task 6: Route and web-client cutover
 

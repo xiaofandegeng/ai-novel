@@ -11,7 +11,7 @@ import type {
   StreamRef,
 } from '../../eventing'
 import { and, eq, ne } from 'drizzle-orm'
-import { chapters, chapterScenes } from '../../db/schema'
+import { chapters, chapterScenes, chapterVersions } from '../../db/schema'
 import { DomainCommandError } from '../../eventing'
 import { generateId, now } from '../../shared/utils'
 import {
@@ -30,6 +30,7 @@ export const CHAPTER_PROJECTION = 'chapters'
 export const CREATE_CHAPTER_COMMAND = 'CreateChapter'
 export const CHANGE_CHAPTER_COMMAND = 'ChangeChapter'
 export const DELETE_CHAPTER_COMMAND = 'DeleteChapter'
+export const APPLY_CHAPTER_CONTENT_COMMAND = 'ApplyChapterContent'
 export const PLAN_SCENES_COMMAND = 'PlanScenes'
 export const CHANGE_SCENE_COMMAND = 'ChangeScene'
 export const REORDER_SCENES_COMMAND = 'ReorderScenes'
@@ -237,7 +238,9 @@ function registerEvents(events: EventRegistry): void {
       eventType,
       currentSchemaVersion: 1,
       upcasters: {},
-      validate: payload => ({ chapter: readChapterEvent(readObject(payload)) }),
+      validate: eventType === CHAPTER_CONTENT_APPLIED
+        ? validateContentAppliedEvent
+        : payload => ({ chapter: readChapterEvent(readObject(payload)) }),
     })
   }
   events.register({
@@ -319,7 +322,11 @@ function registerCommands(runtime: ChapterEventingRuntime): void {
       streams: [{
         stream,
         expectedVersion: loaded.version,
-        events: eventTypes.map(eventType => chapterEvent(eventType, chapter, command, timestamp)),
+        events: eventTypes.map(eventType => (
+          eventType === CHAPTER_CONTENT_APPLIED
+            ? contentAppliedEvent(chapter, command, timestamp)
+            : chapterEvent(eventType, chapter, command, timestamp)
+        )),
       }],
       result: chapter,
     }
@@ -339,6 +346,20 @@ function registerCommands(runtime: ChapterEventingRuntime): void {
         events: [pendingEvent(CHAPTER_DELETED, { chapter, deletedAt: timestamp }, command, timestamp)],
       }],
       result: chapter,
+    }
+  })
+
+  runtime.commands.register(APPLY_CHAPTER_CONTENT_COMMAND, async (command, context) => {
+    const stream = chapterStream(command)
+    const loaded = await loadActiveChapter(runtime, command, context.session)
+    const timestamp = now()
+    const chapter = changeChapterSnapshot(loaded.state, {
+      draft: nonEmptyString(command.payload, 'content'),
+    }, timestamp)
+    const event = contentAppliedEvent(chapter, command, timestamp)
+    return {
+      streams: [{ stream, expectedVersion: loaded.version, events: [event] }],
+      result: { chapter, versionId: event.eventId },
     }
   })
 
@@ -506,6 +527,22 @@ function registerProjection(projections: ProjectionRegistry): void {
         target: chapters.id,
         set: chapter,
       })
+      if (
+        chapter.draft
+        && (event.eventType === CHAPTER_CREATED || event.eventType === CHAPTER_CONTENT_APPLIED)
+      ) {
+        await transaction.insert(chapterVersions).values({
+          id: event.eventId,
+          projectId: chapter.projectId,
+          chapterId: chapter.id,
+          content: chapter.draft,
+          wordCount: chapter.draft.length,
+          note: event.eventType === CHAPTER_CREATED
+            ? 'Initial draft'
+            : nullableString(event.payload, 'note') ?? 'Content applied',
+          createdAt: event.occurredAt,
+        }).onConflictDoNothing()
+      }
     },
     reset: async (transaction, projectId) => {
       if (projectId) {
@@ -802,6 +839,17 @@ function chapterEvent(
   return pendingEvent(eventType, { chapter }, command, occurredAt)
 }
 
+function contentAppliedEvent(
+  chapter: ChapterSnapshot,
+  command: CommandEnvelope,
+  occurredAt: string,
+): PendingEvent {
+  return pendingEvent(CHAPTER_CONTENT_APPLIED, {
+    chapter,
+    note: nullableString(command.payload, 'note'),
+  }, command, occurredAt)
+}
+
 function pendingEvent(
   eventType: string,
   payload: JsonObject,
@@ -839,6 +887,14 @@ function readChapterEvent(payload: JsonObject): ChapterSnapshot {
     status: chapterStatus(value.status),
     createdAt: requiredString(value, 'createdAt'),
     updatedAt: requiredString(value, 'updatedAt'),
+  }
+}
+
+function validateContentAppliedEvent(payload: unknown): JsonObject {
+  const value = readObject(payload)
+  return {
+    chapter: readChapterEvent(value),
+    note: nullableString(value, 'note'),
   }
 }
 
@@ -938,6 +994,13 @@ function requiredString(record: JsonObject, key: string): string {
   if (typeof value !== 'string' || !value.trim())
     throw new DomainCommandError('INVALID_CHAPTER', `${key} must be a non-empty string`)
   return value.trim()
+}
+
+function nonEmptyString(record: JsonObject, key: string): string {
+  const value = record[key]
+  if (typeof value !== 'string' || !value.trim())
+    throw new DomainCommandError('INVALID_CHAPTER', `${key} must be a non-empty string`)
+  return value
 }
 
 function nullableString(record: JsonObject, key: string): string | null {

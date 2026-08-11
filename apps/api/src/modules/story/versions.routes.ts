@@ -1,6 +1,8 @@
 import type { Hono } from 'hono'
+import { httpCommandOptions } from '../../shared/http/command-options'
 import { fail, success } from '../../shared/http/responses'
 import { assertChapterBelongsToProject } from '../../shared/ownership'
+import { APPLY_CHAPTER_CONTENT_COMMAND } from './chapter.eventing'
 import * as versionService from './version.service'
 
 export function registerVersionRoutes(app: Hono) {
@@ -26,7 +28,13 @@ export function registerVersionRoutes(app: Hono) {
       return c.json(fail('章节不属于当前项目'), 400)
     }
 
-    const row = await versionService.createSnapshot(projectId, chapterId, body.content, body.note)
+    const row = await versionService.createSnapshot(
+      projectId,
+      chapterId,
+      body.content,
+      body.note,
+      httpCommandOptions(c, APPLY_CHAPTER_CONTENT_COMMAND, projectId, chapterId),
+    )
     if (typeof row === 'object' && 'error' in row && row.error)
       return c.json(fail(row.error), 400)
     return c.json(success(row))
@@ -36,8 +44,10 @@ export function registerVersionRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
     const row = await versionService.deleteVersion(projectId, id)
-    if (typeof row === 'object' && 'error' in row && row.error)
-      return c.json(fail('Version not found'), 404)
+    if (typeof row === 'object' && 'error' in row && row.error) {
+      const status = row.error === 'Version history is immutable' ? 409 : 404
+      return c.json(fail(row.error), status)
+    }
     return c.json(success(row, 'Version deleted'))
   })
 }
