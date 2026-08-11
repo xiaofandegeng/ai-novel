@@ -34,11 +34,11 @@
 - Modify: character profile/arc services and routes
 - Modify: `apps/api/src/eventing-runtime.ts`
 
-- [ ] Define and validate `CharacterCreated`, `CharacterChanged`, `CharacterDeleted`, `CharacterArcEventRecorded`, `CharacterArcEventCorrected`, and `CharacterArcEventRemoved`.
-- [ ] Enforce project, chapter, and scene ownership before producing events.
-- [ ] Project profiles and arc rows synchronously and rebuild one project without affecting another.
-- [ ] Preserve current character and arc HTTP response shapes, adding `Idempotency-Key` support to every mutation.
-- [ ] Commit: `feat(api): event source characters and arcs`.
+- [x] Define and validate `CharacterCreated`, `CharacterChanged`, `CharacterDeleted`, `CharacterArcEventRecorded`, `CharacterArcEventCorrected`, and `CharacterArcEventRemoved`.
+- [x] Enforce project, chapter, and scene ownership before producing events.
+- [x] Project profiles and arc rows synchronously and rebuild one project without affecting another.
+- [x] Preserve current character and arc HTTP response shapes, adding `Idempotency-Key` support to every mutation.
+- [x] Commit: `feat(api): event source characters and arcs`.
 
 ## Task 3: Relationship aggregate
 

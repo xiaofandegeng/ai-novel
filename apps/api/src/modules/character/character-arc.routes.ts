@@ -1,7 +1,13 @@
 import type { Hono } from 'hono'
+import { httpCommandOptions } from '../../shared/http/command-options'
 import { fail, success } from '../../shared/http/responses'
 import { errorMessage } from '../../shared/utils'
 import { CharacterArcService } from './character-arc.service'
+import {
+  CORRECT_CHARACTER_ARC_EVENT_COMMAND,
+  RECORD_CHARACTER_ARC_EVENT_COMMAND,
+  REMOVE_CHARACTER_ARC_EVENT_COMMAND,
+} from './character.eventing'
 
 export function registerCharacterArcRoutes(app: Hono) {
   app.get('/api/projects/:projectId/character-arc/:characterId', async (c) => {
@@ -42,7 +48,7 @@ export function registerCharacterArcRoutes(app: Hono) {
         relationshipImpact: body.relationshipImpact,
         evidence: body.evidence,
         sourceType: body.sourceType,
-      })
+      }, httpCommandOptions(c, RECORD_CHARACTER_ARC_EVENT_COMMAND, projectId, body.characterId))
       return c.json(success(row), 201)
     }
     catch (error: unknown) {
@@ -64,7 +70,7 @@ export function registerCharacterArcRoutes(app: Hono) {
         motivationChange: body.motivationChange,
         relationshipImpact: body.relationshipImpact,
         evidence: body.evidence,
-      })
+      }, httpCommandOptions(c, CORRECT_CHARACTER_ARC_EVENT_COMMAND, projectId, id))
       if (!row)
         return c.json(fail('弧光事件不存在'), 404)
       return c.json(success(row))
@@ -78,7 +84,11 @@ export function registerCharacterArcRoutes(app: Hono) {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
     try {
-      const row = await CharacterArcService.deleteEvent(projectId, id)
+      const row = await CharacterArcService.deleteEvent(
+        projectId,
+        id,
+        httpCommandOptions(c, REMOVE_CHARACTER_ARC_EVENT_COMMAND, projectId, id),
+      )
       if (!row)
         return c.json(fail('弧光事件不存在'), 404)
       return c.json(success(row, '弧光事件已删除'))
