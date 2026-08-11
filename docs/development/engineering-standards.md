@@ -137,7 +137,7 @@ interface ApiResponse<T> {
 
 规则：
 
-1. 修改 `apps/api/src/db/schema.ts` 后必须生成 migration。
+1. 修改 `apps/api/src/db/schema/*` 后必须生成 migration。
 2. migration 必须能在新环境完整建库。
 3. seed 数据必须覆盖关键功能入口：项目、人物、卷章、关系、冲突、版本、知识库、质量报告。
 4. 不允许出现 schema 已有字段但 migration 缺列的状态。
@@ -222,4 +222,3 @@ scripts/archive/
 5. 是否绕过设计系统组件
 6. 是否引入重复 store、重复 route、重复 API client
 7. 是否缺少必要测试
-

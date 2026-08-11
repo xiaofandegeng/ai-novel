@@ -1,13 +1,13 @@
 # AI 小说创作工作台
 
-面向长篇小说作者的创作辅助系统，帮助作者完成从创意、设定、人物、关系、大纲、正文、修订到质量评估的完整创作流程。
+面向长篇小说作者的自动写作工作台。当前产品以单项目驾驶舱为中心，把章节生成、叙事状态、变更写回和健康检查汇总在一条可观察流水线中。
 
 ## 技术栈
 
 | 层级     | 技术                               |
 | -------- | ---------------------------------- |
 | 前端     | Vue 3 + TypeScript + Vite + UnoCSS |
-| 状态管理 | Pinia + VueUse                     |
+| 状态管理 | Pinia                              |
 | 图标     | Lucide Icons                       |
 | 后端     | Hono + TypeScript                  |
 | ORM      | Drizzle ORM                        |
@@ -29,12 +29,9 @@ cp .env.example .env
 # 安装依赖
 pnpm install
 
-# 生成并应用数据库迁移
-pnpm db:generate
+# 初始化 pgvector 并应用数据库迁移
+pnpm db:init-vector
 pnpm db:migrate
-
-# 如需迁移旧 SQLite 本地数据
-pnpm --filter @ai-novel/api db:migrate:sqlite
 
 # 启动开发服务器
 pnpm dev
@@ -54,25 +51,25 @@ ai-novel/
 │   └── api/              # Hono 后端
 ├── packages/
 │   ├── shared/           # 共享类型定义
-│   └── ui/               # 设计系统组件（Phase 1）
+│   └── ui/               # 设计系统组件
 ├── docs/                 # 产品设计、UI 规格、开发文档
 └── pnpm-workspace.yaml   # Monorepo 配置
 ```
 
 ## 开发命令
 
-| 命令                                            | 说明                                |
-| ----------------------------------------------- | ----------------------------------- |
-| `pnpm dev`                                      | 同时启动前后端                      |
-| `pnpm dev:web`                                  | 仅启动前端                          |
-| `pnpm dev:api`                                  | 仅启动后端                          |
-| `pnpm build`                                    | 构建所有包                          |
-| `pnpm lint`                                     | 检查代码规范                        |
-| `pnpm lint:fix`                                 | 自动修复代码规范                    |
-| `pnpm db:generate`                              | 生成数据库迁移文件                  |
-| `pnpm db:migrate`                               | 应用数据库迁移                      |
-| `pnpm db:studio`                                | 打开 Drizzle Studio                 |
-| `pnpm --filter @ai-novel/api db:migrate:sqlite` | 从旧 SQLite 数据库迁移到 PostgreSQL |
+| 命令                  | 说明                            |
+| --------------------- | ------------------------------- |
+| `pnpm dev`            | 同时启动前后端                  |
+| `pnpm dev:web`        | 仅启动前端                      |
+| `pnpm dev:api`        | 仅启动后端                      |
+| `pnpm build`          | 构建所有包                      |
+| `pnpm lint`           | 检查代码规范                    |
+| `pnpm lint:fix`       | 自动修复代码规范                |
+| `pnpm db:init-vector` | 初始化 PostgreSQL pgvector 扩展 |
+| `pnpm db:generate`    | 生成数据库迁移文件              |
+| `pnpm db:migrate`     | 应用数据库迁移                  |
+| `pnpm db:studio`      | 打开 Drizzle Studio             |
 
 ## 代码规范
 
@@ -82,6 +79,5 @@ ai-novel/
 
 - [产品设计文档](docs/product/ai-novel-workbench-product-design.md)
 - [UI 设计规格](docs/design/ai-novel-workbench-ui-design-spec.md)
-- [开发顺序](docs/development/ai-agent-development-sequence.md)
+- [当前架构](docs/development/current-architecture.md)
 - [本地 PostgreSQL 与 AI 配置说明](docs/development/local-postgresql-and-ai-config.md)
-- [功能完整度审计记录](docs/development/feature-completeness-audit-2026-04-29.md)

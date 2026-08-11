@@ -11,9 +11,8 @@ Before editing this repository, read:
 2. `docs/development/engineering-standards.md`
 3. `docs/development/ui-implementation-rules.md`
 4. `docs/development/ai-collaboration-rules.md`
-5. `docs/development/architecture-refactor-plan-2026-04-29.md`
+5. `docs/development/current-architecture.md`
 
-This is an AI-assisted long-form novel writing workbench, not a generic chatbot. AI output must be reviewable and controlled by the author.
+This is an AI-assisted long-form novel writing workbench centered on an automatic-writing cockpit, not a generic chatbot. AI writes only inside an explicitly started run and must use the change-set and risk-decision pipeline.
 
 Always keep the repository buildable. Run `pnpm check` before claiming completion.
-

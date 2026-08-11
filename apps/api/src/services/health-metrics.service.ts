@@ -131,7 +131,7 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
       title: `第 ${chapter.chapterNumber} 章缺少场景规划`,
       message: `《${chapter.title}》尚未拆分场景，建议先完成场景大纲。`,
       actionLabel: '去规划场景',
-      targetRoute: `/project/${projectId}/outline?chapter=${chapter.chapterId}`,
+      targetRoute: `/project/${projectId}?chapter=${chapter.chapterId}&tab=outline`,
     })
   }
 
@@ -178,7 +178,6 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
       title: '知识库待处理',
       message: `有 ${pendingSources.length} 个知识源尚未完成 AI 分析和向量化。`,
       actionLabel: '同步知识库',
-      targetRoute: `/project/${projectId}/knowledge`,
     })
   }
 
@@ -195,7 +194,6 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
       title: '结构化更新待处理',
       message: `有 ${pendingSuggestions.length} 条 AI 抽取结果尚未确认，角色、关系、伏笔、事实图谱可能没有同步到上下文。`,
       actionLabel: '去确认建议',
-      targetRoute: `/project/${projectId}/suggestions`,
       suggestions: ['优先处理事实、人物关系和伏笔类建议', '忽略无效建议，避免处理队列堆积'],
     })
   }
@@ -221,9 +219,9 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
       title: '人物关系网断裂',
       message: `${isolatedCharacters.length} 个非路人角色尚未接入人物关系网，后续 AI 写作可能遗漏其剧情功能。`,
       actionLabel: '补全关系',
-      targetRoute: `/project/${projectId}/relationships`,
+      targetRoute: `/project/${projectId}?tab=relationship`,
       evidence: isolatedCharacters.slice(0, 5).map(c => c.name),
-      suggestions: ['在角色页保存角色资料以自动生成关系候选', '在人物关系页运行关系推导并确认建议'],
+      suggestions: ['检查驾驶舱人物状态中缺失的角色职责', '在关系动态面板核对自动推导结果'],
     })
   }
 
@@ -246,7 +244,6 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
       title: '待审查变更集',
       message: `有 ${pendingChangeSets.length} 个章节变更集正在等待您的审查和应用。`,
       actionLabel: '查看变更集',
-      targetRoute: `/project/${projectId}/writing`,
     })
   }
 
@@ -258,7 +255,6 @@ export async function getProjectHealthMetrics(projectId: string): Promise<Projec
       title: '变更集应用失败',
       message: `有 ${failedChangeSets.length} 个变更集在应用时遇到错误或被系统阻断。`,
       actionLabel: '处理异常',
-      targetRoute: `/project/${projectId}/writing`,
     })
   }
 
@@ -332,7 +328,7 @@ export function computeForeshadowingRisk(
       title: '伏笔可能被遗忘',
       message: `有 ${forgottenForeshadowing.length} 个伏笔已过预定回收章节但仍未闭环。`,
       actionLabel: '检查伏笔',
-      targetRoute: `/project/${projectId}/foreshadowing`,
+      targetRoute: `/project/${projectId}?tab=foreshadowing`,
       evidence: forgottenForeshadowing.map(f => `伏笔: ${f.title}`),
       suggestions: ['建议在下一章安排回收情节', '如该线索已失效，请标记为“弃用”'],
     })
@@ -354,7 +350,7 @@ export function computeConflictStagnation(
       title: '叙事张力停滞',
       message: '连续 3 个章节的冲突强度偏低，主线情节可能陷入沉闷。',
       actionLabel: '加强冲突',
-      targetRoute: `/project/${projectId}/conflicts`,
+      targetRoute: `/project/${projectId}?tab=conflict`,
       suggestions: ['增加反派阻碍', '引入突发意外事件', '提升角色情感压力'],
     })
   }
@@ -376,7 +372,7 @@ export function computeCharacterOOC(
       title: '人物一致性异常 (OOC)',
       message: '质量评估中多次提到角色行为与设定不符。',
       actionLabel: '查看质量报告',
-      targetRoute: `/project/${projectId}/quality`,
+      targetRoute: `/project/${projectId}?tab=character`,
       evidence: oocReports.slice(0, 3).map(r => `章节 ${allChapters.find(c => c.id === r.chapterId)?.chapterNumber}: ${r.issues?.substring(0, 50)}...`),
       suggestions: ['重新查阅人物设定集', '在下一章通过内心独白修正动机'],
     })
@@ -405,7 +401,7 @@ export function computeThemeDrift(
       title: '主题或主线可能偏离',
       message: '质量评估中出现主题偏离、主线偏离或偏题提示。',
       actionLabel: '查看质量评估',
-      targetRoute: `/project/${projectId}/quality`,
+      targetRoute: `/project/${projectId}?tab=plot`,
       suggestions: ['回到故事设定集检查主题与核心矛盾', '下一章生成前先补充章节目标和关键事件'],
     })
   }
@@ -428,7 +424,7 @@ export function computePacingRisk(
       title: '章节节奏评分偏低',
       message: `有 ${weakRhythmReports.length} 份质量报告提示节奏不足，可能存在拖沓、跳跃或高潮间隔过长。`,
       actionLabel: '查看质量评估',
-      targetRoute: `/project/${projectId}/quality`,
+      targetRoute: `/project/${projectId}?tab=plot`,
       suggestions: ['优先检查低分章节的场景目标与转折点', '用场景拆分确认每一场都有冲突、变化和出口钩子'],
     })
   }
@@ -446,7 +442,7 @@ export function computePacingRisk(
       title: '场景篇幅偏离目标',
       message: `${severeDeviations.length} 个场景实际篇幅与目标相差超过 50%，可能影响阅读节奏。`,
       actionLabel: '调整场景',
-      targetRoute: `/project/${projectId}/outline`,
+      targetRoute: `/project/${projectId}?tab=plot`,
       evidence: severeDeviations.slice(0, 5).map(s => `场景 ${s.sceneNumber}${s.title ? `《${s.title}》` : ''}: ${s.actual}/${s.target} 字`),
       suggestions: ['过长场景拆成行动、反应和转折三段', '过短场景补足目标、阻碍、选择和后果'],
     })
@@ -474,7 +470,7 @@ export function computeTensionRisk(
       title: '近期章节张力不足',
       message: '最近三章的冲突、钩子和情绪密度偏低，长篇阅读推进感可能下降。',
       actionLabel: '调整大纲节拍',
-      targetRoute: `/project/${projectId}/outline`,
+      targetRoute: `/project/${projectId}?tab=plot`,
       evidence: recent.map(item => `第 ${item.chapter} 章张力 ${item.tension}/100`),
       suggestions: ['给下一章补一个明确阻碍或反转', '检查场景节拍是否连续过渡，避免多场低冲突铺垫连在一起'],
     })
@@ -503,7 +499,7 @@ export function computeStyleDrift(
       title: '文风显著漂移',
       message: '近期章节的平均句长与开篇风格差异较大，可能影响阅读连贯性。',
       actionLabel: '查看文风分析',
-      targetRoute: `/project/${projectId}/quality`,
+      targetRoute: `/project/${projectId}?tab=health`,
       suggestions: ['查阅写作人格设定', '使用“文风对齐”功能校准'],
     })
   }

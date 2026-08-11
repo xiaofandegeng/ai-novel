@@ -27,7 +27,6 @@ catalogs:
     '@unocss/preset-icons': ^66.1.2
     '@unocss/preset-wind': ^66.1.2
     '@vitejs/plugin-vue': ^5.2.4
-    '@vueuse/core': ^13.2.0
     lucide-vue-next: ^0.511.0
     pinia: ^3.0.2
     unocss: ^66.1.2

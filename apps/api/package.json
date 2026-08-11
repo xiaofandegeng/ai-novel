@@ -6,11 +6,10 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "db:generate": "drizzle-kit generate",
+    "db:init-vector": "tsx src/scripts/init-vector.ts",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/scripts/seed.ts",
-    "db:migrate:sqlite": "tsx src/scripts/migrate-sqlite-to-postgres.ts",
-    "smoke:writing-loop": "tsx src/scripts/smoke-writing-loop.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

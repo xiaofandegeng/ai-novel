@@ -12,15 +12,11 @@ Before writing code, read these files in order:
 4. `docs/development/ai-collaboration-rules.md`
 5. `docs/product/ai-novel-workbench-product-design.md`
 6. `docs/design/ai-novel-workbench-ui-design-spec.md`
-7. `docs/development/ai-agent-development-sequence.md`
-8. `docs/development/remediation-plan-2026-04-28.md`
-9. `docs/development/architecture-refactor-plan-2026-04-29.md`
-
-If remediation or architecture documents describe failing checks, fix those issues before adding new features.
+7. `docs/development/current-architecture.md`
 
 ## Project Summary
 
-This repository is an AI-assisted long-form novel writing workbench. It helps authors manage projects, story bibles, characters, relationships, conflicts, outlines, chapters, AI writing suggestions, reference-novel knowledge, quality reports, and version history.
+This repository is an AI-assisted long-form novel writing workbench. Its current frontend is a single automatic-writing cockpit plus project settings; story bibles, characters, relationships, conflicts, outlines, knowledge, health reports, and version history remain backend domains and cockpit context.
 
 The product is not a generic AI chat app. It is a structured creative writing system where AI output must remain reviewable and controlled by the author.
 
@@ -51,7 +47,7 @@ Do not put build artifacts, temporary scripts, generated experiments, or one-off
 1. Keep the app buildable at every stage.
 2. Run verification before claiming completion.
 3. Do not bypass the design system.
-4. Do not let AI-generated content directly overwrite user content.
+4. AI-generated content may only be written within an explicitly started run and must pass through change-set, risk-decision, repair, or isolation handling.
 5. Do not use native `alert`, `confirm`, or `prompt` in product UI.
 6. Do not hardcode `http://localhost:3000` in frontend source; use `/api` and the Vite proxy.
 7. Do not add database schema fields without matching migrations.

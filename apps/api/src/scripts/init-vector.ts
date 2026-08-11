@@ -19,12 +19,12 @@ async function main() {
     await sql`CREATE EXTENSION IF NOT EXISTS vector;`
     console.log('pgvector extension enabled.')
   }
-  catch (err) {
-    console.error('Failed to enable pgvector:', err)
-  }
   finally {
     await sql.end()
   }
 }
 
-main()
+main().catch((error) => {
+  console.error('Failed to enable pgvector:', error)
+  process.exitCode = 1
+})
