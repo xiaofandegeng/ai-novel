@@ -5,6 +5,7 @@ import { db, sql } from '../db'
 import { projectionCheckpoints } from '../db/schema'
 import { resetTestDatabase } from '../test/database'
 import { DuplicateProjectionError, UnknownProjectionError } from './errors'
+import { EventRegistry } from './event-registry'
 import { EventStore } from './event-store'
 import { ProjectionRegistry, ProjectionRunner } from './projection-runner'
 
@@ -44,6 +45,39 @@ describe('projectionRegistry', () => {
     ))
 
     expect(seen).toEqual([1, 3])
+  })
+
+  it('upcasts stored events before synchronous projection', async () => {
+    const events = new EventRegistry()
+    events.register({
+      eventType: 'KernelCreated',
+      currentSchemaVersion: 2,
+      upcasters: {
+        1: payload => ({ ...(payload as Record<string, unknown>), current: true }),
+      },
+      validate: (payload) => {
+        const value = payload as { current?: unknown }
+        if (value.current !== true)
+          throw new Error('current marker missing')
+        return { current: true }
+      },
+    })
+    const registry = new ProjectionRegistry(events)
+    const seen: number[] = []
+    registry.register({
+      name: 'kernel-sync-upcast',
+      mode: 'sync',
+      handles: ['KernelCreated'],
+      project: async (_transaction, event) => {
+        expect(event.payload).toEqual({ current: true })
+        seen.push(event.schemaVersion)
+      },
+    })
+    const stored = await appendEvents(store, [pending('event-sync-upcast', 'KernelCreated')])
+
+    await store.withTransaction(session => registry.projectSync(session.transaction, stored))
+
+    expect(seen).toEqual([2])
   })
 
   it('rejects duplicate projection names', () => {
@@ -148,6 +182,42 @@ describe('projectionRunner', () => {
       status: 'idle',
       lastError: null,
     })
+  })
+
+  it('upcasts stored events before asynchronous projection', async () => {
+    const events = new EventRegistry()
+    events.register({
+      eventType: 'KernelProjectionRecorded',
+      currentSchemaVersion: 2,
+      upcasters: {
+        1: payload => ({ ...(payload as Record<string, unknown>), current: true }),
+      },
+      validate: (payload) => {
+        const value = payload as { current?: unknown }
+        if (value.current !== true)
+          throw new Error('current marker missing')
+        return { current: true }
+      },
+    })
+    const registry = new ProjectionRegistry(events)
+    const seen: number[] = []
+    registry.register({
+      name: 'kernel-upcast-projection',
+      mode: 'async',
+      handles: ['KernelProjectionRecorded'],
+      project: async (_transaction, event) => {
+        expect(event.payload).toEqual({ current: true })
+        seen.push(event.schemaVersion)
+      },
+    })
+    await appendEvents(store, [
+      pending('event-upcast-1', 'KernelProjectionRecorded'),
+      pending('event-upcast-2', 'KernelProjectionRecorded'),
+    ])
+
+    await new ProjectionRunner(registry, store).runBatch('kernel-upcast-projection', 10)
+
+    expect(seen).toEqual([2, 2])
   })
 })
 

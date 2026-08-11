@@ -1,4 +1,4 @@
-import type { JsonObject } from './event-types'
+import type { JsonObject, PendingEvent, StoredEvent } from './event-types'
 import {
   DuplicateEventTypeError,
   InvalidEventPayloadError,
@@ -45,6 +45,22 @@ export class EventRegistry {
     return this.definitions.has(eventType)
   }
 
+  normalizePending(event: PendingEvent): PendingEvent {
+    return {
+      ...event,
+      schemaVersion: this.currentSchemaVersion(event.eventType),
+      payload: this.decode(event.eventType, event.schemaVersion, event.payload),
+    }
+  }
+
+  normalizeStored(event: StoredEvent): StoredEvent {
+    return {
+      ...event,
+      schemaVersion: this.currentSchemaVersion(event.eventType),
+      payload: this.decode(event.eventType, event.schemaVersion, event.payload),
+    }
+  }
+
   decode(eventType: string, schemaVersion: number, payload: unknown): JsonObject {
     const definition = this.definitions.get(eventType)
     if (!definition)
@@ -70,5 +86,12 @@ export class EventRegistry {
         throw error
       throw new InvalidEventPayloadError(eventType, version, error)
     }
+  }
+
+  private currentSchemaVersion(eventType: string): number {
+    const definition = this.definitions.get(eventType)
+    if (!definition)
+      throw new UnknownEventTypeError(eventType)
+    return definition.currentSchemaVersion
   }
 }

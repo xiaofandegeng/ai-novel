@@ -6,6 +6,7 @@ import { db, sql } from '../db'
 import { projectionCheckpoints } from '../db/schema'
 import { resetTestDatabase } from '../test/database'
 import { EventStore } from './event-store'
+import { EventRegistry } from './event-registry'
 import { ProjectionRegistry, ProjectionRunner } from './projection-runner'
 import { ProjectionReplay } from './replay'
 
@@ -113,6 +114,41 @@ describe('projectionReplay', () => {
     ])
   })
 
+  it('upcasts stored events before sending them to a replay projector', async () => {
+    const events = new EventRegistry()
+    events.register({
+      eventType: 'KernelReplayRecorded',
+      currentSchemaVersion: 2,
+      upcasters: {
+        1: payload => ({
+          ...(payload as Record<string, unknown>),
+          label: 'upcasted',
+        }),
+      },
+      validate: (payload) => {
+        const value = payload as { eventId?: unknown, label?: unknown }
+        if (typeof value.eventId !== 'string' || typeof value.label !== 'string')
+          throw new Error('invalid replay event')
+        return { eventId: value.eventId, label: value.label }
+      },
+    })
+    await appendEvents()
+    const seen: Array<{ label: unknown, schemaVersion: number }> = []
+    const definition = replayDefinition()
+    definition.project = async (_transaction, event) => {
+      seen.push({ label: event.payload.label, schemaVersion: event.schemaVersion })
+    }
+    const registry = registryWith(definition, events)
+
+    await new ProjectionReplay(registry, store).replayProjection('kernel-replay')
+
+    expect(seen).toEqual([
+      { label: 'upcasted', schemaVersion: 2 },
+      { label: 'upcasted', schemaVersion: 2 },
+      { label: 'upcasted', schemaVersion: 2 },
+    ])
+  })
+
   it('leaves a diagnostic checkpoint when replay fails', async () => {
     await appendEvents()
     await sql`
@@ -195,8 +231,11 @@ function replayDefinition(name = 'kernel-replay'): ProjectionDefinition {
   }
 }
 
-function registryWith(definition: ProjectionDefinition): ProjectionRegistry {
-  const registry = new ProjectionRegistry()
+function registryWith(
+  definition: ProjectionDefinition,
+  events?: EventRegistry,
+): ProjectionRegistry {
+  const registry = new ProjectionRegistry(events)
   registry.register(definition)
   return registry
 }

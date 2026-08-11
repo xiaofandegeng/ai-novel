@@ -6,6 +6,7 @@ import { commandReceipts, eventOutbox } from '../db/schema'
 import { resetTestDatabase } from '../test/database'
 import { CommandBus } from './command-bus'
 import { DomainCommandError, UnknownCommandTypeError } from './errors'
+import { EventRegistry } from './event-registry'
 import { EventStore } from './event-store'
 import { ProjectionRegistry } from './projection-runner'
 
@@ -175,6 +176,37 @@ describe('commandBus', () => {
 
     await expect(bus.dispatch(command())).rejects.toMatchObject({ code: 'PROJECT_SCOPE_MISMATCH' })
     await expect(store.loadStream(stream)).resolves.toHaveLength(0)
+  })
+
+  it('validates pending events before appending them', async () => {
+    const events = new EventRegistry()
+    events.register({
+      eventType: 'KernelThingCreated',
+      currentSchemaVersion: 1,
+      upcasters: {},
+      validate: (payload) => {
+        const value = payload as { id?: unknown }
+        if (typeof value?.id !== 'string')
+          throw new Error('id must be a string')
+        return { id: value.id }
+      },
+    })
+    const bus = new CommandBus(store, new ProjectionRegistry(events), events)
+    bus.register('CreateKernelThing', async () => ({
+      streams: [{
+        stream,
+        expectedVersion: 0,
+        events: [{
+          ...pending('event-command-invalid', 'KernelThingCreated'),
+          payload: { id: 42 },
+        }],
+      }],
+      result: { id: 'thing-1' },
+    }))
+
+    await expect(bus.dispatch(command())).rejects.toThrow('invalid payload')
+    await expect(store.loadStream(stream)).resolves.toHaveLength(0)
+    await expect(readReceipt('command-1')).resolves.toBeUndefined()
   })
 
   it('rejects an unregistered command type', async () => {

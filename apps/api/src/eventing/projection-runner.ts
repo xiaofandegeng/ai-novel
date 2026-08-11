@@ -1,4 +1,5 @@
 import type { EventingTransaction, EventStore } from './event-store'
+import type { EventRegistry } from './event-registry'
 import type { StoredEvent } from './event-types'
 import { asc, eq } from 'drizzle-orm'
 import { db } from '../db'
@@ -16,6 +17,8 @@ export interface ProjectionDefinition {
 
 export class ProjectionRegistry {
   private readonly definitions = new Map<string, ProjectionDefinition>()
+
+  constructor(private readonly events?: EventRegistry) {}
 
   register(definition: ProjectionDefinition): void {
     if (this.definitions.has(definition.name))
@@ -39,11 +42,16 @@ export class ProjectionRegistry {
     const definitions = this.list('sync')
     const orderedEvents = [...events].sort((left, right) => left.globalPosition - right.globalPosition)
     for (const event of orderedEvents) {
+      const normalized = this.normalizeEvent(event)
       for (const definition of definitions) {
-        if (definition.handles.includes(event.eventType))
-          await definition.project(transaction, event)
+        if (definition.handles.includes(normalized.eventType))
+          await definition.project(transaction, normalized)
       }
     }
+  }
+
+  normalizeEvent(event: StoredEvent): StoredEvent {
+    return this.events?.normalizeStored(event) ?? event
   }
 }
 
@@ -79,8 +87,9 @@ export class ProjectionRunner {
         })
 
         for (const event of events) {
-          if (definition.handles.includes(event.eventType))
-            await definition.project(session.transaction, event)
+          const normalized = this.registry.normalizeEvent(event)
+          if (definition.handles.includes(normalized.eventType))
+            await definition.project(session.transaction, normalized)
         }
 
         const finalPosition = events.at(-1)?.globalPosition ?? lastPosition

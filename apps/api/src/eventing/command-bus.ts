@@ -1,4 +1,5 @@
 import type { EventStore, EventStoreSession } from './event-store'
+import type { EventRegistry } from './event-registry'
 import type { CommandDecision, CommandEnvelope, JsonObject } from './event-types'
 import type { ProjectionRegistry } from './projection-runner'
 import { eq } from 'drizzle-orm'
@@ -27,6 +28,7 @@ export class CommandBus {
   constructor(
     private readonly store: EventStore,
     private readonly projections: ProjectionRegistry,
+    private readonly events?: EventRegistry,
   ) {}
 
   register<TPayload extends JsonObject, TResult extends JsonObject>(
@@ -61,12 +63,18 @@ export class CommandBus {
 
         const decision = await handler(command, { session })
         assertProjectScope(command, decision)
+        const streams = this.events
+          ? decision.streams.map(append => ({
+              ...append,
+              events: append.events.map(event => this.events!.normalizePending(event)),
+            }))
+          : decision.streams
 
         const events = await session.appendBatch({
           commandId: command.commandId,
           correlationId: command.correlationId,
           ...(command.causationId ? { causationId: command.causationId } : {}),
-          streams: decision.streams,
+          streams,
         })
         await this.projections.projectSync(session.transaction, events)
         await session.enqueueOutbox(decision.outbox ?? [])

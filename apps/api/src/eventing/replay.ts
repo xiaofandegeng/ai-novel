@@ -52,9 +52,10 @@ export class ProjectionReplay {
             lastGlobalPosition = event.globalPosition
             if (options.projectId && event.projectId !== options.projectId)
               continue
-            if (!definition.handles.includes(event.eventType))
+            const normalized = this.registry.normalizeEvent(event)
+            if (!definition.handles.includes(normalized.eventType))
               continue
-            await definition.project(session.transaction, event)
+            await definition.project(session.transaction, normalized)
             processedEvents += 1
           }
 

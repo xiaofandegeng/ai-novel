@@ -11,8 +11,8 @@ import { registerProjectEventing } from './modules/project/project.eventing'
 
 export const eventStore = new EventStore()
 export const domainEventRegistry = new EventRegistry()
-export const projectionRegistry = new ProjectionRegistry()
-export const commandBus = new CommandBus(eventStore, projectionRegistry)
+export const projectionRegistry = new ProjectionRegistry(domainEventRegistry)
+export const commandBus = new CommandBus(eventStore, projectionRegistry, domainEventRegistry)
 export const aggregateRepository = new AggregateRepository(eventStore, domainEventRegistry)
 
 registerProjectEventing({
