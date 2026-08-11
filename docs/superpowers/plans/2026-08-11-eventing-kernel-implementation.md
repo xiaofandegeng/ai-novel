@@ -59,7 +59,7 @@
 - Produces: `EventConcurrencyError`, `DuplicateEventError`, `UnknownEventTypeError`, `InvalidEventPayloadError`, `UnknownCommandTypeError`, `DomainCommandError`.
 - Produces: `EventRegistry.register()`, `EventRegistry.decode()` and `EventRegistry.has()`.
 
-- [ ] **Step 1: Write the failing registry tests**
+- [x] **Step 1: Write the failing registry tests**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -98,12 +98,12 @@ describe('EventRegistry', () => {
 })
 ```
 
-- [ ] **Step 2: Run the test and observe the missing-module failure**
+- [x] **Step 2: Run the test and observe the missing-module failure**
 
 Run: `pnpm --filter @ai-novel/api test -- src/eventing/event-registry.test.ts`  
 Expected: FAIL because `event-registry.ts` and `errors.ts` do not exist.
 
-- [ ] **Step 3: Implement exact eventing contracts**
+- [x] **Step 3: Implement exact eventing contracts**
 
 ```ts
 export type JsonObject = Record<string, unknown>
@@ -180,7 +180,7 @@ export interface AggregateSnapshot<TState extends JsonObject = JsonObject> exten
 
 Keep unvalidated event payloads `unknown` until a registry validator narrows them; do not introduce `any`.
 
-- [ ] **Step 4: Implement typed errors and the registry**
+- [x] **Step 4: Implement typed errors and the registry**
 
 ```ts
 export interface EventDefinition<TPayload extends JsonObject> {
@@ -201,7 +201,7 @@ export class EventRegistry {
 
 `register` rejects duplicate event types. `decode` rejects future versions, requires every intermediate upcaster, and validates the final payload.
 
-- [ ] **Step 5: Run the focused tests and typecheck**
+- [x] **Step 5: Run the focused tests and typecheck**
 
 Run: `pnpm --filter @ai-novel/api test -- src/eventing/event-registry.test.ts`  
 Expected: 3 tests PASS.
@@ -209,7 +209,7 @@ Expected: 3 tests PASS.
 Run: `pnpm --filter @ai-novel/api typecheck`  
 Expected: PASS.
 
-- [ ] **Step 6: Commit the contracts**
+- [x] **Step 6: Commit the contracts**
 
 ```bash
 git add apps/api/src/eventing
