@@ -16,10 +16,10 @@
 - Modify: `apps/api/src/eventing/aggregate-repository.ts`
 - Modify: `apps/api/src/eventing/aggregate-repository.test.ts`
 
-- [ ] Add a failing test proving a command handler can load an aggregate through its existing `EventStoreSession`.
-- [ ] Add `AggregateRepository.loadInSession()` and make `load()` delegate to it.
-- [ ] Verify snapshots and event decoding keep existing behavior.
-- [ ] Commit: `refactor(api): support session-aware aggregate loading`.
+- [x] Add a failing test proving a command handler can load an aggregate through its existing `EventStoreSession`.
+- [x] Add `AggregateRepository.loadInSession()` and make `load()` delegate to it.
+- [x] Verify snapshots and event decoding keep existing behavior.
+- [x] Commit: `refactor(api): support session-aware aggregate loading`.
 
 ## Task 2: Project aggregate, events, commands, and projector
 

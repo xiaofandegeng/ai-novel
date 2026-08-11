@@ -142,6 +142,15 @@ describe('aggregateRepository', () => {
       snapshotSchemaVersion: 0.5,
     }, stream)).rejects.toThrow('Snapshot schema version')
   })
+
+  it('loads through an existing event store session without opening another transaction', async () => {
+    const repository = new AggregateRepository(store, countRegistry())
+    await append([pending('event-session-1', 'KernelCounted', { delta: 1 })])
+
+    await expect(store.withTransaction(session => (
+      repository.loadInSession(session, countDefinition(), stream)
+    ))).resolves.toEqual({ state: { count: 1 }, version: 1 })
+  })
 })
 
 function titleDefinition(): AggregateDefinition<JsonObject> {

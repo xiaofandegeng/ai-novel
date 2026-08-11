@@ -1,5 +1,5 @@
 import type { EventRegistry } from './event-registry'
-import type { EventStore } from './event-store'
+import type { EventStore, EventStoreSession } from './event-store'
 import type { JsonObject, StoredEvent, StreamRef } from './event-types'
 import { InvalidSnapshotError } from './errors'
 
@@ -26,50 +26,56 @@ export class AggregateRepository {
     definition: AggregateDefinition<TState>,
     stream: StreamRef,
   ): Promise<LoadedAggregate<TState>> {
+    return this.store.withTransaction(session => this.loadInSession(session, definition, stream))
+  }
+
+  async loadInSession<TState extends JsonObject>(
+    session: EventStoreSession,
+    definition: AggregateDefinition<TState>,
+    stream: StreamRef,
+  ): Promise<LoadedAggregate<TState>> {
     assertDefinition(definition, stream)
 
-    return this.store.withTransaction(async (session) => {
-      const snapshot = await session.getSnapshot(stream)
-      if (snapshot && snapshot.schemaVersion !== definition.snapshotSchemaVersion) {
-        throw new InvalidSnapshotError(
-          stream,
-          definition.snapshotSchemaVersion,
-          snapshot.schemaVersion,
-        )
+    const snapshot = await session.getSnapshot(stream)
+    if (snapshot && snapshot.schemaVersion !== definition.snapshotSchemaVersion) {
+      throw new InvalidSnapshotError(
+        stream,
+        definition.snapshotSchemaVersion,
+        snapshot.schemaVersion,
+      )
+    }
+
+    let state = snapshot
+      ? cloneJson(snapshot.state) as TState
+      : definition.initialState()
+    let version = snapshot?.aggregateVersion ?? 0
+    const snapshotVersion = version
+    const storedEvents = await session.loadStream(stream, version)
+
+    for (const storedEvent of storedEvents) {
+      const event: StoredEvent = {
+        ...storedEvent,
+        payload: this.events.decode(
+          storedEvent.eventType,
+          storedEvent.schemaVersion,
+          storedEvent.payload,
+        ),
       }
+      state = definition.evolve(state, event)
+      version = event.aggregateVersion
+    }
 
-      let state = snapshot
-        ? cloneJson(snapshot.state) as TState
-        : definition.initialState()
-      let version = snapshot?.aggregateVersion ?? 0
-      const snapshotVersion = version
-      const storedEvents = await session.loadStream(stream, version)
+    if (storedEvents.length > 0 && version - snapshotVersion >= definition.snapshotEvery) {
+      await session.putSnapshot({
+        ...stream,
+        aggregateVersion: version,
+        schemaVersion: definition.snapshotSchemaVersion,
+        state: cloneJson(state),
+        createdAt: new Date().toISOString(),
+      })
+    }
 
-      for (const storedEvent of storedEvents) {
-        const event: StoredEvent = {
-          ...storedEvent,
-          payload: this.events.decode(
-            storedEvent.eventType,
-            storedEvent.schemaVersion,
-            storedEvent.payload,
-          ),
-        }
-        state = definition.evolve(state, event)
-        version = event.aggregateVersion
-      }
-
-      if (storedEvents.length > 0 && version - snapshotVersion >= definition.snapshotEvery) {
-        await session.putSnapshot({
-          ...stream,
-          aggregateVersion: version,
-          schemaVersion: definition.snapshotSchemaVersion,
-          state: cloneJson(state),
-          createdAt: new Date().toISOString(),
-        })
-      }
-
-      return { state, version }
-    })
+    return { state, version }
   }
 }
 
