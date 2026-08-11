@@ -5,7 +5,7 @@ import type {
   StoredEvent,
   StreamRef,
 } from './event-types'
-import { and, asc, eq, gt } from 'drizzle-orm'
+import { and, asc, eq, gt, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import {
   aggregateSnapshots,
@@ -35,11 +35,15 @@ export class EventStore {
   }
 
   async loadStream(stream: StreamRef, fromVersion = 0): Promise<StoredEvent[]> {
+    const scope = stream.projectId
+      ? eq(domainEvents.projectId, stream.projectId)
+      : isNull(domainEvents.projectId)
     const rows = await db.select()
       .from(domainEvents)
       .where(and(
         eq(domainEvents.aggregateType, stream.aggregateType),
         eq(domainEvents.aggregateId, stream.aggregateId),
+        scope,
         gt(domainEvents.aggregateVersion, fromVersion),
       ))
       .orderBy(asc(domainEvents.aggregateVersion))
@@ -60,11 +64,15 @@ function createSession(transaction: EventingTransaction): EventStoreSession {
   return {
     transaction,
     async loadStream(stream, fromVersion = 0) {
+      const scope = stream.projectId
+        ? eq(domainEvents.projectId, stream.projectId)
+        : isNull(domainEvents.projectId)
       const rows = await transaction.select()
         .from(domainEvents)
         .where(and(
           eq(domainEvents.aggregateType, stream.aggregateType),
           eq(domainEvents.aggregateId, stream.aggregateId),
+          scope,
           gt(domainEvents.aggregateVersion, fromVersion),
         ))
         .orderBy(asc(domainEvents.aggregateVersion))
@@ -182,11 +190,15 @@ function createSession(transaction: EventingTransaction): EventStoreSession {
         .onConflictDoNothing()
     },
     async getSnapshot(stream) {
+      const scope = stream.projectId
+        ? eq(aggregateSnapshots.projectId, stream.projectId)
+        : isNull(aggregateSnapshots.projectId)
       const [snapshot] = await transaction.select()
         .from(aggregateSnapshots)
         .where(and(
           eq(aggregateSnapshots.aggregateType, stream.aggregateType),
           eq(aggregateSnapshots.aggregateId, stream.aggregateId),
+          scope,
         ))
         .limit(1)
       if (!snapshot)

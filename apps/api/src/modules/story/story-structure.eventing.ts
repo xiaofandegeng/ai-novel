@@ -83,7 +83,7 @@ export type ActSnapshot = JsonObject & {
   updatedAt: string
 }
 
-type StoryStructureState = JsonObject & {
+export type StoryStructureState = JsonObject & {
   projectId: string
   storyBible: StoryBibleSnapshot | null
   volumes: Record<string, VolumeSnapshot>

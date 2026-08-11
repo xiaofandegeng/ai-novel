@@ -8,6 +8,7 @@ import {
 import { registerProjectSettingsEventing } from './modules/ai/project-settings.eventing'
 import { registerPromptSettingsEventing } from './modules/ai/prompt-settings.eventing'
 import { registerProjectEventing } from './modules/project/project.eventing'
+import { registerChapterEventing } from './modules/story/chapter.eventing'
 import { registerStoryStructureEventing } from './modules/story/story-structure.eventing'
 
 export const eventStore = new EventStore()
@@ -35,6 +36,12 @@ registerPromptSettingsEventing({
   projections: projectionRegistry,
 })
 registerStoryStructureEventing({
+  aggregates: aggregateRepository,
+  commands: commandBus,
+  events: domainEventRegistry,
+  projections: projectionRegistry,
+})
+registerChapterEventing({
   aggregates: aggregateRepository,
   commands: commandBus,
   events: domainEventRegistry,

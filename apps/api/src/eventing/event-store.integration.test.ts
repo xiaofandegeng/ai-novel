@@ -38,6 +38,26 @@ describe('eventStore', () => {
     ])
   })
 
+  it('does not load events or snapshots through another project scope', async () => {
+    await appendInitialEvent(store)
+    await store.withTransaction(session => session.putSnapshot({
+      ...firstStream,
+      aggregateVersion: 1,
+      schemaVersion: 1,
+      state: { title: '项目一' },
+      createdAt: '2026-08-11T00:00:00.000Z',
+    }))
+    const foreignScope = { ...firstStream, projectId: 'project-2' }
+
+    await expect(store.loadStream(foreignScope)).resolves.toEqual([])
+    await expect(store.withTransaction(session => session.loadStream(foreignScope)))
+      .resolves
+      .toEqual([])
+    await expect(store.withTransaction(session => session.getSnapshot(foreignScope)))
+      .resolves
+      .toBeNull()
+  })
+
   it('rejects a stale expected version without appending an event', async () => {
     await appendInitialEvent(store)
 

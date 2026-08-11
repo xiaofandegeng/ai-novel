@@ -50,11 +50,11 @@
 - Modify: `apps/api/src/eventing-runtime.ts`
 - Modify: `apps/api/src/modules/story/chapters.service.ts`
 
-- [ ] Define `ChapterCreated`, `ChapterRenamed`, `OutlineChanged`, `ChapterDetailsChanged`, `ChapterContentApplied`, `ChapterCompleted`, and `ChapterDeleted` events.
-- [ ] Preserve the existing chapter response shape and validation behavior.
-- [ ] Validate target volume ownership from the StoryStructure aggregate/projection boundary.
-- [ ] Project chapter events synchronously into `chapters` and derive status transitions from aggregate state.
-- [ ] Commit: `feat(api): event source chapter lifecycle`.
+- [x] Define `ChapterCreated`, `ChapterRenamed`, `OutlineChanged`, `ChapterDetailsChanged`, `ChapterContentApplied`, `ChapterCompleted`, and `ChapterDeleted` events.
+- [x] Preserve the existing chapter response shape and validation behavior.
+- [x] Validate target volume ownership from the StoryStructure aggregate/projection boundary.
+- [x] Project chapter events synchronously into `chapters` and derive status transitions from aggregate state.
+- [x] Commit: `feat(api): event source chapter lifecycle`.
 
 ## Task 4: Scene planning and content application
 
