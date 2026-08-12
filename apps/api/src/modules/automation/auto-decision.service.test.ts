@@ -57,14 +57,6 @@ describe('automatic risk decisions', () => {
     }
   })
 
-  it('routes consistency warnings according to the selected strategy', async () => {
-    const warning = step('consistency_check', { overallStatus: 'warning', issues: ['时间线冲突'] })
-
-    await expect(decide('safe', warning)).resolves.toMatchObject({ action: 'repair', riskLevel: 'medium' })
-    await expect(decide('balanced', warning)).resolves.toMatchObject({ action: 'continue', riskLevel: 'medium' })
-    await expect(decide('fast', warning)).resolves.toMatchObject({ action: 'continue', riskLevel: 'medium' })
-  })
-
   it('isolates high-risk output in safe and fast modes but repairs it in balanced mode', async () => {
     const blocked = step('validate_plan', { status: 'blocked', issues: ['主线冲突'] })
 
@@ -82,6 +74,6 @@ describe('automatic risk decisions', () => {
 
   it('continues regular and malformed-output steps with a low-risk fallback', async () => {
     await expect(decide('safe', step('generate_plan', null))).resolves.toMatchObject({ action: 'continue', riskLevel: 'low' })
-    await expect(decide('safe', step('consistency_check', 'not-json'))).resolves.toMatchObject({ action: 'continue', riskLevel: 'none' })
+    await expect(decide('safe', step('evaluate_change_set', 'not-json'))).resolves.toMatchObject({ action: 'continue', riskLevel: 'none' })
   })
 })

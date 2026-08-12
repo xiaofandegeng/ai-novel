@@ -48,17 +48,6 @@ export async function decideNextAction(input: {
   let reason = '自动通过：风险较低'
 
   switch (step.stepType) {
-    case 'consistency_check': {
-      const consistencyData = tryParseJson(step.output)
-      if (consistencyData) {
-        const status = stringValue(consistencyData.overallStatus)
-        riskLevel = mapConsistencyRisk(status)
-        report = consistencyData
-        reason = `一致性检查结果: ${status}`
-      }
-      break
-    }
-
     case 'validate_plan': {
       const validateData = tryParseJson(step.output)
       if (validateData) {
@@ -133,15 +122,6 @@ function stringValue(value: unknown): string {
 
 function isAutoRiskLevel(value: unknown): value is AutoRiskLevel {
   return value === 'none' || value === 'low' || value === 'medium' || value === 'high' || value === 'critical'
-}
-
-function mapConsistencyRisk(status: string): AutoRiskLevel {
-  switch (status) {
-    case 'blocked': return 'high'
-    case 'warning': return 'medium'
-    case 'pass': return 'low'
-    default: return 'none'
-  }
 }
 
 function getActionByStrategy(strategy: AutonomousStrategy, risk: AutoRiskLevel): AutoDecisionResult['action'] {

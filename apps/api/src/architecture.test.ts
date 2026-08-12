@@ -162,4 +162,14 @@ describe('api architecture boundaries', () => {
       /\b(?:aiSettings|aiQualityFeedback|referenceTrainingSets|writingPersonas|writingGoals|dailyWritingStats)\b/,
     )
   })
+
+  it('does not restore automation steps that bypass approved change sets', () => {
+    const applicationSources = sourceFiles(sourceRoot)
+      .filter(file => !file.endsWith('.test.ts'))
+      .map(file => readFileSync(file, 'utf8'))
+      .join('\n')
+
+    expect(applicationSources).not.toMatch(/['"](?:apply_draft|save_version|consistency_check)['"]/)
+    expect(applicationSources).not.toMatch(/function execute(?:ApplyDraft|ApplySceneDraft|SaveVersion|ConsistencyCheck)/)
+  })
 })

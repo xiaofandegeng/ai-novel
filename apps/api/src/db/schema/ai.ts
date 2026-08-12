@@ -21,7 +21,7 @@ export const writingJobs = pgTable('writing_jobs', {
 export const writingJobSteps = pgTable('writing_job_steps', {
   id: text('id').primaryKey(),
   jobId: text('job_id').notNull().references(() => writingJobs.id, { onDelete: 'cascade' }),
-  stepType: text('step_type').$type<'prepare_context' | 'generate_plan' | 'validate_plan' | 'generate_draft' | 'generate_scene_draft' | 'consistency_check' | 'apply_draft' | 'save_version' | 'postprocess' | 'classify_suggestions' | 'apply_suggestions' | 'update_health' | 'build_change_set' | 'evaluate_change_set' | 'apply_change_set' | 'auto_repair' | 'done'>().notNull(),
+  stepType: text('step_type').$type<'prepare_context' | 'generate_plan' | 'validate_plan' | 'generate_draft' | 'generate_scene_draft' | 'postprocess' | 'classify_suggestions' | 'apply_suggestions' | 'update_health' | 'build_change_set' | 'evaluate_change_set' | 'apply_change_set' | 'auto_repair' | 'done'>().notNull(),
   status: text('status').$type<'pending' | 'running' | 'completed' | 'failed' | 'skipped'>().notNull().default('pending'),
   autoDecision: text('auto_decision').$type<'approved' | 'paused' | 'rejected' | 'not_applicable' | 'medium_risk_repair' | 'repaired' | 'isolated' | 'skipped' | 'failed'>(),
   autoRiskLevel: text('auto_risk_level').$type<'none' | 'low' | 'medium' | 'high' | 'critical'>(),
