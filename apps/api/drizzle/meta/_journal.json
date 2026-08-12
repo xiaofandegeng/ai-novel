@@ -218,6 +218,13 @@
       "when": 1786448088282,
       "tag": "0030_awesome_owl",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1786499022207,
+      "tag": "0031_spooky_lethal_legion",
+      "breakpoints": true
     }
   ]
 }

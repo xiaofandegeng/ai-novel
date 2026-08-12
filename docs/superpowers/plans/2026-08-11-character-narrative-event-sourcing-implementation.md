@@ -21,9 +21,9 @@
 
 - [x] Add tested reusable object, string, number, enum, and array payload readers with domain-specific error codes.
 - [x] Replace duplicated primitive payload readers in existing evented domains without changing behavior.
-- [ ] Remove cross-projection cascade and set-null foreign keys that make one projector mutate another projection.
-- [ ] Add architecture coverage for projection reset isolation.
-- [ ] Commit: `refactor(api): isolate event projections and share payload codecs`.
+- [x] Remove cross-projection cascade and set-null foreign keys that make one projector mutate another projection.
+- [x] Add architecture coverage for projection reset isolation.
+- [x] Commit: `refactor(api): isolate event projections and share payload codecs`.
 
 ## Task 2: Character profile and arc aggregate
 
@@ -49,11 +49,11 @@
 - Modify: relationship services and routes
 - Modify: `apps/api/src/eventing-runtime.ts`
 
-- [ ] Define `RelationshipCreated`, `RelationshipChanged`, and `RelationshipDeleted`.
-- [ ] Normalize character pairs, reject self-links, validate ownership, and enforce one active relationship per pair.
-- [ ] Project and replay relationships with stable IDs and timestamps.
-- [ ] Preserve current HTTP conflict/not-found behavior and add command idempotency.
-- [ ] Commit: `feat(api): event source character relationships`.
+- [x] Define `RelationshipCreated`, `RelationshipChanged`, and `RelationshipDeleted`.
+- [x] Normalize character pairs, reject self-links, validate ownership, and enforce one active relationship per pair.
+- [x] Project and replay relationships with stable IDs and timestamps.
+- [x] Preserve current HTTP conflict/not-found behavior and add command idempotency.
+- [x] Commit: `feat(api): event source character relationships`.
 
 ## Task 4: Conflict aggregate and timeline
 

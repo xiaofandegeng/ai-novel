@@ -2,7 +2,7 @@ import type { CommandEnvelope, JsonObject } from '../../eventing'
 import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../../db'
-import { characterArcEvents, characters } from '../../db/schema'
+import { characterArcEvents, characterRelationships, characters } from '../../db/schema'
 import {
   AggregateRepository,
   CommandBus,
@@ -25,6 +25,11 @@ import {
   registerCharacterEventing,
   REMOVE_CHARACTER_ARC_EVENT_COMMAND,
 } from './character.eventing'
+import {
+  CREATE_RELATIONSHIP_COMMAND,
+  registerRelationshipEventing,
+  RELATIONSHIP_AGGREGATE_TYPE,
+} from './relationship.eventing'
 
 afterAll(() => sql.end())
 
@@ -118,6 +123,37 @@ describe('character eventing', () => {
     await expect(readCharacter('project-1', 'character-1')).resolves.toMatchObject({ name: '林岚' })
     await expect(readCharacter('project-2', 'character-2')).resolves.toEqual(projectTwoBefore)
   })
+
+  it('replays characters without mutating the relationship projection', async () => {
+    await createProject(runtime.commands, 'project-1')
+    await runtime.commands.dispatch(characterCommand(CREATE_CHARACTER_COMMAND, { name: '林岚' }))
+    await runtime.commands.dispatch(characterCommand(
+      CREATE_CHARACTER_COMMAND,
+      { name: '周砚' },
+      'command-character-2',
+      'project-1',
+      'character-2',
+    ))
+    await runtime.commands.dispatch({
+      commandId: 'command-relationship',
+      commandType: CREATE_RELATIONSHIP_COMMAND,
+      aggregateType: RELATIONSHIP_AGGREGATE_TYPE,
+      aggregateId: 'relationship-1',
+      projectId: 'project-1',
+      correlationId: 'command-relationship',
+      payload: {
+        characterAId: 'character-1',
+        characterBId: 'character-2',
+        type: '盟友',
+      },
+    })
+    const relationshipBefore = await readRelationship('project-1', 'relationship-1')
+
+    await new ProjectionReplay(runtime.projections, runtime.store)
+      .replayProjection(CHARACTER_PROJECTION, { projectId: 'project-1' })
+
+    await expect(readRelationship('project-1', 'relationship-1')).resolves.toEqual(relationshipBefore)
+  })
 })
 
 function createRuntime() {
@@ -129,6 +165,7 @@ function createRuntime() {
   registerProjectEventing({ aggregates, commands, events, projections })
   registerChapterEventing({ aggregates, commands, events, projections })
   registerCharacterEventing({ aggregates, commands, events, projections })
+  registerRelationshipEventing({ aggregates, commands, events, projections })
   return { commands, projections, store }
 }
 
@@ -194,6 +231,14 @@ async function readArc(projectId: string, id: string) {
   const [row] = await db.select().from(characterArcEvents).where(and(
     eq(characterArcEvents.projectId, projectId),
     eq(characterArcEvents.id, id),
+  )).limit(1)
+  return row
+}
+
+async function readRelationship(projectId: string, id: string) {
+  const [row] = await db.select().from(characterRelationships).where(and(
+    eq(characterRelationships.projectId, projectId),
+    eq(characterRelationships.id, id),
   )).limit(1)
   return row
 }

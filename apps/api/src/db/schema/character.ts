@@ -20,8 +20,8 @@ export const characters = pgTable('characters', {
 export const characterRelationships = pgTable('character_relationships', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  characterAId: text('character_a_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
-  characterBId: text('character_b_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
+  characterAId: text('character_a_id').notNull(),
+  characterBId: text('character_b_id').notNull(),
   type: text('type').notNull(),
   strength: integer('strength').notNull().default(1),
   status: text('status'),

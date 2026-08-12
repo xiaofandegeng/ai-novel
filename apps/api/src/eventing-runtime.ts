@@ -8,6 +8,7 @@ import {
 import { registerProjectSettingsEventing } from './modules/ai/project-settings.eventing'
 import { registerPromptSettingsEventing } from './modules/ai/prompt-settings.eventing'
 import { registerCharacterEventing } from './modules/character/character.eventing'
+import { registerRelationshipEventing } from './modules/character/relationship.eventing'
 import { registerProjectEventing } from './modules/project/project.eventing'
 import { registerChapterEventing } from './modules/story/chapter.eventing'
 import { registerStoryStructureEventing } from './modules/story/story-structure.eventing'
@@ -36,12 +37,6 @@ registerPromptSettingsEventing({
   events: domainEventRegistry,
   projections: projectionRegistry,
 })
-registerCharacterEventing({
-  aggregates: aggregateRepository,
-  commands: commandBus,
-  events: domainEventRegistry,
-  projections: projectionRegistry,
-})
 registerStoryStructureEventing({
   aggregates: aggregateRepository,
   commands: commandBus,
@@ -49,6 +44,18 @@ registerStoryStructureEventing({
   projections: projectionRegistry,
 })
 registerChapterEventing({
+  aggregates: aggregateRepository,
+  commands: commandBus,
+  events: domainEventRegistry,
+  projections: projectionRegistry,
+})
+registerCharacterEventing({
+  aggregates: aggregateRepository,
+  commands: commandBus,
+  events: domainEventRegistry,
+  projections: projectionRegistry,
+})
+registerRelationshipEventing({
   aggregates: aggregateRepository,
   commands: commandBus,
   events: domainEventRegistry,
