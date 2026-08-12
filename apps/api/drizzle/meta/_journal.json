@@ -267,6 +267,13 @@
       "when": 1786505800866,
       "tag": "0037_pale_frog_thor",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1786507201798,
+      "tag": "0038_bizarre_omega_red",
+      "breakpoints": true
     }
   ]
 }

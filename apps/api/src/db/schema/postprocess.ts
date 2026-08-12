@@ -1,7 +1,7 @@
 import { integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
-import { autonomousWritingRuns, writingJobs, writingJobSteps } from './ai'
-import { chapterPostprocessRuns, chapters, chapterScenes } from './chapter'
+import { autonomousWritingRuns } from './ai'
+import { chapterPostprocessRuns, chapters } from './chapter'
 
 import { novelProjects } from './project'
 
@@ -87,10 +87,10 @@ export const foreshadowingCharacters = pgTable('foreshadowing_characters', {
 export const chapterChangeSets = pgTable('chapter_change_sets', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
-  sceneId: text('scene_id').references(() => chapterScenes.id, { onDelete: 'set null' }),
-  writingJobId: text('writing_job_id').references(() => writingJobs.id, { onDelete: 'set null' }),
-  sourceStepId: text('source_step_id').references(() => writingJobSteps.id, { onDelete: 'set null' }),
+  chapterId: text('chapter_id').notNull(),
+  sceneId: text('scene_id'),
+  writingJobId: text('writing_job_id'),
+  sourceStepId: text('source_step_id'),
   status: text('status').$type<
     'drafted'
     | 'reviewing'
@@ -118,7 +118,7 @@ export const chapterChangeSetItems = pgTable('chapter_change_set_items', {
   id: text('id').primaryKey(),
   changeSetId: text('change_set_id').notNull().references(() => chapterChangeSets.id, { onDelete: 'cascade' }),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull(),
   itemType: text('item_type').$type<
     'draft'
     | 'character_create'

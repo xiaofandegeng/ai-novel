@@ -109,3 +109,4 @@ venv/
 **/test-results/
 .playwright-cli/
 .gstack/
+.zcode/
