@@ -1,7 +1,7 @@
 # 开发记忆
 
 更新日期：2026-08-12  
-当前阶段：生产加固与新书规划设计已确认，等待书面规格复核
+当前阶段：生产加固与新书规划规格及实施计划已确认，等待选择执行方式
 
 ## 本轮目标
 
@@ -44,14 +44,24 @@
 | 安全设计 | 完成 | 用户确认信封加密与密钥销毁方案 |
 | 领域与 UI | 完成 | 用户选择 A：专注式规划工作区 |
 | 可靠性与验收 | 完成 | 用户确认 Worker、最终门禁和文档策略 |
-| 书面规格复核 | 等待 | 需要用户复核长期设计规格 |
-| 实施计划 | 未开始 | 书面规格批准后编制 |
+| 书面规格复核 | 完成 | 用户已明确确认长期设计规格 |
+| 实施计划 | 完成 | 四份依赖有序、测试先行的执行计划及总路线 |
 | 代码实施 | 未开始 | 按 TDD 分阶段执行 |
 | 最终验收 | 未开始 | 所有开发完成后统一执行 |
+
+## 已批准执行路线
+
+1. [`项目内容加密与删除`](../superpowers/plans/2026-08-12-project-content-encryption.md)：migration `0044`、Event/快照/回执保护、密钥销毁、Replay 与扫描。
+2. [`Worker 可靠性与 Provider 协议`](../superpowers/plans/2026-08-12-workflow-runtime-and-provider.md)：migration `0045`、心跳/租约、脱敏健康、OpenAI-compatible 本地协议与 opt-in smoke。
+3. [`新书规划后端`](../superpowers/plans/2026-08-12-book-setup-backend.md)：migration `0046`、BookSetup 聚合、Outbox/Process Manager、五阶段原子应用与重放。
+4. [`新书规划前端、端到端与最终交付`](../superpowers/plans/2026-08-12-book-setup-web-and-delivery.md)：专注式工作区、两条完整 Playwright 链路、最终数据库/全仓/浏览器验收与文档归档。
+
+总入口：[`生产加固与新书规划实施路线`](../superpowers/plans/2026-08-12-production-hardening-book-setup-roadmap.md)。计划执行完成后删除五份临时计划，将长期结论保留在架构、产品、规范、记忆与交接文档。
 
 ## 当前风险
 
 - 项目密钥销毁后，Replay 必须先识别删除 tombstone，否则无法解密早期事件。
 - BookSetup 阶段应用横跨多个聚合，必须使用现有原子 Command Bus 能力。
+- 修改已应用但尚未完成的阶段会使下游修订失效；必须保留历史、显式生成 delta，并且只能删除该 setup 的稳定 ID 所拥有的实体。
 - 全自动规划不能把高风险删除或结构覆盖当作低风险更新。
 - 真实 Provider smoke 依赖用户环境是否配置有效凭据和网络。
