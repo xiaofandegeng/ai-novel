@@ -302,6 +302,13 @@
       "when": 1786510328597,
       "tag": "0042_purple_rictor",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1786513174618,
+      "tag": "0043_careless_blur",
+      "breakpoints": true
     }
   ]
 }

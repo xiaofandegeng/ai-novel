@@ -9,6 +9,7 @@ import type { PostprocessSuggestionSnapshot } from './postprocess.eventing'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import {
+  chapterPostprocessRuns,
   chapterPostprocessSuggestions,
   characterRelationships,
   characters,
@@ -44,10 +45,21 @@ import {
   CHANGE_POSTPROCESS_SUGGESTION_COMMAND,
   GENERATE_POSTPROCESS_SUGGESTION_COMMAND,
 } from './postprocess.eventing'
+import { assertWritingJobAuthorized, RunAuthorizationRevokedError } from './run-authorization.service'
 
 type ApprovalLevel = 'conservative' | 'balanced' | 'aggressive'
 type SuggestionType = typeof chapterPostprocessSuggestions.$inferInsert['suggestionType']
 type CharacterRole = typeof characters.$inferInsert['role']
+
+export interface SuggestionRunScope {
+  autonomousRunId: string
+  postprocessRunId: string
+  writingJobId: string
+}
+
+interface ApplySuggestionOptions extends PostprocessCommandOptions {
+  requireActiveRun?: boolean
+}
 
 interface SuggestionPayload extends Record<string, unknown> {
   subjectName?: string
@@ -177,13 +189,28 @@ export async function createSuggestion(
 ) {
   const normalizedType = parseSuggestionType(suggestionType)
   const payloadText = JSON.stringify(payload)
-  const [existing] = await db.select().from(chapterPostprocessSuggestions).where(and(
+  const [postprocessRun] = runId
+    ? await db.select({ autonomousRunId: chapterPostprocessRuns.autonomousRunId, writingJobId: chapterPostprocessRuns.writingJobId })
+        .from(chapterPostprocessRuns)
+        .where(and(
+          eq(chapterPostprocessRuns.id, runId),
+          eq(chapterPostprocessRuns.projectId, projectId),
+          eq(chapterPostprocessRuns.chapterId, chapterId),
+        ))
+    : []
+  if (runId && !postprocessRun)
+    throw new Error('章后处理批次不存在')
+
+  const conditions = [
     eq(chapterPostprocessSuggestions.projectId, projectId),
     eq(chapterPostprocessSuggestions.chapterId, chapterId),
     eq(chapterPostprocessSuggestions.suggestionType, normalizedType),
     eq(chapterPostprocessSuggestions.payload, payloadText),
     eq(chapterPostprocessSuggestions.status, 'pending'),
-  ))
+  ]
+  if (runId)
+    conditions.push(eq(chapterPostprocessSuggestions.runId, runId))
+  const [existing] = await db.select().from(chapterPostprocessSuggestions).where(and(...conditions))
   if (existing)
     return existing
 
@@ -195,6 +222,8 @@ export async function createSuggestion(
     compactPostprocessPayload({
       chapterId,
       runId,
+      autonomousRunId: postprocessRun?.autonomousRunId ?? null,
+      writingJobId: postprocessRun?.writingJobId ?? null,
       suggestionType: normalizedType,
       payload: payloadText,
       confidence,
@@ -204,13 +233,21 @@ export async function createSuggestion(
   )
 }
 
-export async function getSuggestions(projectId: string, chapterId: string, runId?: string) {
+export async function getSuggestions(projectId: string, chapterId: string, runIdOrScope?: string | SuggestionRunScope) {
   const conditions = [
     eq(chapterPostprocessSuggestions.projectId, projectId),
     eq(chapterPostprocessSuggestions.chapterId, chapterId),
   ]
-  if (runId)
-    conditions.push(eq(chapterPostprocessSuggestions.runId, runId))
+  if (typeof runIdOrScope === 'string') {
+    conditions.push(eq(chapterPostprocessSuggestions.runId, runIdOrScope))
+  }
+  else if (runIdOrScope) {
+    conditions.push(
+      eq(chapterPostprocessSuggestions.autonomousRunId, runIdOrScope.autonomousRunId),
+      eq(chapterPostprocessSuggestions.runId, runIdOrScope.postprocessRunId),
+      eq(chapterPostprocessSuggestions.writingJobId, runIdOrScope.writingJobId),
+    )
+  }
   return db.select().from(chapterPostprocessSuggestions).where(and(...conditions))
 }
 
@@ -228,14 +265,25 @@ export async function acceptSuggestion(projectId: string, id: string, options: P
   return dispatchPostprocessSuggestionCommand<PostprocessSuggestionSnapshot>(CHANGE_POSTPROCESS_SUGGESTION_COMMAND, projectId, id, { status: 'accepted' }, options)
 }
 
-export async function applySuggestion(projectId: string, id: string, options: PostprocessCommandOptions = {}) {
+export async function applySuggestion(projectId: string, id: string, options: ApplySuggestionOptions = {}) {
   try {
+    if (options.requireActiveRun) {
+      const [candidate] = await db.select({ writingJobId: chapterPostprocessSuggestions.writingJobId })
+        .from(chapterPostprocessSuggestions)
+        .where(and(eq(chapterPostprocessSuggestions.id, id), eq(chapterPostprocessSuggestions.projectId, projectId)))
+      if (!candidate?.writingJobId)
+        throw new Error('自动建议缺少写作作业作用域')
+      await assertWritingJobAuthorized(projectId, candidate.writingJobId)
+    }
+
     const suggestion = await claimSuggestion(projectId, id)
     if (suggestion.status === 'applied' || suggestion.status === 'acknowledged')
       return suggestion
 
     const payload = parseSuggestionPayload(suggestion.payload)
     return await commandBus.runAtomically(async () => {
+      if (options.requireActiveRun && suggestion.writingJobId)
+        await assertWritingJobAuthorized(projectId, suggestion.writingJobId)
       const resultStatus = await applyOneSuggestion(
         suggestion.suggestionType,
         payload,
@@ -258,6 +306,8 @@ export async function applySuggestion(projectId: string, id: string, options: Po
     })
   }
   catch (error: unknown) {
+    if (error instanceof RunAuthorizationRevokedError)
+      throw error
     const message = errorMessage(error)
     if (message !== '建议不存在' && message !== '建议已拒绝，不能应用') {
       await dispatchPostprocessSuggestionCommand(
@@ -307,14 +357,20 @@ export async function rejectSuggestion(projectId: string, id: string, options: P
   return dispatchPostprocessSuggestionCommand<PostprocessSuggestionSnapshot>(CHANGE_POSTPROCESS_SUGGESTION_COMMAND, projectId, id, { status: 'rejected' }, options)
 }
 
-export async function applyAcceptedSuggestions(projectId: string, chapterId: string): Promise<ApplyResult> {
-  const accepted = await db.select().from(chapterPostprocessSuggestions).where(
-    and(
-      eq(chapterPostprocessSuggestions.projectId, projectId),
-      eq(chapterPostprocessSuggestions.chapterId, chapterId),
-      eq(chapterPostprocessSuggestions.status, 'accepted'),
-    ),
-  )
+export async function applyAcceptedSuggestions(projectId: string, chapterId: string, scope?: SuggestionRunScope): Promise<ApplyResult> {
+  const conditions = [
+    eq(chapterPostprocessSuggestions.projectId, projectId),
+    eq(chapterPostprocessSuggestions.chapterId, chapterId),
+    eq(chapterPostprocessSuggestions.status, 'accepted'),
+  ]
+  if (scope) {
+    conditions.push(
+      eq(chapterPostprocessSuggestions.autonomousRunId, scope.autonomousRunId),
+      eq(chapterPostprocessSuggestions.runId, scope.postprocessRunId),
+      eq(chapterPostprocessSuggestions.writingJobId, scope.writingJobId),
+    )
+  }
+  const accepted = await db.select().from(chapterPostprocessSuggestions).where(and(...conditions))
 
   let applied = 0
   let acknowledged = 0
@@ -323,7 +379,7 @@ export async function applyAcceptedSuggestions(projectId: string, chapterId: str
 
   for (const suggestion of accepted) {
     try {
-      const updated = await applySuggestion(projectId, suggestion.id)
+      const updated = await applySuggestion(projectId, suggestion.id, { requireActiveRun: Boolean(scope) })
       if (updated.status === 'applied')
         applied++
       else if (updated.status === 'acknowledged')
@@ -343,8 +399,9 @@ export async function applyAcceptedSuggestions(projectId: string, chapterId: str
 /**
  * 自动根据风险等级筛选并应用建议 (全自动模式使用)
  */
-export async function applyAutoSuggestions(projectId: string, chapterId: string, level: ApprovalLevel): Promise<ApplyResult> {
-  const pending = await getSuggestions(projectId, chapterId)
+export async function applyAutoSuggestions(projectId: string, chapterId: string, level: ApprovalLevel, scope: SuggestionRunScope): Promise<ApplyResult> {
+  await assertWritingJobAuthorized(projectId, scope.writingJobId)
+  const pending = await getSuggestions(projectId, chapterId, scope)
   const autoAcceptableIds: string[] = []
 
   for (const suggestion of pending) {
@@ -354,23 +411,22 @@ export async function applyAutoSuggestions(projectId: string, chapterId: string,
     const confidence = suggestion.confidence || 0
     const type = suggestion.suggestionType
 
+    const lowRisk = ['fact_triple', 'chapter_element', 'continuity_note', 'style_note'].includes(type)
+    const mediumRisk = ['character_state', 'conflict_update', 'relationship_update'].includes(type)
     let isAcceptable = false
 
     if (level === 'conservative') {
-      // 保守模式：置信度 > 90 且非核心实体变更
-      if (confidence >= 90 && !['character_add', 'conflict_add', 'foreshadowing_add'].includes(type)) {
+      if (confidence >= 90 && lowRisk) {
         isAcceptable = true
       }
     }
     else if (level === 'balanced') {
-      // 平衡模式：置信度 > 80
-      if (confidence >= 80) {
+      if (confidence >= 80 && lowRisk) {
         isAcceptable = true
       }
     }
     else if (level === 'aggressive') {
-      // 进取模式：置信度 > 60
-      if (confidence >= 60) {
+      if (confidence >= 70 && (lowRisk || mediumRisk)) {
         isAcceptable = true
       }
     }
@@ -385,7 +441,7 @@ export async function applyAutoSuggestions(projectId: string, chapterId: string,
       await acceptSuggestion(projectId, id)
   }
 
-  return applyAcceptedSuggestions(projectId, chapterId)
+  return applyAcceptedSuggestions(projectId, chapterId, scope)
 }
 
 /**

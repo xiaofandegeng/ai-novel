@@ -35,6 +35,8 @@ export type PostprocessRunSnapshot = JsonObject & {
   id: string
   projectId: string
   chapterId: string
+  autonomousRunId: string | null
+  writingJobId: string | null
   status: typeof RUN_STATUSES[number]
   trigger: string
   errorMessage: string | null
@@ -49,6 +51,8 @@ export type PostprocessSuggestionSnapshot = JsonObject & {
   projectId: string
   chapterId: string
   runId: string | null
+  autonomousRunId: string | null
+  writingJobId: string | null
   suggestionType: typeof SUGGESTION_TYPES[number]
   payload: string
   confidence: number
@@ -226,7 +230,7 @@ async function assertChapter(runtime: PostprocessEventingRuntime, session: Param
 }
 
 function createRun(command: CommandEnvelope, timestamp: string): PostprocessRunSnapshot {
-  return { id: command.aggregateId, projectId: command.projectId!, chapterId: runCodec.string(command.payload, 'chapterId'), status: 'running', trigger: runCodec.string(command.payload, 'trigger'), errorMessage: null, startedAt: timestamp, finishedAt: null, createdAt: timestamp, updatedAt: timestamp }
+  return { id: command.aggregateId, projectId: command.projectId!, chapterId: runCodec.string(command.payload, 'chapterId'), autonomousRunId: runCodec.nullableString(command.payload, 'autonomousRunId'), writingJobId: runCodec.nullableString(command.payload, 'writingJobId'), status: 'running', trigger: runCodec.string(command.payload, 'trigger'), errorMessage: null, startedAt: timestamp, finishedAt: null, createdAt: timestamp, updatedAt: timestamp }
 }
 
 function changeRun(current: PostprocessRunSnapshot, payload: JsonObject, timestamp: string): PostprocessRunSnapshot {
@@ -237,7 +241,7 @@ function changeRun(current: PostprocessRunSnapshot, payload: JsonObject, timesta
 }
 
 function createSuggestion(command: CommandEnvelope, timestamp: string): PostprocessSuggestionSnapshot {
-  return { id: command.aggregateId, projectId: command.projectId!, chapterId: suggestionCodec.string(command.payload, 'chapterId'), runId: suggestionCodec.nullableString(command.payload, 'runId'), suggestionType: suggestionCodec.enum(command.payload, 'suggestionType', SUGGESTION_TYPES), payload: suggestionCodec.string(command.payload, 'payload', { allowEmpty: true, trim: false }), confidence: suggestionCodec.integer(command.payload, 'confidence', { minimum: 0, maximum: 100 }), status: 'pending', reason: suggestionCodec.nullableString(command.payload, 'reason'), createdAt: timestamp, updatedAt: timestamp }
+  return { id: command.aggregateId, projectId: command.projectId!, chapterId: suggestionCodec.string(command.payload, 'chapterId'), runId: suggestionCodec.nullableString(command.payload, 'runId'), autonomousRunId: suggestionCodec.nullableString(command.payload, 'autonomousRunId'), writingJobId: suggestionCodec.nullableString(command.payload, 'writingJobId'), suggestionType: suggestionCodec.enum(command.payload, 'suggestionType', SUGGESTION_TYPES), payload: suggestionCodec.string(command.payload, 'payload', { allowEmpty: true, trim: false }), confidence: suggestionCodec.integer(command.payload, 'confidence', { minimum: 0, maximum: 100 }), status: 'pending', reason: suggestionCodec.nullableString(command.payload, 'reason'), createdAt: timestamp, updatedAt: timestamp }
 }
 
 function changeSuggestion(current: PostprocessSuggestionSnapshot, payload: JsonObject, timestamp: string): PostprocessSuggestionSnapshot {
@@ -254,12 +258,12 @@ function createFingerprint(command: CommandEnvelope, current: FingerprintState, 
 
 function readRun(payload: JsonObject): PostprocessRunSnapshot {
   const v = 'run' in payload ? runCodec.object(payload.run) : payload
-  return { id: runCodec.string(v, 'id'), projectId: runCodec.string(v, 'projectId'), chapterId: runCodec.string(v, 'chapterId'), status: runCodec.enum(v, 'status', RUN_STATUSES), trigger: runCodec.string(v, 'trigger'), errorMessage: runCodec.nullableString(v, 'errorMessage'), startedAt: runCodec.nullableString(v, 'startedAt'), finishedAt: runCodec.nullableString(v, 'finishedAt'), createdAt: runCodec.string(v, 'createdAt'), updatedAt: runCodec.string(v, 'updatedAt') }
+  return { id: runCodec.string(v, 'id'), projectId: runCodec.string(v, 'projectId'), chapterId: runCodec.string(v, 'chapterId'), autonomousRunId: runCodec.nullableString(v, 'autonomousRunId'), writingJobId: runCodec.nullableString(v, 'writingJobId'), status: runCodec.enum(v, 'status', RUN_STATUSES), trigger: runCodec.string(v, 'trigger'), errorMessage: runCodec.nullableString(v, 'errorMessage'), startedAt: runCodec.nullableString(v, 'startedAt'), finishedAt: runCodec.nullableString(v, 'finishedAt'), createdAt: runCodec.string(v, 'createdAt'), updatedAt: runCodec.string(v, 'updatedAt') }
 }
 
 function readSuggestion(payload: JsonObject): PostprocessSuggestionSnapshot {
   const v = 'suggestion' in payload ? suggestionCodec.object(payload.suggestion) : payload
-  return { id: suggestionCodec.string(v, 'id'), projectId: suggestionCodec.string(v, 'projectId'), chapterId: suggestionCodec.string(v, 'chapterId'), runId: suggestionCodec.nullableString(v, 'runId'), suggestionType: suggestionCodec.enum(v, 'suggestionType', SUGGESTION_TYPES), payload: suggestionCodec.string(v, 'payload', { allowEmpty: true, trim: false }), confidence: suggestionCodec.integer(v, 'confidence'), status: suggestionCodec.enum(v, 'status', SUGGESTION_STATUSES), reason: suggestionCodec.nullableString(v, 'reason'), createdAt: suggestionCodec.string(v, 'createdAt'), updatedAt: suggestionCodec.string(v, 'updatedAt') }
+  return { id: suggestionCodec.string(v, 'id'), projectId: suggestionCodec.string(v, 'projectId'), chapterId: suggestionCodec.string(v, 'chapterId'), runId: suggestionCodec.nullableString(v, 'runId'), autonomousRunId: suggestionCodec.nullableString(v, 'autonomousRunId'), writingJobId: suggestionCodec.nullableString(v, 'writingJobId'), suggestionType: suggestionCodec.enum(v, 'suggestionType', SUGGESTION_TYPES), payload: suggestionCodec.string(v, 'payload', { allowEmpty: true, trim: false }), confidence: suggestionCodec.integer(v, 'confidence'), status: suggestionCodec.enum(v, 'status', SUGGESTION_STATUSES), reason: suggestionCodec.nullableString(v, 'reason'), createdAt: suggestionCodec.string(v, 'createdAt'), updatedAt: suggestionCodec.string(v, 'updatedAt') }
 }
 
 function readFingerprint(payload: JsonObject): StyleFingerprintSnapshot {
@@ -268,11 +272,11 @@ function readFingerprint(payload: JsonObject): StyleFingerprintSnapshot {
 }
 
 function emptyRun(): RunState {
-  return { exists: false, id: '', projectId: '', chapterId: '', status: 'pending', trigger: '', errorMessage: null, startedAt: null, finishedAt: null, createdAt: '', updatedAt: '' }
+  return { exists: false, id: '', projectId: '', chapterId: '', autonomousRunId: null, writingJobId: null, status: 'pending', trigger: '', errorMessage: null, startedAt: null, finishedAt: null, createdAt: '', updatedAt: '' }
 }
 
 function emptySuggestion(): SuggestionState {
-  return { exists: false, id: '', projectId: '', chapterId: '', runId: null, suggestionType: 'fact_triple', payload: '', confidence: 70, status: 'pending', reason: null, createdAt: '', updatedAt: '' }
+  return { exists: false, id: '', projectId: '', chapterId: '', runId: null, autonomousRunId: null, writingJobId: null, suggestionType: 'fact_triple', payload: '', confidence: 70, status: 'pending', reason: null, createdAt: '', updatedAt: '' }
 }
 
 function emptyFingerprint(): FingerprintState {

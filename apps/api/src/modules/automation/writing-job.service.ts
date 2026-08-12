@@ -1,5 +1,6 @@
 import type { AutonomousStrategy, CreateWritingJobInput, WritingJob, WritingJobStepType } from '@ai-novel/shared'
 import type { ChapterSnapshot, SceneSnapshot } from '../story/chapter.eventing'
+import type { SuggestionRunScope } from './postprocess-suggestion.service'
 import type { WritingJobSnapshot } from './writing-job.eventing'
 import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
@@ -883,6 +884,7 @@ async function executePostprocess(
   sceneId: string | null,
   draftOutput: string,
   stepId: string,
+  job: WritingJob,
 ): Promise<string> {
   const draft = JSON.parse(draftOutput)
 
@@ -897,12 +899,16 @@ async function executePostprocess(
         chapterId,
         sceneId,
         content: draft.draft || '',
+        autonomousRunId: job.autonomousRunId,
+        writingJobId: job.id,
       })
     : await runChapterPostprocess({
         projectId,
         chapterId,
         content: draft.draft || '',
         trigger: 'auto_drive',
+        autonomousRunId: job.autonomousRunId,
+        writingJobId: job.id,
       })
 
   // Also trigger graph inference after postprocess to identify more candidates
@@ -917,14 +923,32 @@ async function executeApplySuggestions(
   projectId: string,
   chapterId: string | null,
   stepId: string,
-  _job: WritingJob,
+  job: WritingJob,
+  postprocessOutput: string,
 ): Promise<string> {
   if (!chapterId) {
     await updateStep(stepId, { output: JSON.stringify({ skipped: true, reason: 'no_chapter' }) })
     return JSON.stringify({ skipped: true })
   }
 
-  const result = await applyAutoSuggestions(projectId, chapterId, 'aggressive')
+  const { runId: postprocessRunId } = JSON.parse(postprocessOutput) as { runId?: string }
+  if (!job.autonomousRunId || !postprocessRunId)
+    throw new Error('自动应用建议缺少运行作用域')
+  const scope: SuggestionRunScope = {
+    autonomousRunId: job.autonomousRunId,
+    postprocessRunId,
+    writingJobId: job.id,
+  }
+  const [run] = await db.select({ strategy: autonomousWritingRuns.strategy })
+    .from(autonomousWritingRuns)
+    .where(and(
+      eq(autonomousWritingRuns.id, job.autonomousRunId),
+      eq(autonomousWritingRuns.projectId, projectId),
+    ))
+  if (!run)
+    throw new Error('自动写作运行不存在')
+  const level = run.strategy === 'safe' ? 'conservative' : run.strategy === 'balanced' ? 'balanced' : 'aggressive'
+  const result = await applyAutoSuggestions(projectId, chapterId, level, scope)
   const output = JSON.stringify(result)
   await updateStep(stepId, { output, updatedAt: now() })
   return output
@@ -934,6 +958,8 @@ async function executeClassifySuggestions(
   projectId: string,
   chapterId: string | null,
   stepId: string,
+  job: WritingJob,
+  postprocessOutput: string,
 ): Promise<string> {
   if (!chapterId) {
     const output = JSON.stringify({ skipped: true, reason: 'no_chapter' })
@@ -941,7 +967,14 @@ async function executeClassifySuggestions(
     return output
   }
 
-  const suggestions = await getSuggestions(projectId, chapterId)
+  const { runId: postprocessRunId } = JSON.parse(postprocessOutput) as { runId?: string }
+  if (!job.autonomousRunId || !postprocessRunId)
+    throw new Error('建议分类缺少运行作用域')
+  const suggestions = await getSuggestions(projectId, chapterId, {
+    autonomousRunId: job.autonomousRunId,
+    postprocessRunId,
+    writingJobId: job.id,
+  })
   const pending = suggestions.filter(s => s.status === 'pending')
   const output = JSON.stringify({
     total: suggestions.length,
@@ -1314,16 +1347,16 @@ async function executeStep(
 
       case 'postprocess': {
         const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
-        await executePostprocess(projectId, chapterId, sceneId, draftOutput, step.id)
+        await executePostprocess(projectId, chapterId, sceneId, draftOutput, step.id, job)
         break
       }
 
       case 'classify_suggestions':
-        await executeClassifySuggestions(projectId, chapterId, step.id)
+        await executeClassifySuggestions(projectId, chapterId, step.id, job, previousStepOutputs.get('postprocess') || '{}')
         break
 
       case 'apply_suggestions':
-        await executeApplySuggestions(projectId, chapterId, step.id, job)
+        await executeApplySuggestions(projectId, chapterId, step.id, job, previousStepOutputs.get('postprocess') || '{}')
         break
 
       case 'build_change_set': {

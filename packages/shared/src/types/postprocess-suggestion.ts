@@ -6,6 +6,8 @@ export interface PostprocessSuggestion {
   projectId: string
   chapterId: string
   runId: string | null
+  autonomousRunId: string | null
+  writingJobId: string | null
   suggestionType: SuggestionType
   payload: string
   confidence: number

@@ -24,6 +24,7 @@ export interface ConflictProgressUpdate {
 }
 
 export interface ChapterPostprocessResult {
+  runId: string
   memory: ChapterMemory
   warnings: string[]
   conflictUpdates: ConflictProgressUpdate[]
