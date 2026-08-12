@@ -65,6 +65,36 @@ describe('runtime environment config', () => {
     expect(getProjectContentMasterKey()).toEqual(Buffer.alloc(32, 9))
   })
 
+  it('rejects decoded project-content and credential master keys that are identical', () => {
+    const sharedMasterKey = Buffer.alloc(32, 7).toString('base64')
+    let message = ''
+
+    try {
+      getProjectContentMasterKey({
+        PROJECT_CONTENT_MASTER_KEY: sharedMasterKey,
+        AI_CREDENTIAL_MASTER_KEY: sharedMasterKey,
+      })
+    }
+    catch (error: unknown) {
+      message = error instanceof Error ? error.message : String(error)
+    }
+
+    expect(message).toBe('Project content and AI credential master keys must be different')
+    expect(message.includes(sharedMasterKey)).toBe(false)
+  })
+
+  it('accepts distinct decoded master keys and preserves a missing credential key', () => {
+    const projectMasterKey = Buffer.alloc(32, 7).toString('base64')
+
+    expect(getProjectContentMasterKey({
+      PROJECT_CONTENT_MASTER_KEY: projectMasterKey,
+      AI_CREDENTIAL_MASTER_KEY: Buffer.alloc(32, 8).toString('base64'),
+    })).toEqual(Buffer.alloc(32, 7))
+    expect(getProjectContentMasterKey({
+      PROJECT_CONTENT_MASTER_KEY: projectMasterKey,
+    })).toEqual(Buffer.alloc(32, 7))
+  })
+
   it('fails module loading before API runtime construction when the project content master key is invalid', async () => {
     vi.stubEnv('PROJECT_CONTENT_MASTER_KEY', 'not*base64')
     vi.resetModules()

@@ -9,10 +9,22 @@
 - PostgreSQL 15+
 - pgvector 扩展
 
-## 2. 初始化
+## 2. 首次配置与初始化
+
+先复制配置模板并静默生成两个不同的 32 字节随机主密钥。下面的命令不会把密钥输出到终端，写入前把 `.env` 权限限制为当前用户可读写，并在写入后清除临时 shell 变量：
 
 ```bash
 cp .env.example .env
+chmod 600 .env
+project_content_key="$(openssl rand -base64 32)"
+ai_credential_key="$(openssl rand -base64 32)"
+printf '\nPROJECT_CONTENT_MASTER_KEY=%s\nAI_CREDENTIAL_MASTER_KEY=%s\n' "$project_content_key" "$ai_credential_key" >> .env
+unset project_content_key ai_credential_key
+```
+
+完成密钥配置后，才能运行会加载 API 环境的数据库初始化、migration、seed 或 replay：
+
+```bash
 pnpm install
 pnpm db:init-vector
 pnpm db:migrate
@@ -56,17 +68,7 @@ TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/ai_novel_test
 
 ### 事件溯源内核
 
-项目内容保护需要独立的 32 字节随机主密钥。生成并写入本地 `.env`：
-
-```bash
-openssl rand -base64 32
-```
-
-```env
-PROJECT_CONTENT_MASTER_KEY=上一步输出的Base64值
-```
-
-`PROJECT_CONTENT_MASTER_KEY` 必须与 `AI_CREDENTIAL_MASTER_KEY` 不同。两者都必须解码为恰好 32 字节；项目内容主密钥缺失、不是规范 Base64 或长度错误时，API、seed、replay 和相关数据库命令会在构造运行时前失败，不能降级为明文运行。主密钥不得提交、记录到日志或用于前端配置。
+`PROJECT_CONTENT_MASTER_KEY` 必须是规范 Base64 编码的 32 字节值；缺失、编码非法或长度错误时，API、seed、replay 和相关数据库命令会在构造运行时前失败，不能降级为明文运行。`AI_CREDENTIAL_MASTER_KEY` 保持 credential vault 的既有按需校验语义；当两个变量都能解析为 32 字节时，运行时会比较解码后的字节并拒绝相同密钥，即使字符串比较方式发生变化也不能复用。主密钥不得提交、记录到日志或用于前端配置。
 
 当前 migration 会完整创建 Event Store、stream、快照、命令回执、投影 checkpoint、Outbox 和全部产品投影，并安装 `domain_events` 的 append-only 触发器：
 

@@ -12,13 +12,14 @@
 3. Replay 先发现删除 tombstone，再跳过已删除项目；安全扫描只输出记录 ID 和类别。
 4. 开发 seed 全部项目写入经领域 service、Command Bus 和受保护 Event Store，固定 identity 保持重复执行幂等。
 5. 项目 backup export 以显式业务 DTO 白名单输出，不暴露 envelope、数据密钥或 AI credential refs。
+6. Task 8 Review Fix Round 1 增加完整 seed fingerprint、真实非空快照证据、脱敏测试断言，以及解码后的主密钥分离门禁。
 
 长期设计依据：[`生产加固与新书规划流程设计`](../superpowers/specs/2026-08-12-production-hardening-and-book-setup-design.md)。
 
 ## 已确认且必须保持的决策
 
 - 不转换已有明文演示事件；允许清空的本地数据库走 `db:rebuild` → `db:seed` → `db:replay`。
-- `PROJECT_CONTENT_MASTER_KEY` 和 `AI_CREDENTIAL_MASTER_KEY` 必须分别配置为规范 Base64 编码的独立 32 字节随机值；项目内容密钥缺失或非法时运行时启动失败。
+- `PROJECT_CONTENT_MASTER_KEY` 和 `AI_CREDENTIAL_MASTER_KEY` 必须配置为独立 32 字节随机值；两个有效解码值相等时运行时启动失败，错误信息不得包含密钥。项目内容密钥缺失或非法时同样启动失败；credential key 保持 vault 的既有按需校验语义。
 - `domain_events` 只追加；受保护事件、快照和回执的数据库 JSON 不得含用户内容明文。
 - Eventing Content Protector 是存储 envelope 的唯一加解密边界；route、service、seed 和维护脚本禁止直写 Eventing 表。
 - 项目删除销毁数据密钥后不可恢复；Replay 不能解密或重建已删除项目。
@@ -44,15 +45,19 @@
 | 5 回执保护与原子密钥销毁 | `86c0aea`；回执 identity 加固 `0e57298` |
 | 6 全领域保护分类 | `21b4f7e`；穷举分类加固 `8687a6a` |
 | 7 tombstone Replay 与扫描 | `6cf41e7`；并发/架构边界加固 `563b41b`、`d231d6a`、`03adff5`、`8d3c02d`、`0dc389b` |
-| 8 Seed、export、文档与交接 | `docs(security): record encrypted event baseline`（本阶段 HEAD；最终哈希见当前分支日志） |
+| 8 Seed、export、文档与交接 | `9d4aa5f` |
+| 8 Review Fix Round 1 | `fix(security): harden seed verification boundaries`（本阶段 HEAD） |
 
 ## 当前验证状态
 
 - Task 8 RED：准确选择器得到 2 failed / 23 passed；失败分别为重复 seed 的 `COMMAND_ID_CONFLICT` 与 export 整行透传敏感字段。
 - Task 8 窄 GREEN：3 files / 25 tests passed。
-- 阶段选择器：17 files / 164 tests passed，覆盖 `src/security`、`src/eventing`、`src/modules/project`、seed integration 和 app integration。
+- 阶段选择器：17 files / 167 tests passed，覆盖 `src/security`、`src/eventing`、`src/modules/project`、seed integration 和 app integration。
 - 构建阻塞回归：共享架构测试 helper 移入 API `src/test` 后，2 files / 33 tests passed，API build passed。
 - API typecheck passed；repo lint passed；最终 `git diff --check` passed，提交后再次确认 clean status。
+- Review Fix Round 1 RED：master-key separation 1 failed / 7 passed；seed fingerprint 2 failed / 2 passed；snapshot mutation check 在无快照时准确失败。
+- Review Fix Round 1 窄 GREEN：5 files / 37 tests passed。
+- Review Fix Round 1 全量相关门禁：architecture 2 files / 33 tests、eventing/security 13 files / 134 tests、全部 modules 32 files / 123 tests，均通过；API typecheck/build、repo lint、keyless `db:verify-encryption` 和 `git diff --check` 通过。
 
 这些是本阶段新鲜验证证据，不替代后续计划完成后的全仓 coverage、数据库 rebuild/seed/replay 和浏览器验收。
 

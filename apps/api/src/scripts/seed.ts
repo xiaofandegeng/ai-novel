@@ -2,7 +2,23 @@ import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { eq } from 'drizzle-orm'
 import { db, sql } from '../db'
-import { autonomousWritingRuns, novelProjects, promptTemplates, storyStructureTemplates } from '../db/schema'
+import {
+  acts,
+  autonomousRunJobs,
+  autonomousWritingRuns,
+  chapters,
+  characterRelationships,
+  characters,
+  conflicts,
+  foreshadowingItems,
+  novelProjects,
+  projectReadModels,
+  promptTemplates,
+  storyBibles,
+  storyStructureTemplates,
+  volumes,
+  writingJobs,
+} from '../db/schema'
 import { createAutonomousRun } from '../modules/automation/autonomous-writing.service'
 import { createCharacter } from '../modules/character/characters.service'
 import { createRelationship } from '../modules/character/relationships.service'
@@ -17,19 +33,13 @@ import { now } from '../shared/utils'
 
 const SEED_CORRELATION_ID = 'development-seed-v1'
 const SEED_PROJECT_ID = 'development-seed-project-v1'
+const INCOMPLETE_SEED_MESSAGE = 'Development seed is incomplete; run pnpm db:rebuild before reseeding'
 
 export async function seedDevelopmentData() {
-  const [existingProject] = await db.select({ id: novelProjects.id })
-    .from(novelProjects)
-    .where(eq(novelProjects.id, SEED_PROJECT_ID))
-  if (existingProject) {
-    const [existingRun] = await db.select({ id: autonomousWritingRuns.id })
-      .from(autonomousWritingRuns)
-      .where(eq(autonomousWritingRuns.projectId, SEED_PROJECT_ID))
-    if (!existingRun)
-      throw new Error('Development seed is incomplete; rebuild the local database before reseeding')
+  const existingSeed = await readCompleteDevelopmentSeed()
+  if (existingSeed) {
     await seedStaticCatalogs()
-    return { projectId: existingProject.id, runId: existingRun.id }
+    return existingSeed
   }
 
   const project = await createProject({
@@ -162,6 +172,144 @@ export async function seedDevelopmentData() {
   await seedStaticCatalogs()
 
   return { projectId, runId: run.id }
+}
+
+async function readCompleteDevelopmentSeed(): Promise<{ projectId: string, runId: string } | null> {
+  const [[project], [projectReadModel]] = await Promise.all([
+    db.select().from(novelProjects).where(eq(novelProjects.id, SEED_PROJECT_ID)),
+    db.select().from(projectReadModels).where(eq(projectReadModels.id, SEED_PROJECT_ID)),
+  ])
+  if (!project && !projectReadModel)
+    return null
+  if (!project || !projectReadModel)
+    throw new Error(INCOMPLETE_SEED_MESSAGE)
+
+  const [
+    bibleRows,
+    volumeRows,
+    actRows,
+    chapterRows,
+    characterRows,
+    relationshipRows,
+    conflictRows,
+    foreshadowingRows,
+    runRows,
+    runJobRows,
+    writingJobRows,
+  ] = await Promise.all([
+    db.select().from(storyBibles).where(eq(storyBibles.projectId, SEED_PROJECT_ID)),
+    db.select().from(volumes).where(eq(volumes.projectId, SEED_PROJECT_ID)),
+    db.select().from(acts).where(eq(acts.projectId, SEED_PROJECT_ID)),
+    db.select().from(chapters).where(eq(chapters.projectId, SEED_PROJECT_ID)),
+    db.select().from(characters).where(eq(characters.projectId, SEED_PROJECT_ID)),
+    db.select().from(characterRelationships).where(eq(characterRelationships.projectId, SEED_PROJECT_ID)),
+    db.select().from(conflicts).where(eq(conflicts.projectId, SEED_PROJECT_ID)),
+    db.select().from(foreshadowingItems).where(eq(foreshadowingItems.projectId, SEED_PROJECT_ID)),
+    db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.projectId, SEED_PROJECT_ID)),
+    db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.projectId, SEED_PROJECT_ID)),
+    db.select().from(writingJobs).where(eq(writingJobs.projectId, SEED_PROJECT_ID)),
+  ])
+
+  const volume = singleRow(volumeRows)
+  const act = singleRow(actRows)
+  const bible = singleRow(bibleRows)
+  const relationship = singleRow(relationshipRows)
+  const conflict = singleRow(conflictRows)
+  const foreshadowing = singleRow(foreshadowingRows)
+  const run = singleRow(runRows)
+  const lin = characterRows.find(row => row.name === '林岚')
+  const gu = characterRows.find(row => row.name === '顾临川')
+  const chapterOne = chapterRows.find(row => row.chapterNumber === 1)
+  const chapterThree = chapterRows.find(row => row.chapterNumber === 3)
+  const writingJobIds = new Set(writingJobRows.map(row => row.id))
+  const targetChapterIds = new Set(chapterRows
+    .filter(row => row.chapterNumber === 1 || row.chapterNumber === 2)
+    .map(row => row.id))
+
+  const complete = project.title === '测试小说《镜中城回声》'
+    && project.description === '用于验证事件溯源创作全链路的悬疑奇幻样例。'
+    && project.status === 'writing'
+    && project.targetWords === 200000
+    && projectReadModel.title === project.title
+    && projectReadModel.description === project.description
+    && projectReadModel.status === project.status
+    && projectReadModel.targetWords === project.targetWords
+    && bible?.worldview === '镜中城只在雨夜出现，并收藏现实中被遗忘的人与记忆。'
+    && volume?.title === '第一卷：雨夜来信'
+    && volume.orderIndex === 0
+    && act?.title === '异常入口'
+    && act.volumeId === volume.id
+    && hasExactValues(chapterRows, row => `${row.chapterNumber}:${row.title}`, [
+      '1:空白信',
+      '2:雨夜入口',
+      '3:失踪者名单',
+    ])
+    && chapterRows.every(row => row.volumeId === volume.id)
+    && hasExactValues(characterRows, row => `${row.name}:${row.role}`, [
+      '林岚:protagonist',
+      '顾临川:ally',
+      '沈雾:antagonist',
+    ])
+    && relationship !== undefined
+    && lin !== undefined
+    && gu !== undefined
+    && samePair(
+      [relationship.characterAId, relationship.characterBId],
+      [lin.id, gu.id],
+    )
+    && relationship.type === '互相试探的同盟'
+    && conflict?.title === '身份证明危机'
+    && conflict.status === 'escalating'
+    && foreshadowing?.title === '空白信的真正寄件人'
+    && foreshadowing.setupChapterId === chapterOne?.id
+    && foreshadowing.expectedPayoffChapterId === chapterThree?.id
+    && run?.projectId === SEED_PROJECT_ID
+    && run.status === 'idle'
+    && run.strategy === 'balanced'
+    && run.scopeType === 'next_n_chapters'
+    && run.targetChapterCount === 2
+    && run.targetWordsPerChapter === 3000
+    && runJobRows.length === 2
+    && runJobRows.every(row => (
+      row.runId === run.id
+      && row.projectId === SEED_PROJECT_ID
+      && row.status === 'pending'
+      && writingJobIds.has(row.writingJobId)
+      && row.chapterId !== null
+      && targetChapterIds.has(row.chapterId)
+    ))
+    && writingJobRows.length === 2
+    && writingJobRows.every(row => (
+      row.projectId === SEED_PROJECT_ID
+      && row.autonomousRunId === run.id
+      && row.status === 'idle'
+      && row.mode === 'outline_then_draft'
+      && row.currentChapterId !== null
+      && targetChapterIds.has(row.currentChapterId)
+    ))
+
+  if (!complete)
+    throw new Error(INCOMPLETE_SEED_MESSAGE)
+  return { projectId: project.id, runId: run.id }
+}
+
+function singleRow<TRow>(rows: readonly TRow[]): TRow | undefined {
+  return rows.length === 1 ? rows[0] : undefined
+}
+
+function hasExactValues<TRow>(
+  rows: readonly TRow[],
+  value: (row: TRow) => string,
+  expected: readonly string[],
+): boolean {
+  if (rows.length !== expected.length)
+    return false
+  const actual = new Set(rows.map(value))
+  return expected.every(item => actual.has(item))
+}
+
+function samePair(left: readonly [string, string], right: readonly [string, string]): boolean {
+  return left.includes(right[0]) && left.includes(right[1])
 }
 
 async function seedStaticCatalogs() {
