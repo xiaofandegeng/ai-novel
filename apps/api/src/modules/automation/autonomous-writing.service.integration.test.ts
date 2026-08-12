@@ -135,7 +135,7 @@ describe('autonomous writing service', () => {
     expect(abandonEvents.slice(-2).map(row => (row.payload as { run: { status: string } }).run.status)).toEqual(['abandoning', 'abandoned'])
   })
 
-  it('pauses safe and balanced runs after a chapter failure while fast mode continues', async () => {
+  it('pauses safe and balanced runs while fast mode advances to its terminal result', async () => {
     for (const strategy of ['safe', 'balanced', 'fast'] as const) {
       const projectId = `failure-policy-${strategy}`
       await createProject(projectId, `失败策略 ${strategy}`)
@@ -149,8 +149,11 @@ describe('autonomous writing service', () => {
 
       await handleAutonomousJobCompletion(projectId, runJob.writingJobId, 'failed', '模型不可用')
 
+      if (strategy === 'fast')
+        await wakeEventOutbox()
+
       const [updated] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, run.id))
-      expect(updated.status).toBe(strategy === 'fast' ? 'running' : 'paused')
+      expect(updated.status).toBe(strategy === 'fast' ? 'failed' : 'paused')
       await expect(db.select().from(autonomousRunExceptions).where(eq(autonomousRunExceptions.runId, run.id))).resolves.toMatchObject([{
         status: strategy === 'fast' ? 'ignored' : 'open',
       }])
