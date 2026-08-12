@@ -25,19 +25,14 @@ export async function createSnapshot(
     return fail('Content is required for snapshot')
   }
 
-  const result = await dispatchChapterCommand<{ versionId: string }>(
+  const result = await dispatchChapterCommand<{ version: typeof chapterVersions.$inferSelect, versionId: string }>(
     RECORD_CHAPTER_VERSION_COMMAND,
     projectId,
     chapterId,
     { content, note: note || 'Manual snapshot' },
     options,
   )
-  const [row] = await db.select().from(chapterVersions).where(and(
-    eq(chapterVersions.projectId, projectId),
-    eq(chapterVersions.chapterId, chapterId),
-    eq(chapterVersions.id, result.versionId),
-  )).limit(1)
-  return row ?? fail('Version projection not found')
+  return result.version
 }
 
 export async function deleteVersion(projectId: string, versionId: string) {

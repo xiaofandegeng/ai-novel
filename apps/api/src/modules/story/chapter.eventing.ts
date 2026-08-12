@@ -403,7 +403,7 @@ function registerCommands(runtime: ChapterEventingRuntime): void {
         expectedVersion: loaded.version,
         events: [pendingEvent(CHAPTER_VERSION_RECORDED, { version }, command, timestamp)],
       }],
-      result: { versionId: version.id },
+      result: { versionId: version.id, version },
     }
   })
 

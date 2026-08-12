@@ -12,6 +12,7 @@ import { DomainCommandError } from '../../eventing'
 import { commandBus } from '../../eventing-runtime'
 import { CredentialVault } from '../../security/credential-vault'
 import { errorMessage, generateId } from '../../shared/utils'
+import { fakeAIEmbedding, fakeAIJSON, isFakeAIEnabled } from './ai-fake-provider'
 import { AIUsageService } from './ai-usage.service'
 import {
   CHANGE_PROJECT_AI_SETTINGS_COMMAND,
@@ -461,6 +462,8 @@ export async function callAIJSON<T = Record<string, unknown>>(
   const projectId = options.metadata?.projectId
   if (!projectId)
     throw new AIProjectScopeError()
+  if (isFakeAIEnabled())
+    return fakeAIJSON(options.metadata.taskType || 'unknown') as T
   const settings = await assertAIConfigured(projectId)
   const client = createOpenAIClient(settings)
   const maxRetries = options.maxRetries ?? 2
@@ -584,6 +587,8 @@ export async function callAIEmbedding(
   text: string,
   options: { projectId: string, model?: string },
 ): Promise<number[]> {
+  if (isFakeAIEnabled())
+    return fakeAIEmbedding()
   const settings = await getEffectiveAISettings(options.projectId)
   if (settings.embeddingEnabled === false) {
     throw new Error('当前项目已禁用向量化（Embedding）功能，请在设置中开启。')
