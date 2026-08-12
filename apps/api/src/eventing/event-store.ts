@@ -1,4 +1,4 @@
-import type { EventingContentProtector, EventingExecutor } from './content-protector'
+import type { EventingContentProtector } from './content-protector'
 import type {
   AggregateSnapshot,
   AppendBatch,
@@ -63,7 +63,7 @@ export class EventStore {
         gt(domainEvents.aggregateVersion, fromVersion),
       ))
       .orderBy(asc(domainEvents.aggregateVersion))
-    return unprotectEvents(this.contentProtector, db, rows.map(toStoredEvent))
+    return this.contentProtector.unprotectEvents(db, rows.map(toStoredEvent))
   }
 
   async readAll(afterPosition: number, limit: number): Promise<StoredEvent[]> {
@@ -72,7 +72,7 @@ export class EventStore {
       .where(gt(domainEvents.globalPosition, afterPosition))
       .orderBy(asc(domainEvents.globalPosition))
       .limit(limit)
-    return unprotectEvents(this.contentProtector, db, rows.map(toStoredEvent))
+    return this.contentProtector.unprotectEvents(db, rows.map(toStoredEvent))
   }
 
   async readHeadersForDeletedProjects(): Promise<Set<string>> {
@@ -105,7 +105,7 @@ function createSession(
           gt(domainEvents.aggregateVersion, fromVersion),
         ))
         .orderBy(asc(domainEvents.aggregateVersion))
-      return unprotectEvents(contentProtector, transaction, rows.map(toStoredEvent))
+      return contentProtector.unprotectEvents(transaction, rows.map(toStoredEvent))
     },
     async readAll(afterPosition, limit) {
       const rows = await transaction.select()
@@ -113,7 +113,7 @@ function createSession(
         .where(gt(domainEvents.globalPosition, afterPosition))
         .orderBy(asc(domainEvents.globalPosition))
         .limit(limit)
-      return unprotectEvents(contentProtector, transaction, rows.map(toStoredEvent))
+      return contentProtector.unprotectEvents(transaction, rows.map(toStoredEvent))
     },
     async appendBatch(batch) {
       const streams = normalizeStreams(batch)
@@ -199,7 +199,7 @@ function createSession(
 
       try {
         const inserted = await transaction.insert(domainEvents).values(values).returning()
-        return unprotectEvents(contentProtector, transaction, inserted.map(toStoredEvent))
+        return contentProtector.unprotectEvents(transaction, inserted.map(toStoredEvent))
       }
       catch (error: unknown) {
         if (isConstraintViolation(error, 'domain_events_event_id_unique')) {
@@ -298,21 +298,6 @@ function toEventInsert(
     causationId: event.causationId ?? null,
     occurredAt: event.occurredAt,
   }
-}
-
-async function unprotectEvents(
-  contentProtector: EventingContentProtector,
-  executor: EventingExecutor,
-  events: StoredEvent[],
-): Promise<StoredEvent[]> {
-  const plaintextEvents: StoredEvent[] = []
-  for (const event of events) {
-    plaintextEvents.push({
-      ...event,
-      payload: await contentProtector.unprotectEvent(executor, event),
-    })
-  }
-  return plaintextEvents
 }
 
 function normalizeStreams(batch: AppendBatch): AppendBatch['streams'] {

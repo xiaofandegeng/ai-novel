@@ -1,6 +1,6 @@
 import type { AggregateSnapshot, AppendBatch, PendingEvent, StreamRef } from './event-types'
 import { asc } from 'drizzle-orm'
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, sql } from '../db'
 import { domainEvents } from '../db/schema'
 import { ProjectDataKeyStore } from '../security/project-data-key.store'
@@ -103,6 +103,74 @@ describe('eventStore', () => {
       { payload: { title: projectTitle } },
       { payload: { body: chapterBody } },
     ])
+  })
+
+  it('resolves each project key once per batch read without caching it across reads', async () => {
+    const keys = new ProjectDataKeyStore()
+    const resolveKey = vi.spyOn(keys, 'resolve')
+    const protectedStore = createProtectedStore(keys)
+    const projectA: StreamRef = {
+      aggregateType: 'Project',
+      aggregateId: 'batch-project-a',
+      projectId: 'batch-project-a',
+    }
+    const chapterA: StreamRef = {
+      aggregateType: 'Chapter',
+      aggregateId: 'batch-chapter-a',
+      projectId: 'batch-project-a',
+    }
+    const projectB: StreamRef = {
+      aggregateType: 'Project',
+      aggregateId: 'batch-project-b',
+      projectId: 'batch-project-b',
+    }
+    const chapterB: StreamRef = {
+      aggregateType: 'Chapter',
+      aggregateId: 'batch-chapter-b',
+      projectId: 'batch-project-b',
+    }
+
+    await protectedStore.withTransaction(session => session.appendBatch(createBatch([
+      {
+        stream: projectA,
+        expectedVersion: 0,
+        events: [pending('event-batch-project-a', PROJECT_CREATED, { title: '项目甲' })],
+      },
+      {
+        stream: chapterA,
+        expectedVersion: 0,
+        events: [
+          pending('event-batch-chapter-a-1', CHAPTER_CREATED, { body: '甲第一段' }),
+          pending('event-batch-chapter-a-2', CHAPTER_CREATED, { body: '甲第二段' }),
+        ],
+      },
+      {
+        stream: projectB,
+        expectedVersion: 0,
+        events: [pending('event-batch-project-b', PROJECT_CREATED, { title: '项目乙' })],
+      },
+      {
+        stream: chapterB,
+        expectedVersion: 0,
+        events: [pending('event-batch-chapter-b-1', CHAPTER_CREATED, { body: '乙第一段' })],
+      },
+    ], 'command-batch-projects')))
+    resolveKey.mockClear()
+
+    await expect(protectedStore.readAll(0, 10)).resolves.toMatchObject([
+      { projectId: 'batch-project-a', payload: { title: '项目甲' } },
+      { projectId: 'batch-project-a', payload: { body: '甲第一段' } },
+      { projectId: 'batch-project-a', payload: { body: '甲第二段' } },
+      { projectId: 'batch-project-b', payload: { title: '项目乙' } },
+      { projectId: 'batch-project-b', payload: { body: '乙第一段' } },
+    ])
+    expect(resolveKey).toHaveBeenCalledTimes(2)
+
+    await expect(protectedStore.loadStream(chapterA)).resolves.toMatchObject([
+      { payload: { body: '甲第一段' } },
+      { payload: { body: '甲第二段' } },
+    ])
+    expect(resolveKey).toHaveBeenCalledTimes(3)
   })
 
   it('discovers deleted projects from clear headers without decrypting event payloads', async () => {
@@ -371,7 +439,7 @@ function pending(
   }
 }
 
-function createProtectedStore(): EventStore {
+function createProtectedStore(keys = new ProjectDataKeyStore()): EventStore {
   const registry = new EventRegistry()
   for (const eventType of [PROJECT_CREATED, CHAPTER_CREATED]) {
     registry.register({
@@ -391,7 +459,7 @@ function createProtectedStore(): EventStore {
   })
   const contentProtector = new ProjectEventingContentProtector(
     registry,
-    new ProjectDataKeyStore(),
+    keys,
     {
       projectCreatedEventType: PROJECT_CREATED,
       projectDeletedEventType: PROJECT_DELETED,

@@ -1,7 +1,7 @@
 import type { Buffer } from 'node:buffer'
 import type { db } from '../db'
 import type { EncryptedJsonEnvelope } from '../security/project-content-crypto'
-import type { ProjectDataKeyStore } from '../security/project-data-key.store'
+import type { ProjectDataKey, ProjectDataKeyStore } from '../security/project-data-key.store'
 import type { EventRegistry } from './event-registry'
 import type { EventingTransaction } from './event-store'
 import type {
@@ -27,6 +27,7 @@ export type EventingExecutor = Pick<typeof db, 'select'> | EventingTransaction
 export interface EventingContentProtector {
   protectEvent: (executor: EventingExecutor, event: StoredEvent) => Promise<JsonObject>
   unprotectEvent: (executor: EventingExecutor, event: StoredEvent) => Promise<JsonObject>
+  unprotectEvents: (executor: EventingExecutor, events: StoredEvent[]) => Promise<StoredEvent[]>
   protectSnapshot: (executor: EventingExecutor, snapshot: AggregateSnapshot) => Promise<JsonObject>
   unprotectSnapshot: (executor: EventingExecutor, snapshot: AggregateSnapshot) => Promise<JsonObject>
   protectReceiptResult: (
@@ -53,6 +54,10 @@ export class NoopEventingContentProtector implements EventingContentProtector {
 
   async unprotectEvent(_executor: EventingExecutor, event: StoredEvent): Promise<JsonObject> {
     return event.payload
+  }
+
+  async unprotectEvents(_executor: EventingExecutor, events: StoredEvent[]): Promise<StoredEvent[]> {
+    return events
   }
 
   async protectSnapshot(_executor: EventingExecutor, snapshot: AggregateSnapshot): Promise<JsonObject> {
@@ -104,17 +109,38 @@ export class ProjectEventingContentProtector implements EventingContentProtector
   }
 
   async unprotectEvent(executor: EventingExecutor, event: StoredEvent): Promise<JsonObject> {
-    if (this.registry.protectionFor(event.eventType) === 'none')
-      return event.payload
+    const [unprotected] = await this.unprotectEvents(executor, [event])
+    if (!unprotected)
+      throw new Error('Cannot unprotect a missing event')
+    return unprotected.payload
+  }
 
-    const projectId = requiredProjectId(event.projectId, 'event')
-    const dataKey = await this.keys.resolve(executor, projectId)
-    return decryptEventingJson({
-      key: dataKey.key,
-      value: event.payload,
-      canonicalAad: eventAad(event, projectId),
-      legacyAad: legacyEventAad(event, projectId),
-    })
+  async unprotectEvents(executor: EventingExecutor, events: StoredEvent[]): Promise<StoredEvent[]> {
+    const dataKeys = new Map<string, ProjectDataKey>()
+    const plaintextEvents: StoredEvent[] = []
+    for (const event of events) {
+      if (this.registry.protectionFor(event.eventType) === 'none') {
+        plaintextEvents.push(event)
+        continue
+      }
+
+      const projectId = requiredProjectId(event.projectId, 'event')
+      let dataKey = dataKeys.get(projectId)
+      if (!dataKey) {
+        dataKey = await this.keys.resolve(executor, projectId)
+        dataKeys.set(projectId, dataKey)
+      }
+      plaintextEvents.push({
+        ...event,
+        payload: decryptEventingJson({
+          key: dataKey.key,
+          value: event.payload,
+          canonicalAad: eventAad(event, projectId),
+          legacyAad: legacyEventAad(event, projectId),
+        }),
+      })
+    }
+    return plaintextEvents
   }
 
   async protectSnapshot(executor: EventingExecutor, snapshot: AggregateSnapshot): Promise<JsonObject> {
