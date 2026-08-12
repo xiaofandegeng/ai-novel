@@ -58,11 +58,14 @@ export class CommandBus {
 
   async dispatch<TResult extends JsonObject = JsonObject>(command: CommandEnvelope): Promise<TResult> {
     const activeSession = this.sessionStorage.getStore()
-    if (activeSession)
+    if (activeSession) {
+      await activeSession.acquireAppendLock()
       return this.dispatchInSession<TResult>(command, activeSession)
+    }
 
     try {
       return await this.store.withTransaction(async (session) => {
+        await session.acquireAppendLock()
         return this.sessionStorage.run(
           session,
           () => this.dispatchInSession<TResult>(command, session),
@@ -80,12 +83,17 @@ export class CommandBus {
     work: (transaction: EventStoreSession['transaction']) => Promise<TResult>,
   ): Promise<TResult> {
     const activeSession = this.sessionStorage.getStore()
-    if (activeSession)
+    if (activeSession) {
+      await activeSession.acquireAppendLock()
       return work(activeSession.transaction)
-    return this.store.withTransaction(session => this.sessionStorage.run(
-      session,
-      () => work(session.transaction),
-    ))
+    }
+    return this.store.withTransaction(async (session) => {
+      await session.acquireAppendLock()
+      return this.sessionStorage.run(
+        session,
+        () => work(session.transaction),
+      )
+    })
   }
 
   private async dispatchInSession<TResult extends JsonObject>(

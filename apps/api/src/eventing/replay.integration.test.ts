@@ -7,6 +7,7 @@ import { db, sql } from '../db'
 import { projectionCheckpoints } from '../db/schema'
 import { ProjectDataKeyStore } from '../security/project-data-key.store'
 import { resetTestDatabase } from '../test/database'
+import { CommandBus } from './command-bus'
 import {
   NoopEventingContentProtector,
   ProjectEventingContentProtector,
@@ -363,6 +364,160 @@ describe('projectionReplay', () => {
     expect(deletionOutcome.status).toBe('fulfilled')
     expect(replayOutcome.status).toBe('fulfilled')
     expect(await readProject('ordered-project')).toBeUndefined()
+  }, 10_000)
+
+  it('locks runAtomically before business rows so nested dispatch cannot deadlock with replay', async () => {
+    const atomicStore = new EventStore()
+    await appendReplayEvent(
+      atomicStore,
+      'atomic-project',
+      'atomic-before-replay',
+    )
+    await sql`
+      insert into eventing_replay_test_projection (project_id, event_ids)
+      values ('atomic-project', '[]'::jsonb)
+    `
+    const projections = new ProjectionRegistry()
+    projections.register({
+      name: 'atomic-lock-order',
+      mode: 'sync',
+      handles: ['KernelReplayRecorded'],
+      reset: async () => {},
+      project: async (transaction, event) => {
+        await transaction.execute(drizzleSql`
+          update eventing_replay_test_projection
+          set event_ids = event_ids || ${JSON.stringify([event.eventId])}::jsonb
+          where project_id = 'atomic-project'
+        `)
+      },
+    })
+    const bus = new CommandBus(atomicStore, projections)
+    bus.register('RecordAtomicReplay', async () => ({
+      streams: [{
+        stream: {
+          aggregateType: 'KernelReplayTest',
+          aggregateId: 'atomic-nested',
+          projectId: 'atomic-project',
+        },
+        expectedVersion: 0,
+        events: [pending('atomic-nested-dispatch')],
+      }],
+      result: { recorded: true },
+    }))
+    const businessRowLocked = deferred()
+    const releaseNestedDispatch = deferred()
+
+    const atomicWork = bus.runAtomically(async (transaction) => {
+      await transaction.execute(drizzleSql`
+        select project_id
+        from eventing_replay_test_projection
+        where project_id = 'atomic-project'
+        for update
+      `)
+      businessRowLocked.resolve()
+      await releaseNestedDispatch.promise
+      await bus.dispatch({
+        commandId: 'command-atomic-nested',
+        commandType: 'RecordAtomicReplay',
+        aggregateType: 'KernelReplayTest',
+        aggregateId: 'atomic-nested',
+        projectId: 'atomic-project',
+        correlationId: 'command-atomic-nested',
+        payload: {},
+      })
+    })
+    await businessRowLocked.promise
+
+    const replay = new ProjectionReplay(projections, atomicStore).replayAll({ batchSize: 1 })
+    const [replayWaitedForBusinessRow, replayWaitedForAtomicWork] = await Promise.all([
+      waitForBlockedDatabaseQuery('eventing_replay_test_projection'),
+      waitForBlockedDatabaseQuery('pg_advisory_xact_lock('),
+    ])
+    releaseNestedDispatch.resolve()
+    const outcomes = await Promise.allSettled([atomicWork, replay])
+    const errors = outcomes.flatMap(outcome => (
+      outcome.status === 'rejected' ? [databaseErrorDetail(outcome.reason)] : []
+    ))
+
+    expect({
+      errors,
+      replayWaitedForAtomicWork,
+      replayWaitedForBusinessRow,
+      statuses: outcomes.map(outcome => outcome.status),
+    }).toEqual({
+      errors: [],
+      replayWaitedForAtomicWork: true,
+      replayWaitedForBusinessRow: false,
+      statuses: ['fulfilled', 'fulfilled'],
+    })
+    expect(outcomes[1]).toEqual({
+      status: 'fulfilled',
+      value: [{
+        projectionName: 'atomic-lock-order',
+        processedEvents: 2,
+        lastGlobalPosition: 2,
+      }],
+    })
+  }, 15_000)
+
+  it('acquires the append lock before entering a normal dispatch handler', async () => {
+    const dispatchStore = new EventStore()
+    await appendReplayEvent(
+      dispatchStore,
+      'dispatch-order-project',
+      'dispatch-before-replay',
+    )
+    const replayEntered = deferred()
+    const releaseReplay = deferred()
+    const replayProjections = new ProjectionRegistry()
+    replayProjections.register(memoryProjection(
+      'dispatch-lock-order',
+      [],
+      async () => {
+        replayEntered.resolve()
+        await releaseReplay.promise
+      },
+    ))
+    const replay = new ProjectionReplay(replayProjections, dispatchStore).replayAll()
+    await replayEntered.promise
+
+    let handlerEntered = false
+    const bus = new CommandBus(dispatchStore, new ProjectionRegistry())
+    bus.register('RecordDispatchOrder', async () => {
+      handlerEntered = true
+      return {
+        streams: [{
+          stream: {
+            aggregateType: 'KernelReplayTest',
+            aggregateId: 'dispatch-after-replay',
+            projectId: 'dispatch-order-project',
+          },
+          expectedVersion: 0,
+          events: [pending('dispatch-after-replay')],
+        }],
+        result: { recorded: true },
+      }
+    })
+    const dispatch = bus.dispatch({
+      commandId: 'command-dispatch-order',
+      commandType: 'RecordDispatchOrder',
+      aggregateType: 'KernelReplayTest',
+      aggregateId: 'dispatch-after-replay',
+      projectId: 'dispatch-order-project',
+      correlationId: 'command-dispatch-order',
+      payload: {},
+    })
+    const dispatchWaitedBeforeHandler = await waitForBlockedDatabaseQuery(
+      'pg_advisory_xact_lock_shared',
+    )
+    const handlerEnteredWhileReplayHeldLock = handlerEntered
+
+    releaseReplay.resolve()
+    const outcomes = await Promise.allSettled([replay, dispatch])
+
+    expect(dispatchWaitedBeforeHandler).toBe(true)
+    expect(handlerEnteredWhileReplayHeldLock).toBe(false)
+    expect(outcomes.map(outcome => outcome.status)).toEqual(['fulfilled', 'fulfilled'])
   }, 10_000)
 
   it('upcasts stored events before sending them to a replay projector', async () => {
@@ -778,6 +933,19 @@ function deferred(): Deferred {
     resolve = resolvePromise
   })
   return { promise, resolve }
+}
+
+function databaseErrorDetail(error: unknown): string {
+  let current = error
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (typeof current !== 'object' || current === null)
+      break
+    const record = current as Record<string, unknown>
+    if (typeof record.code === 'string' && typeof record.message === 'string')
+      return `${record.code}: ${record.message}`
+    current = record.cause
+  }
+  return String(error)
 }
 
 async function appendProtectedReplayProjects(store: EventStore): Promise<void> {

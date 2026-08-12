@@ -4,6 +4,7 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, expectTypeOf, it } from 'vitest'
+import { findDomainEventInsertSites } from '../test/architecture/domain-event-insert-analysis'
 import { domainEventRegistry } from './eventing-runtime'
 import { EVENT_PAYLOAD_PROTECTION_CATALOG } from './eventing/event-protection-catalog'
 
@@ -59,6 +60,23 @@ function compareEventTypeSets(
     missing: [...expected].filter(eventType => !actual.has(eventType)).sort(),
     unexpected: [...actual].filter(eventType => !expected.has(eventType)).sort(),
   }
+}
+
+function methodCallSites(file: string, source: string, methodName: string): string[] {
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true)
+  const sites: string[] = []
+
+  function visit(node: ts.Node): void {
+    if (ts.isCallExpression(node)
+      && ts.isPropertyAccessExpression(node.expression)
+      && node.expression.name.text === methodName) {
+      sites.push(file)
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+  return sites
 }
 
 describe('api architecture boundaries', () => {
@@ -188,21 +206,50 @@ describe('api architecture boundaries', () => {
 
   it('routes every production domain event insert through EventStore appendBatch', () => {
     const eventStorePath = join(sourceRoot, 'eventing/event-store.ts')
-    const directWriters = sourceFiles(sourceRoot)
+    const sites = sourceFiles(sourceRoot)
       .filter(file => !file.endsWith('.test.ts'))
       .filter(file => !file.includes('/db/schema/'))
-      .filter(file => file !== eventStorePath)
-      .filter((file) => {
-        const source = readFileSync(file, 'utf8')
-        return /\.insert\(domainEvents\)/.test(source)
-          || /insert\s+into\s+["']?domain_events\b/i.test(source)
-      })
-      .map(file => relative(sourceRoot, file))
+      .flatMap(file => findDomainEventInsertSites(
+        relative(sourceRoot, file),
+        readFileSync(file, 'utf8'),
+      ))
+    const eventStoreRelativePath = relative(sourceRoot, eventStorePath)
 
-    expect(directWriters).toEqual([])
-    const eventStoreSource = readFileSync(eventStorePath, 'utf8')
-    expect(eventStoreSource.match(/\.insert\(domainEvents\)/g)).toHaveLength(1)
-    expect(eventStoreSource).not.toMatch(/insert\s+into\s+["']?domain_events\b/i)
+    expect(sites).toHaveLength(1)
+    expect(sites[0]).toMatchObject({
+      file: eventStoreRelativePath,
+      kind: 'drizzle-insert',
+    })
+  })
+
+  it('detects aliased, namespace-member, and interpolated SQL domain event inserts', () => {
+    expect(findDomainEventInsertSites('aliased.ts', `
+      import { domainEvents as eventTable } from './db/schema'
+      transaction.insert(eventTable).values({})
+    `)).toMatchObject([{ file: 'aliased.ts', kind: 'drizzle-insert' }])
+
+    expect(findDomainEventInsertSites('member.ts', `
+      import * as schema from './db/schema'
+      transaction.insert(schema.domainEvents).values({})
+    `)).toMatchObject([{ file: 'member.ts', kind: 'drizzle-insert' }])
+
+    expect(findDomainEventInsertSites('template.ts', `
+      import { domainEvents as eventTable } from './db/schema/eventing'
+      transaction.execute(sql\`insert into \${eventTable} values (\${event})\`)
+    `)).toMatchObject([{ file: 'template.ts', kind: 'sql-template-insert' }])
+  })
+
+  it('keeps every production appendBatch call behind the CommandBus transaction lock entry', () => {
+    const appendCallers = sourceFiles(sourceRoot)
+      .filter(file => !file.endsWith('.test.ts'))
+      .filter(file => !file.includes('/db/schema/'))
+      .flatMap(file => methodCallSites(
+        relative(sourceRoot, file),
+        readFileSync(file, 'utf8'),
+        'appendBatch',
+      ))
+
+    expect(appendCallers).toEqual(['eventing/command-bus.ts'])
   })
 
   it('restricts event-sourced projection writes to projectors', () => {

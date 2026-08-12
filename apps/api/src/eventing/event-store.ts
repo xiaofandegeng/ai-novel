@@ -40,6 +40,7 @@ export interface ReplayBoundary {
 
 export interface EventStoreSession {
   transaction: EventingTransaction
+  acquireAppendLock: () => Promise<void>
   loadStream: (stream: StreamRef, fromVersion?: number) => Promise<StoredEvent[]>
   readAll: (afterPosition: number, limit: number) => Promise<StoredEvent[]>
   prepareReplay: () => Promise<ReplayBoundary>
@@ -127,8 +128,15 @@ function createSession(
   contentProtector: EventingContentProtector,
   projectDeletedEventType: string | undefined,
 ): EventStoreSession {
+  let appendLockPromise: Promise<void> | undefined
+  const acquireAppendLock = () => {
+    appendLockPromise ??= acquireEventStoreAppendLock(transaction)
+    return appendLockPromise
+  }
+
   return {
     transaction,
+    acquireAppendLock,
     async loadStream(stream, fromVersion = 0) {
       const scope = stream.projectId
         ? eq(domainEvents.projectId, stream.projectId)
@@ -206,7 +214,7 @@ function createSession(
       }
     },
     async appendBatch(batch) {
-      await acquireEventStoreAppendLock(transaction)
+      await acquireAppendLock()
       const streams = normalizeStreams(batch)
       if (streams.length === 0)
         return []
