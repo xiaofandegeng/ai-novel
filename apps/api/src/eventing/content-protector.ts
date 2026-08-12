@@ -1,3 +1,4 @@
+import type { Buffer } from 'node:buffer'
 import type { db } from '../db'
 import type { EncryptedJsonEnvelope } from '../security/project-content-crypto'
 import type { ProjectDataKeyStore } from '../security/project-data-key.store'
@@ -14,6 +15,12 @@ import {
   decryptProjectJson,
   encryptProjectJson,
 } from '../security/project-content-crypto'
+
+const CONTENT_AAD_FORMAT = 'eventing-content-aad-v1' as const
+
+interface ProtectedEventingJsonEnvelope extends EncryptedJsonEnvelope {
+  aadFormat: typeof CONTENT_AAD_FORMAT
+}
 
 export type EventingExecutor = Pick<typeof db, 'select'> | EventingTransaction
 
@@ -89,7 +96,7 @@ export class ProjectEventingContentProtector implements EventingContentProtector
     const dataKey = event.eventType === this.lifecycleEvents.projectCreatedEventType
       ? await this.keys.ensure(requiredTransaction(executor), projectId)
       : await this.keys.resolve(executor, projectId)
-    return encryptProjectJson({
+    return encryptEventingJson({
       key: dataKey.key,
       value: event.payload,
       aad: eventAad(event, projectId),
@@ -102,10 +109,11 @@ export class ProjectEventingContentProtector implements EventingContentProtector
 
     const projectId = requiredProjectId(event.projectId, 'event')
     const dataKey = await this.keys.resolve(executor, projectId)
-    return decryptProjectJson({
+    return decryptEventingJson({
       key: dataKey.key,
-      envelope: event.payload as EncryptedJsonEnvelope,
-      aad: eventAad(event, projectId),
+      value: event.payload,
+      canonicalAad: eventAad(event, projectId),
+      legacyAad: legacyEventAad(event, projectId),
     })
   }
 
@@ -114,7 +122,7 @@ export class ProjectEventingContentProtector implements EventingContentProtector
       return snapshot.state
 
     const dataKey = await this.keys.resolve(executor, snapshot.projectId)
-    return encryptProjectJson({
+    return encryptEventingJson({
       key: dataKey.key,
       value: snapshot.state,
       aad: snapshotAad(snapshot, snapshot.projectId),
@@ -126,10 +134,11 @@ export class ProjectEventingContentProtector implements EventingContentProtector
       return snapshot.state
 
     const dataKey = await this.keys.resolve(executor, snapshot.projectId)
-    return decryptProjectJson({
+    return decryptEventingJson({
       key: dataKey.key,
-      envelope: snapshot.state as EncryptedJsonEnvelope,
-      aad: snapshotAad(snapshot, snapshot.projectId),
+      value: snapshot.state,
+      canonicalAad: snapshotAad(snapshot, snapshot.projectId),
+      legacyAad: legacySnapshotAad(snapshot, snapshot.projectId),
     })
   }
 
@@ -142,7 +151,7 @@ export class ProjectEventingContentProtector implements EventingContentProtector
       return result
 
     const dataKey = await this.keys.resolve(executor, command.projectId)
-    return encryptProjectJson({
+    return encryptEventingJson({
       key: dataKey.key,
       value: result,
       aad: receiptAad(command, command.projectId),
@@ -158,10 +167,11 @@ export class ProjectEventingContentProtector implements EventingContentProtector
       return result
 
     const dataKey = await this.keys.resolve(executor, receipt.projectId)
-    return decryptProjectJson({
+    return decryptEventingJson({
       key: dataKey.key,
-      envelope: result as EncryptedJsonEnvelope,
-      aad: receiptAad(receipt, receipt.projectId),
+      value: result,
+      canonicalAad: receiptAad(receipt, receipt.projectId),
+      legacyAad: legacyReceiptAad(receipt, receipt.projectId),
     })
   }
 
@@ -190,6 +200,18 @@ function eventAad(event: StoredEvent, projectId: string): string {
   ])
 }
 
+function legacyEventAad(event: StoredEvent, projectId: string): string {
+  return [
+    event.eventId,
+    event.aggregateType,
+    event.aggregateId,
+    event.aggregateVersion,
+    projectId,
+    event.eventType,
+    event.schemaVersion,
+  ].join('|')
+}
+
 function snapshotAad(snapshot: AggregateSnapshot, projectId: string): string {
   return canonicalAad('aggregate-snapshot', [
     snapshot.aggregateType,
@@ -198,6 +220,17 @@ function snapshotAad(snapshot: AggregateSnapshot, projectId: string): string {
     projectId,
     snapshot.schemaVersion,
   ])
+}
+
+function legacySnapshotAad(snapshot: AggregateSnapshot, projectId: string): string {
+  return [
+    'snapshot',
+    snapshot.aggregateType,
+    snapshot.aggregateId,
+    snapshot.aggregateVersion,
+    projectId,
+    snapshot.schemaVersion,
+  ].join('|')
 }
 
 function receiptAad(
@@ -216,11 +249,57 @@ function receiptAad(
   ])
 }
 
+function legacyReceiptAad(
+  receipt: Pick<
+    CommandEnvelope | CommandReceiptRecord,
+    'commandId' | 'commandType' | 'aggregateType' | 'aggregateId'
+  >,
+  projectId: string,
+): string {
+  return [
+    'receipt',
+    receipt.commandId,
+    receipt.commandType,
+    receipt.aggregateType,
+    receipt.aggregateId,
+    projectId,
+  ].join('|')
+}
+
 function canonicalAad(
   namespace: 'event-payload' | 'aggregate-snapshot' | 'command-receipt-result',
   identity: Array<string | number>,
 ): string {
   return JSON.stringify(['eventing-content-v1', namespace, ...identity])
+}
+
+function encryptEventingJson(input: {
+  key: Buffer
+  value: JsonObject
+  aad: string
+}): ProtectedEventingJsonEnvelope {
+  return {
+    ...encryptProjectJson(input),
+    aadFormat: CONTENT_AAD_FORMAT,
+  }
+}
+
+function decryptEventingJson(input: {
+  key: Buffer
+  value: JsonObject
+  canonicalAad: string
+  legacyAad: string
+}): JsonObject {
+  const hasAadFormat = Object.hasOwn(input.value, 'aadFormat')
+  const aadFormat = input.value.aadFormat
+  if (hasAadFormat && aadFormat !== CONTENT_AAD_FORMAT)
+    throw new Error(`Unsupported eventing content AAD format: ${String(aadFormat)}`)
+
+  return decryptProjectJson({
+    key: input.key,
+    envelope: input.value as EncryptedJsonEnvelope,
+    aad: hasAadFormat ? input.canonicalAad : input.legacyAad,
+  })
 }
 
 function requiredProjectId(projectId: string | undefined, subject: string): string {

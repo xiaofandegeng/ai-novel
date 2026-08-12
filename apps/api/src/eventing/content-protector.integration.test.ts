@@ -8,6 +8,7 @@ import type {
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../db'
 import { projectDataKeys } from '../db/schema'
+import { encryptProjectJson } from '../security/project-content-crypto'
 import { ProjectDataKeyDestroyedError, ProjectDataKeyStore } from '../security/project-data-key.store'
 import { resetTestDatabase } from '../test/database'
 import {
@@ -21,6 +22,7 @@ afterAll(() => sql.end())
 
 const PROJECT_CREATED = 'FixtureProjectCreated'
 const PROJECT_DELETED = 'FixtureProjectDeleted'
+const CONTENT_AAD_FORMAT = 'eventing-content-aad-v1'
 
 describe('project eventing content protector', () => {
   const store = new EventStore()
@@ -41,10 +43,105 @@ describe('project eventing content protector', () => {
       const protectedPayload = await protector.protectEvent(session.transaction, event)
 
       expect(JSON.stringify(protectedPayload)).not.toContain(plaintext.chapter)
+      expect(protectedPayload).toMatchObject({ aadFormat: CONTENT_AAD_FORMAT })
       await expect(protector.unprotectEvent(session.transaction, {
         ...event,
         payload: protectedPayload,
       })).resolves.toEqual(plaintext)
+    })
+  })
+
+  it('rejects unknown AAD format markers instead of guessing a decoder', async () => {
+    await store.withTransaction(async (session) => {
+      const event = storedEvent({
+        eventType: PROJECT_CREATED,
+        payload: { chapter: '未知格式不应解密' },
+      })
+      const protectedPayload = await protector.protectEvent(session.transaction, event)
+
+      await expect(protector.unprotectEvent(session.transaction, {
+        ...event,
+        payload: { ...protectedPayload, aadFormat: 'eventing-content-aad-v2' },
+      })).rejects.toThrow('Unsupported eventing content AAD format')
+    })
+  })
+
+  it('does not authenticate canonical ciphertext after its AAD format marker is stripped', async () => {
+    await store.withTransaction(async (session) => {
+      const event = storedEvent({
+        eventType: PROJECT_CREATED,
+        payload: { chapter: '标记不能被剥离' },
+      })
+      const protectedPayload = await protector.protectEvent(session.transaction, event)
+      const { aadFormat: _removed, ...withoutMarker } = protectedPayload
+
+      await expect(protector.unprotectEvent(session.transaction, {
+        ...event,
+        payload: withoutMarker,
+      })).rejects.toThrow()
+    })
+  })
+
+  it('decrypts marker-absent ciphertext created with the former pipe-joined AAD', async () => {
+    await store.withTransaction(async (session) => {
+      const dataKey = await keys.ensure(session.transaction, 'project-a')
+      const event = storedEvent({
+        eventType: PROJECT_CREATED,
+        payload: { chapter: '旧事件正文' },
+      })
+      const snapshot = aggregateSnapshot({ state: { draft: '旧快照正文' } })
+      const command = commandEnvelope()
+      const receiptPayload = { title: '旧回执正文' }
+      const legacyEventPayload = encryptProjectJson({
+        key: dataKey.key,
+        value: event.payload,
+        aad: [
+          event.eventId,
+          event.aggregateType,
+          event.aggregateId,
+          event.aggregateVersion,
+          event.projectId,
+          event.eventType,
+          event.schemaVersion,
+        ].join('|'),
+      })
+      const legacySnapshotState = encryptProjectJson({
+        key: dataKey.key,
+        value: snapshot.state,
+        aad: [
+          'snapshot',
+          snapshot.aggregateType,
+          snapshot.aggregateId,
+          snapshot.aggregateVersion,
+          snapshot.projectId,
+          snapshot.schemaVersion,
+        ].join('|'),
+      })
+      const legacyReceiptResult = encryptProjectJson({
+        key: dataKey.key,
+        value: receiptPayload,
+        aad: [
+          'receipt',
+          command.commandId,
+          command.commandType,
+          command.aggregateType,
+          command.aggregateId,
+          command.projectId,
+        ].join('|'),
+      })
+
+      await expect(protector.unprotectEvent(session.transaction, {
+        ...event,
+        payload: legacyEventPayload,
+      })).resolves.toEqual(event.payload)
+      await expect(protector.unprotectSnapshot(session.transaction, {
+        ...snapshot,
+        state: legacySnapshotState,
+      })).resolves.toEqual(snapshot.state)
+      await expect(protector.unprotectReceiptResult(session.transaction, receiptRecord({
+        ...command,
+        result: legacyReceiptResult,
+      }))).resolves.toEqual(receiptPayload)
     })
   })
 
@@ -126,6 +223,8 @@ describe('project eventing content protector', () => {
 
       expect(JSON.stringify(protectedSnapshot)).not.toContain(snapshot.state.draft)
       expect(JSON.stringify(protectedReceipt)).not.toContain(result.title)
+      expect(protectedSnapshot).toMatchObject({ aadFormat: CONTENT_AAD_FORMAT })
+      expect(protectedReceipt).toMatchObject({ aadFormat: CONTENT_AAD_FORMAT })
       await expect(protector.unprotectSnapshot(session.transaction, {
         ...snapshot,
         state: protectedSnapshot,
