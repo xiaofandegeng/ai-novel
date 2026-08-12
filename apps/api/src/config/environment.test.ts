@@ -3,6 +3,7 @@ import {
   getAIEnvironmentConfig,
   getCredentialMasterKey,
   getDatabaseUrl,
+  getProjectContentMasterKey,
   getServerConfig,
 } from './environment'
 
@@ -49,5 +50,14 @@ describe('runtime environment config', () => {
     vi.stubEnv('AI_CREDENTIAL_MASTER_KEY', 'base64-key')
 
     expect(getCredentialMasterKey()).toBe('base64-key')
+  })
+
+  it('decodes the project content master key independently from the credential key', () => {
+    const projectContentMasterKey = Buffer.alloc(32, 9).toString('base64')
+    vi.stubEnv('AI_CREDENTIAL_MASTER_KEY', 'credential-key')
+    vi.stubEnv('PROJECT_CONTENT_MASTER_KEY', projectContentMasterKey)
+
+    expect(getCredentialMasterKey()).toBe('credential-key')
+    expect(getProjectContentMasterKey()).toEqual(Buffer.alloc(32, 9))
   })
 })

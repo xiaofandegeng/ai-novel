@@ -3,6 +3,7 @@ import { userInfo } from 'node:os'
 import { resolve } from 'node:path'
 import process from 'node:process'
 import { config as loadDotenv } from 'dotenv'
+import { parseProjectContentMasterKey } from '../security/project-content-crypto'
 
 type RuntimeEnvironment = NodeJS.ProcessEnv
 
@@ -63,4 +64,9 @@ export function getCredentialMasterKey(env: RuntimeEnvironment = process.env): s
   return env.AI_CREDENTIAL_MASTER_KEY
 }
 
+export function getProjectContentMasterKey(env: RuntimeEnvironment = process.env): Buffer {
+  return parseProjectContentMasterKey(env.PROJECT_CONTENT_MASTER_KEY)
+}
+
 loadEnvironmentFiles()
+getProjectContentMasterKey()

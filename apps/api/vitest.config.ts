@@ -11,6 +11,7 @@ if (!databaseName.endsWith('_test'))
 
 process.env.DATABASE_URL = databaseUrl
 process.env.AI_CREDENTIAL_MASTER_KEY ??= 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc='
+process.env.PROJECT_CONTENT_MASTER_KEY ??= 'CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk='
 
 export default defineConfig({
   test: {
