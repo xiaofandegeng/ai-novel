@@ -8,7 +8,10 @@ import {
 } from './environment'
 
 describe('runtime environment config', () => {
-  afterEach(() => vi.unstubAllEnvs())
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
 
   it('reads explicit database and server settings', () => {
     vi.stubEnv('DATABASE_URL', 'postgres://localhost:5432/custom')
@@ -59,5 +62,12 @@ describe('runtime environment config', () => {
 
     expect(getCredentialMasterKey()).toBe('credential-key')
     expect(getProjectContentMasterKey()).toEqual(Buffer.alloc(32, 9))
+  })
+
+  it('fails module loading before API runtime construction when the project content master key is invalid', async () => {
+    vi.stubEnv('PROJECT_CONTENT_MASTER_KEY', 'not*base64')
+    vi.resetModules()
+
+    await expect(import('./environment')).rejects.toThrow('PROJECT_CONTENT_MASTER_KEY')
   })
 })

@@ -62,6 +62,7 @@ export function encryptProjectJson(input: ProjectJsonEncryptionInput): Encrypted
 
 export function decryptProjectJson(input: ProjectJsonDecryptionInput): JsonObject {
   assertProjectDataKey(input.key)
+  assertEncryptedJsonEnvelope(input.envelope)
 
   const decipher = createDecipheriv(ALGORITHM, input.key, Buffer.from(input.envelope.iv, 'base64'))
   decipher.setAAD(Buffer.from(input.aad, 'utf8'))
@@ -85,6 +86,16 @@ export function generateProjectDataKey(): Buffer {
 function assertProjectDataKey(key: Buffer): void {
   if (key.length !== KEY_BYTES)
     throw new Error('Project data key must be 32 bytes')
+}
+
+function assertEncryptedJsonEnvelope(envelope: EncryptedJsonEnvelope): void {
+  if (
+    envelope.encrypted !== true
+    || envelope.algorithm !== ALGORITHM
+    || envelope.keyVersion !== CURRENT_KEY_VERSION
+  ) {
+    throw new Error('Invalid project content encryption envelope')
+  }
 }
 
 function isJsonObject(value: unknown): value is JsonObject {
