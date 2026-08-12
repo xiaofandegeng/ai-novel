@@ -1,14 +1,19 @@
 import type { AppendBatch, PendingEvent, StreamRef } from './event-types'
 import type { ProjectionDefinition } from './projection-runner'
+import { Buffer } from 'node:buffer'
 import { sql as drizzleSql, eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../db'
 import { projectionCheckpoints } from '../db/schema'
+import { ProjectDataKeyStore } from '../security/project-data-key.store'
 import { resetTestDatabase } from '../test/database'
+import { ProjectEventingContentProtector } from './content-protector'
 import { EventRegistry } from './event-registry'
 import { EventStore } from './event-store'
 import { ProjectionRegistry, ProjectionRunner } from './projection-runner'
 import { ProjectionReplay } from './replay'
+
+const PROJECT_DELETED = 'FixtureProjectDeleted'
 
 const streamA: StreamRef = {
   aggregateType: 'KernelReplayTest',
@@ -111,6 +116,58 @@ describe('projectionReplay', () => {
     expect(await readProjection()).toEqual([
       { projectId: 'project-a', eventIds: ['event-a-1', 'event-a-2'] },
       { projectId: 'project-b', eventIds: ['event-b-1'] },
+    ])
+  })
+
+  it('discovers tombstones before reset and skips every deleted-project event during all replay', async () => {
+    const runtime = protectedReplayRuntime()
+    await appendProtectedReplayProjects(runtime.store)
+    await sql`
+      insert into eventing_replay_test_projection (project_id, event_ids)
+      values
+        ('active-project', '["stale-active"]'::jsonb),
+        ('deleted-project', '["stale-deleted"]'::jsonb)
+    `
+
+    await expect(new ProjectionReplay(runtime.projections, runtime.store).replayAll({ batchSize: 1 }))
+      .resolves
+      .toEqual([
+        {
+          projectionName: 'kernel-replay',
+          processedEvents: 1,
+          lastGlobalPosition: 3,
+        },
+      ])
+    expect(await readProjection()).toEqual([
+      { projectId: 'active-project', eventIds: ['active-event'] },
+    ])
+  })
+
+  it('resets a deleted project in isolated replay without decrypting its history', async () => {
+    const runtime = protectedReplayRuntime()
+    await appendProtectedReplayProjects(runtime.store)
+    await runtime.store.withTransaction(session => runtime.keys.destroy(
+      session.transaction,
+      'active-project',
+      '2026-08-12T00:02:00.000Z',
+    ))
+    await sql`
+      insert into eventing_replay_test_projection (project_id, event_ids)
+      values
+        ('active-project', '["preserved-active"]'::jsonb),
+        ('deleted-project', '["stale-deleted"]'::jsonb)
+    `
+
+    await expect(new ProjectionReplay(runtime.projections, runtime.store).replayProjection(
+      'kernel-replay',
+      { projectId: 'deleted-project', batchSize: 1 },
+    )).resolves.toEqual({
+      projectionName: 'kernel-replay',
+      processedEvents: 0,
+      lastGlobalPosition: 3,
+    })
+    expect(await readProjection()).toEqual([
+      { projectId: 'active-project', eventIds: ['preserved-active'] },
     ])
   })
 
@@ -262,6 +319,89 @@ async function appendEvents(): Promise<void> {
     ],
   }
   await new EventStore().withTransaction(session => session.appendBatch(batch))
+}
+
+function protectedReplayRuntime() {
+  const events = new EventRegistry()
+  events.register({
+    eventType: 'KernelReplayRecorded',
+    currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
+    upcasters: {},
+    validate: payload => payload as Record<string, unknown>,
+  })
+  events.register({
+    eventType: PROJECT_DELETED,
+    currentSchemaVersion: 1,
+    payloadProtection: 'none',
+    upcasters: {},
+    validate: payload => payload as Record<string, unknown>,
+  })
+  const keys = new ProjectDataKeyStore(Buffer.alloc(32, 37))
+  const protector = new ProjectEventingContentProtector(
+    events,
+    keys,
+    {
+      projectCreatedEventType: 'KernelReplayRecorded',
+      projectDeletedEventType: PROJECT_DELETED,
+    },
+  )
+  const protectedStore = new EventStore({
+    contentProtector: protector,
+    projectDeletedEventType: PROJECT_DELETED,
+  })
+  return {
+    keys,
+    store: protectedStore,
+    projections: registryWith(replayDefinition(), events),
+  }
+}
+
+async function appendProtectedReplayProjects(store: EventStore): Promise<void> {
+  await store.withTransaction(async (session) => {
+    await session.appendBatch({
+      commandId: 'command-protected-projects',
+      correlationId: 'correlation-protected-projects',
+      streams: [
+        {
+          stream: {
+            aggregateType: 'KernelReplayTest',
+            aggregateId: 'active-project',
+            projectId: 'active-project',
+          },
+          expectedVersion: 0,
+          events: [pending('active-event')],
+        },
+        {
+          stream: {
+            aggregateType: 'KernelReplayTest',
+            aggregateId: 'deleted-project',
+            projectId: 'deleted-project',
+          },
+          expectedVersion: 0,
+          events: [pending('deleted-event')],
+        },
+      ],
+    })
+    const deletedEvents = await session.appendBatch({
+      commandId: 'command-delete-project',
+      correlationId: 'correlation-delete-project',
+      streams: [{
+        stream: {
+          aggregateType: 'KernelReplayTest',
+          aggregateId: 'deleted-project',
+          projectId: 'deleted-project',
+        },
+        expectedVersion: 1,
+        events: [{
+          ...pending('deleted-tombstone'),
+          eventType: PROJECT_DELETED,
+          payload: { deletedAt: '2026-08-12T00:01:00.000Z' },
+        }],
+      }],
+    })
+    await session.finalizeContentProtection(deletedEvents)
+  })
 }
 
 function pending(eventId: string): PendingEvent {

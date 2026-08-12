@@ -29,6 +29,39 @@ export class ProjectionReplay {
     if (!definition.reset)
       throw new Error(`Projection does not support replay reset: ${name}`)
 
+    const deletedProjectIds = await this.store.readHeadersForDeletedProjects()
+    return this.replayProjectionAfterTombstoneDiscovery(
+      name,
+      options,
+      deletedProjectIds,
+    )
+  }
+
+  async replayAll(options: ReplayOptions = {}): Promise<ReplayResult[]> {
+    const deletedProjectIds = await this.store.readHeadersForDeletedProjects()
+    const results: ReplayResult[] = []
+    for (const definition of this.registry.list()) {
+      results.push(await this.replayProjectionAfterTombstoneDiscovery(
+        definition.name,
+        options,
+        deletedProjectIds,
+      ))
+    }
+    return results
+  }
+
+  private async replayProjectionAfterTombstoneDiscovery(
+    name: string,
+    options: ReplayOptions,
+    deletedProjectIds: ReadonlySet<string>,
+  ): Promise<ReplayResult> {
+    const definition = this.registry.get(name)
+    const batchSize = options.batchSize ?? 500
+    if (!Number.isInteger(batchSize) || batchSize < 1)
+      throw new Error(`Replay batch size must be a positive integer: ${batchSize}`)
+    if (!definition.reset)
+      throw new Error(`Projection does not support replay reset: ${name}`)
+
     try {
       return await this.store.withTransaction(async (session) => {
         await definition.reset?.(session.transaction, options.projectId)
@@ -44,12 +77,15 @@ export class ProjectionReplay {
         let processedEvents = 0
 
         while (true) {
-          const events = await session.readAll(lastGlobalPosition, batchSize)
-          if (events.length === 0)
-            break
+          const batch = await session.readAllForReplay(
+            lastGlobalPosition,
+            batchSize,
+            deletedProjectIds,
+            options.projectId,
+          )
+          lastGlobalPosition = batch.lastGlobalPosition
 
-          for (const event of events) {
-            lastGlobalPosition = event.globalPosition
+          for (const event of batch.events) {
             if (options.projectId && event.projectId !== options.projectId)
               continue
             const normalized = this.registry.normalizeEvent(event)
@@ -59,7 +95,7 @@ export class ProjectionReplay {
             processedEvents += 1
           }
 
-          if (events.length < batchSize)
+          if (batch.reachedEnd)
             break
         }
 
@@ -83,12 +119,5 @@ export class ProjectionReplay {
       }))
       throw error
     }
-  }
-
-  async replayAll(options: ReplayOptions = {}): Promise<ReplayResult[]> {
-    const results: ReplayResult[] = []
-    for (const definition of this.registry.list())
-      results.push(await this.replayProjection(definition.name, options))
-    return results
   }
 }

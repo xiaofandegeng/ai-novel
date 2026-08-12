@@ -22,10 +22,22 @@ import { DuplicateEventError, EventConcurrencyError } from './errors'
 
 export type EventingTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
+export interface ReplayEventBatch {
+  events: StoredEvent[]
+  lastGlobalPosition: number
+  reachedEnd: boolean
+}
+
 export interface EventStoreSession {
   transaction: EventingTransaction
   loadStream: (stream: StreamRef, fromVersion?: number) => Promise<StoredEvent[]>
   readAll: (afterPosition: number, limit: number) => Promise<StoredEvent[]>
+  readAllForReplay: (
+    afterPosition: number,
+    limit: number,
+    deletedProjectIds: ReadonlySet<string>,
+    projectId?: string,
+  ) => Promise<ReplayEventBatch>
   appendBatch: (batch: AppendBatch) => Promise<StoredEvent[]>
   enqueueOutbox: (messages: OutboxIntent[]) => Promise<void>
   getSnapshot: (stream: StreamRef) => Promise<AggregateSnapshot | null>
@@ -86,8 +98,11 @@ export class EventStore {
   }
 
   async readHeadersForDeletedProjects(): Promise<Set<string>> {
-    if (!this.projectDeletedEventType)
+    if (!this.projectDeletedEventType) {
+      if (this.contentProtector instanceof NoopEventingContentProtector)
+        return new Set()
       throw new Error('Project deleted event type is not configured')
+    }
 
     const rows = await db.select({ projectId: domainEvents.projectId })
       .from(domainEvents)
@@ -125,6 +140,25 @@ function createSession(
         .orderBy(asc(domainEvents.globalPosition))
         .limit(limit)
       return contentProtector.unprotectEvents(transaction, rows.map(toStoredEvent))
+    },
+    async readAllForReplay(afterPosition, limit, deletedProjectIds, projectId) {
+      const rows = await transaction.select()
+        .from(domainEvents)
+        .where(gt(domainEvents.globalPosition, afterPosition))
+        .orderBy(asc(domainEvents.globalPosition))
+        .limit(limit)
+      const lastGlobalPosition = rows.at(-1)?.globalPosition ?? afterPosition
+      const activeRows = rows.filter(row => (
+        !row.projectId || !deletedProjectIds.has(row.projectId)
+      ) && (!projectId || row.projectId === projectId))
+      return {
+        events: await contentProtector.unprotectEvents(
+          transaction,
+          activeRows.map(toStoredEvent),
+        ),
+        lastGlobalPosition,
+        reachedEnd: rows.length < limit,
+      }
     },
     async appendBatch(batch) {
       const streams = normalizeStreams(batch)

@@ -20,6 +20,7 @@
     "db:rebuild": "pnpm --filter @ai-novel/api db:rebuild",
     "db:replay": "pnpm --filter @ai-novel/api db:replay",
     "db:seed": "pnpm --filter @ai-novel/api db:seed",
+    "db:verify-encryption": "pnpm --filter @ai-novel/api db:verify-encryption",
     "db:studio": "pnpm --filter @ai-novel/api db:studio",
     "typecheck": "pnpm run -r typecheck"
   },
