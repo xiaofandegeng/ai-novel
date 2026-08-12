@@ -1,5 +1,5 @@
 import type { JsonObject } from './event-types'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   DuplicateEventTypeError,
   InvalidEventPayloadError,
@@ -10,6 +10,26 @@ import {
 import { EventRegistry } from './event-registry'
 
 describe('eventRegistry', () => {
+  it('returns a sorted event-type snapshot without exposing registry mutation', () => {
+    const registry = new EventRegistry()
+    for (const eventType of ['ZetaRecorded', 'AlphaRecorded']) {
+      registry.register({
+        eventType,
+        currentSchemaVersion: 1,
+        payloadProtection: 'none',
+        upcasters: {},
+        validate: () => ({}),
+      })
+    }
+
+    const eventTypes = registry.eventTypes()
+    expectTypeOf(eventTypes).toEqualTypeOf<readonly string[]>()
+    expect(eventTypes).toEqual(['AlphaRecorded', 'ZetaRecorded'])
+
+    ;(eventTypes as string[]).push('InjectedEvent')
+    expect(registry.eventTypes()).toEqual(['AlphaRecorded', 'ZetaRecorded'])
+  })
+
   it('decodes a registered event at its current schema version', () => {
     const registry = new EventRegistry()
     registry.register({

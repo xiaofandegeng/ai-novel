@@ -48,6 +48,18 @@ function eventRegistrationsWithoutPayloadProtection(file: string): string[] {
   return missing
 }
 
+function compareEventTypeSets(
+  expectedEventTypes: Iterable<string>,
+  actualEventTypes: Iterable<string>,
+): { missing: string[], unexpected: string[] } {
+  const expected = new Set(expectedEventTypes)
+  const actual = new Set(actualEventTypes)
+  return {
+    missing: [...expected].filter(eventType => !actual.has(eventType)).sort(),
+    unexpected: [...actual].filter(eventType => !expected.has(eventType)).sort(),
+  }
+}
+
 const PROJECT_CONTENT_EVENTS = [
   'ProjectCreated',
   'ProjectDetailsChanged',
@@ -141,6 +153,16 @@ const UNPROTECTED_EVENTS = [
 ] as const
 
 describe('api architecture boundaries', () => {
+  it('reports registered domain event types missing from the reviewed classification', () => {
+    expect(compareEventTypeSets(
+      ['ExpectedProjectEvent'],
+      ['UnexpectedLifecycleEvent', 'ExpectedProjectEvent'],
+    )).toEqual({
+      missing: [],
+      unexpected: ['UnexpectedLifecycleEvent'],
+    })
+  })
+
   it('requires every domain event registration to declare payload protection', () => {
     const missing = sourceFiles(join(sourceRoot, 'modules'))
       .filter(file => file.endsWith('.eventing.ts'))
@@ -158,6 +180,11 @@ describe('api architecture boundaries', () => {
     ])
 
     expect(expected.size).toBe(PROJECT_CONTENT_EVENTS.length + UNPROTECTED_EVENTS.length)
+    const differences = compareEventTypeSets(expected.keys(), domainEventRegistry.eventTypes())
+    expect(
+      differences,
+      `Domain event classification registry mismatch: ${JSON.stringify(differences)}`,
+    ).toEqual({ missing: [], unexpected: [] })
     for (const [eventType, payloadProtection] of expected) {
       expect(domainEventRegistry.has(eventType), eventType).toBe(true)
       expect(domainEventRegistry.protectionFor(eventType), eventType).toBe(payloadProtection)

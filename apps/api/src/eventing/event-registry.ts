@@ -52,6 +52,10 @@ export class EventRegistry {
     return this.definitions.has(eventType)
   }
 
+  eventTypes(): readonly string[] {
+    return [...this.definitions.keys()].sort()
+  }
+
   protectionFor(eventType: string): EventPayloadProtection {
     const definition = this.definitions.get(eventType)
     if (!definition)
