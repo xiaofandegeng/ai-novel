@@ -82,7 +82,7 @@ describe('api architecture boundaries', () => {
     )
   })
 
-  it('restricts event-sourced projection writes to projectors and destructive seed setup', () => {
+  it('restricts event-sourced projection writes to projectors', () => {
     const projectionTables = [
       'novelProjects',
       'projectReadModels',
@@ -131,7 +131,6 @@ describe('api architecture boundaries', () => {
     const applicationFiles = sourceFiles(sourceRoot)
       .filter(file => !file.endsWith('.test.ts'))
       .filter(file => !file.includes('/db/schema/'))
-      .filter(file => !file.endsWith('/scripts/seed.ts'))
       .filter(file => !file.endsWith('.eventing.ts'))
 
     for (const file of applicationFiles) {
