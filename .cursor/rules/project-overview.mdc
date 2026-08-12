@@ -9,12 +9,15 @@ Before editing this repository, read:
 
 1. `AGENTS.md`
 2. `docs/README.md`
-3. `docs/architecture/overview.md`
-4. `docs/standards/engineering.md`
-5. `docs/standards/ui.md`
-6. `docs/standards/ai-collaboration.md`
-7. `docs/product/product-design.md`
-8. `docs/design/ui-design-spec.md`
+3. `docs/status/current-state.md`
+4. `docs/status/development-memory.md`
+5. `docs/status/handoff.md`
+6. `docs/architecture/overview.md`
+7. `docs/standards/engineering.md`
+8. `docs/standards/ui.md`
+9. `docs/standards/ai-collaboration.md`
+10. `docs/product/product-design.md`
+11. `docs/design/ui-design-spec.md`
 
 This is an AI-assisted long-form novel writing workbench centered on an automatic-writing cockpit, not a generic chatbot. AI writes only inside an explicitly started run and must use the change-set and risk-decision pipeline.
 

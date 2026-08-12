@@ -90,6 +90,8 @@ API 集成测试默认使用当前系统用户连接本机 `ai_novel_test`，也
 
 - [文档索引](docs/README.md)
 - [当前开发状态](docs/status/current-state.md)
+- [开发记忆](docs/status/development-memory.md)
+- [开发交接](docs/status/handoff.md)
 - [产品设计](docs/product/product-design.md)
 - [UI 设计规格](docs/design/ui-design-spec.md)
 - [架构总览](docs/architecture/overview.md)

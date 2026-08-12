@@ -9,12 +9,14 @@ Before writing code, read these files in order:
 1. `AGENTS.md`
 2. `docs/README.md`
 3. `docs/status/current-state.md`
-4. `docs/architecture/overview.md`
-5. `docs/standards/engineering.md`
-6. `docs/standards/ui.md`
-7. `docs/standards/ai-collaboration.md`
-8. `docs/product/product-design.md`
-9. `docs/design/ui-design-spec.md`
+4. `docs/status/development-memory.md`
+5. `docs/status/handoff.md`
+6. `docs/architecture/overview.md`
+7. `docs/standards/engineering.md`
+8. `docs/standards/ui.md`
+9. `docs/standards/ai-collaboration.md`
+10. `docs/product/product-design.md`
+11. `docs/design/ui-design-spec.md`
 
 ## Project Summary
 

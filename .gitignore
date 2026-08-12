@@ -110,3 +110,4 @@ venv/
 .playwright-cli/
 .gstack/
 .zcode/
+.superpowers/
