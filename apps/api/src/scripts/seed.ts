@@ -1,7 +1,8 @@
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
+import { eq } from 'drizzle-orm'
 import { db, sql } from '../db'
-import { promptTemplates, storyStructureTemplates } from '../db/schema'
+import { autonomousWritingRuns, novelProjects, promptTemplates, storyStructureTemplates } from '../db/schema'
 import { createAutonomousRun } from '../modules/automation/autonomous-writing.service'
 import { createCharacter } from '../modules/character/characters.service'
 import { createRelationship } from '../modules/character/relationships.service'
@@ -15,8 +16,22 @@ import { createVolume } from '../modules/story/volumes.service'
 import { now } from '../shared/utils'
 
 const SEED_CORRELATION_ID = 'development-seed-v1'
+const SEED_PROJECT_ID = 'development-seed-project-v1'
 
 export async function seedDevelopmentData() {
+  const [existingProject] = await db.select({ id: novelProjects.id })
+    .from(novelProjects)
+    .where(eq(novelProjects.id, SEED_PROJECT_ID))
+  if (existingProject) {
+    const [existingRun] = await db.select({ id: autonomousWritingRuns.id })
+      .from(autonomousWritingRuns)
+      .where(eq(autonomousWritingRuns.projectId, SEED_PROJECT_ID))
+    if (!existingRun)
+      throw new Error('Development seed is incomplete; rebuild the local database before reseeding')
+    await seedStaticCatalogs()
+    return { projectId: existingProject.id, runId: existingRun.id }
+  }
+
   const project = await createProject({
     title: '测试小说《镜中城回声》',
     description: '用于验证事件溯源创作全链路的悬疑奇幻样例。',
@@ -25,7 +40,7 @@ export async function seedDevelopmentData() {
     targetWords: 200000,
     targetAudience: '喜欢都市悬疑和长线伏笔的成年读者',
     styleProfile: '冷静克制，节奏偏快；每章以未解问题收束。',
-  }, command('project'))
+  }, { ...command('project'), projectId: SEED_PROJECT_ID })
   const projectId = project.id
 
   await createStoryBible(projectId, {

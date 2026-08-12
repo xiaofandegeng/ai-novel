@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   analyzeEventingWrites,
   productionEventingInspectFiles,
-} from '../test/architecture/domain-event-insert-analysis'
+} from './test/architecture/domain-event-insert-analysis'
 
 const semanticRoots = {
   'node_modules/drizzle-orm/index.d.ts': `

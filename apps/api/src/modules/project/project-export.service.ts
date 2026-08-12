@@ -19,6 +19,143 @@ export interface ManuscriptExportOptions {
   includeAuthorNotes: boolean
 }
 
+const projectExportFields = [
+  'id',
+  'title',
+  'description',
+  'genre',
+  'theme',
+  'targetWords',
+  'targetAudience',
+  'styleProfile',
+  'status',
+  'createdAt',
+  'updatedAt',
+] as const satisfies readonly (keyof typeof novelProjects.$inferSelect)[]
+
+const storyBibleExportFields = [
+  'id',
+  'projectId',
+  'worldview',
+  'mainConflict',
+  'theme',
+  'rules',
+  'timeline',
+  'createdAt',
+  'updatedAt',
+] as const satisfies readonly (keyof typeof storyBibles.$inferSelect)[]
+
+const chapterExportFields = [
+  'id',
+  'projectId',
+  'volumeId',
+  'title',
+  'chapterNumber',
+  'outline',
+  'summary',
+  'characters',
+  'goals',
+  'conflicts',
+  'events',
+  'emotionalArc',
+  'foreshadowing',
+  'endingHook',
+  'draft',
+  'status',
+  'createdAt',
+  'updatedAt',
+] as const satisfies readonly (keyof typeof chapters.$inferSelect)[]
+
+const sceneExportFields = [
+  'id',
+  'projectId',
+  'chapterId',
+  'sceneNumber',
+  'title',
+  'location',
+  'timeline',
+  'purpose',
+  'summary',
+  'characters',
+  'targetWords',
+  'content',
+  'orderIndex',
+  'status',
+  'conflict',
+  'beatType',
+  'entryHook',
+  'turningPoint',
+  'exitHook',
+  'emotionStart',
+  'emotionEnd',
+  'conflictLevel',
+  'requiredElements',
+  'createdAt',
+  'updatedAt',
+] as const satisfies readonly (keyof typeof chapterScenes.$inferSelect)[]
+
+const characterExportFields = [
+  'id',
+  'projectId',
+  'name',
+  'role',
+  'goal',
+  'fear',
+  'secret',
+  'desire',
+  'weakness',
+  'personality',
+  'arc',
+  'createdAt',
+  'updatedAt',
+] as const satisfies readonly (keyof typeof characters.$inferSelect)[]
+
+const relationshipExportFields = [
+  'id',
+  'projectId',
+  'characterAId',
+  'characterBId',
+  'type',
+  'strength',
+  'status',
+  'description',
+  'createdAt',
+  'updatedAt',
+] as const satisfies readonly (keyof typeof characterRelationships.$inferSelect)[]
+
+const conflictExportFields = [
+  'id',
+  'projectId',
+  'title',
+  'type',
+  'intensity',
+  'status',
+  'participants',
+  'participantIds',
+  'description',
+  'resolution',
+  'createdAt',
+  'updatedAt',
+] as const satisfies readonly (keyof typeof conflicts.$inferSelect)[]
+
+const foreshadowingExportFields = [
+  'id',
+  'projectId',
+  'title',
+  'description',
+  'setupChapterId',
+  'expectedPayoffChapterId',
+  'payoffChapterId',
+  'status',
+  'importance',
+  'relatedCharacters',
+  'characterIds',
+  'relatedEvents',
+  'notes',
+  'createdAt',
+  'updatedAt',
+] as const satisfies readonly (keyof typeof foreshadowingItems.$inferSelect)[]
+
 export async function getProjectExportData(projectId: string) {
   const [project] = await db.select().from(novelProjects).where(eq(novelProjects.id, projectId))
   if (!project)
@@ -36,15 +173,22 @@ export async function getProjectExportData(projectId: string) {
 
   return {
     exportedAt: new Date().toISOString(),
-    project,
-    storyBible: bibleRows[0] ?? null,
-    chapters: chapterRows,
-    scenes: sceneRows,
-    characters: characterRows,
-    relationships: relationshipRows,
-    conflicts: conflictRows,
-    foreshadowing: foreshadowingRows,
+    project: pickExportFields(project, projectExportFields),
+    storyBible: bibleRows[0] ? pickExportFields(bibleRows[0], storyBibleExportFields) : null,
+    chapters: chapterRows.map(row => pickExportFields(row, chapterExportFields)),
+    scenes: sceneRows.map(row => pickExportFields(row, sceneExportFields)),
+    characters: characterRows.map(row => pickExportFields(row, characterExportFields)),
+    relationships: relationshipRows.map(row => pickExportFields(row, relationshipExportFields)),
+    conflicts: conflictRows.map(row => pickExportFields(row, conflictExportFields)),
+    foreshadowing: foreshadowingRows.map(row => pickExportFields(row, foreshadowingExportFields)),
   }
+}
+
+function pickExportFields<TRow extends object, TKey extends keyof TRow>(
+  row: TRow,
+  fields: readonly TKey[],
+): Pick<TRow, TKey> {
+  return Object.fromEntries(fields.map(field => [field, row[field]])) as Pick<TRow, TKey>
 }
 
 export async function renderManuscript(projectId: string, options: ManuscriptExportOptions) {

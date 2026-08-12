@@ -43,6 +43,25 @@ async function requestJson<T>(
   return { body, response }
 }
 
+const FORBIDDEN_EXPORT_KEYS = new Set([
+  'authTag',
+  'ciphertext',
+  'credentialRef',
+  'embeddingCredentialRef',
+  'wrappedKey',
+])
+
+function collectForbiddenExportKeys(value: unknown): string[] {
+  if (Array.isArray(value))
+    return value.flatMap(collectForbiddenExportKeys)
+  if (typeof value !== 'object' || value === null)
+    return []
+  return Object.entries(value).flatMap(([key, child]) => [
+    ...(FORBIDDEN_EXPORT_KEYS.has(key) ? [key] : []),
+    ...collectForbiddenExportKeys(child),
+  ])
+}
+
 describe('http application boundary', () => {
   const app = createApp({ logging: false })
 
@@ -535,13 +554,19 @@ describe('http application boundary', () => {
 
     const backupResponse = await app.request(`/api/projects/${projectId}/export`)
     expect(backupResponse.status).toBe(200)
-    await expect(backupResponse.json()).resolves.toMatchObject({
+    const backup = await backupResponse.json()
+    expect(backup).toMatchObject({
       success: true,
       data: {
         project: { title: '可导出的雾港' },
-        chapters: [{ title: '归港' }],
+        chapters: [{
+          title: '归港',
+          outline: '调查员在雾中登船。',
+          draft: '汽笛划破潮湿的夜。',
+        }],
       },
     })
+    expect(collectForbiddenExportKeys(backup)).toEqual([])
 
     const manuscriptResponse = await app.request(`/api/projects/${projectId}/export/manuscript?format=md&includeOutline=true`)
     expect(manuscriptResponse.status).toBe(200)

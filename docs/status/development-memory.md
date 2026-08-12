@@ -1,67 +1,67 @@
 # 开发记忆
 
-更新日期：2026-08-12  
-当前阶段：生产加固与新书规划规格及实施计划已确认，等待选择执行方式
+更新日期：2026-08-13
+当前阶段：项目内容加密与密码学删除基线完成，等待执行 Worker 可靠性与 Provider 协议计划
 
-## 本轮目标
+## 本轮目标与结论
 
-在现有全产品事件溯源与自动写作驾驶舱基础上：
+第一份生产加固计划“项目内容加密与删除”Task 1–8 已完成实现与阶段验证：
 
-1. 补齐项目内容信封加密、密钥销毁删除、Worker 健康与真实 Provider 协议验收。
-2. 建立创意、世界观、人物、结构、章节规划五阶段的新书规划流程。
-3. 同时支持逐阶段确认和全自动推进，并将正文启动保持为独立授权。
+1. 每项目 AES-256-GCM 数据密钥保护事件、快照和项目命令成功回执。
+2. 独立主密钥只包装项目数据密钥；删除项目时销毁包装密钥，内容不可恢复。
+3. Replay 先发现删除 tombstone，再跳过已删除项目；安全扫描只输出记录 ID 和类别。
+4. 开发 seed 全部项目写入经领域 service、Command Bus 和受保护 Event Store，固定 identity 保持重复执行幂等。
+5. 项目 backup export 以显式业务 DTO 白名单输出，不暴露 envelope、数据密钥或 AI credential refs。
 
 长期设计依据：[`生产加固与新书规划流程设计`](../superpowers/specs/2026-08-12-production-hardening-and-book-setup-design.md)。
 
-## 已确认决策
+## 已确认且必须保持的决策
 
-- 允许再次清空本地开发数据库，不转换当前明文演示事件。
-- 项目内容事件使用每项目 AES-256-GCM 数据密钥，数据密钥由独立主密钥包装。
-- 删除项目时销毁数据密钥，已删除项目在 replay 时整体跳过。
-- 新书规划使用独立 `BookSetup` 聚合和 Process Manager。
-- 模式为 `guided` 与 `automatic`；自动模式遇到高风险或校验失败必须停下。
-- “规划完成后自动开始正文”是默认关闭的独立勾选项。
-- 前端采用专注式规划工作区，不新增旧式 CRUD 页面。
-- 默认自动测试使用本地 OpenAI-compatible 服务；真实请求只由显式 `pnpm smoke:ai` 触发。
+- 不转换已有明文演示事件；允许清空的本地数据库走 `db:rebuild` → `db:seed` → `db:replay`。
+- `PROJECT_CONTENT_MASTER_KEY` 和 `AI_CREDENTIAL_MASTER_KEY` 必须分别配置为规范 Base64 编码的独立 32 字节随机值；项目内容密钥缺失或非法时运行时启动失败。
+- `domain_events` 只追加；受保护事件、快照和回执的数据库 JSON 不得含用户内容明文。
+- Eventing Content Protector 是存储 envelope 的唯一加解密边界；route、service、seed 和维护脚本禁止直写 Eventing 表。
+- 项目删除销毁数据密钥后不可恢复；Replay 不能解密或重建已删除项目。
+- 导出是领域 DTO，不是数据库 dump；禁止 envelope、wrapped key、ciphertext/auth tag 和 credential refs。
+- 新书规划继续使用独立 `BookSetup` 聚合和 Process Manager；规划授权不能隐式扩大为正文写作授权。
 
-## 必须保持的不变量
+## migration 与运行配置
 
-1. `domain_events` 只追加。
-2. 受保护事件的数据库 payload 不含用户内容明文。
-3. 领域写入只通过 Command Bus，投影不是事实来源。
-4. 规划阶段的跨领域应用必须原子提交。
-5. 暂停、终止和过期修订后的 AI 结果不得写回。
-6. 规划授权不能隐式扩大为正文写作授权。
-7. 所有项目资源读写必须校验 `projectId`。
-8. API Key 与内容主密钥不得进入事件、日志、导出或 HTTP 响应。
+- 已加入 migration `apps/api/drizzle/0044_real_sugar_man.sql`，创建 `project_data_keys` 活跃密钥/销毁 tombstone 约束。
+- 本地生成主密钥：`openssl rand -base64 32`，分别配置 `PROJECT_CONTENT_MASTER_KEY` 与 `AI_CREDENTIAL_MASTER_KEY`，不得复用。
+- 内容保护检查：`pnpm db:verify-encryption`，可用 `-- --project <project-id>` 限定项目。
 
-## 阶段记录
+## Task 1–8 提交证据
 
-| 阶段 | 状态 | 证据 |
-| --- | --- | --- |
-| 范围澄清 | 完成 | 用户确认生产加固、新书规划、可清库与 Provider 验收边界 |
-| 总体架构 | 完成 | 用户确认独立 BookSetup + Process Manager |
-| 安全设计 | 完成 | 用户确认信封加密与密钥销毁方案 |
-| 领域与 UI | 完成 | 用户选择 A：专注式规划工作区 |
-| 可靠性与验收 | 完成 | 用户确认 Worker、最终门禁和文档策略 |
-| 书面规格复核 | 完成 | 用户已明确确认长期设计规格 |
-| 实施计划 | 完成 | 四份依赖有序、测试先行的执行计划及总路线 |
-| 代码实施 | 未开始 | 按 TDD 分阶段执行 |
-| 最终验收 | 未开始 | 所有开发完成后统一执行 |
+以下哈希均来自当前分支 `git log`；每个主 Task 后列出在进入下一 Task 前追加的相关加固提交：
 
-## 已批准执行路线
+| Task | 提交 |
+| --- | --- |
+| 1 主密钥与密码原语 | `ff29a89`；校验加固 `13de3e7` |
+| 2 项目数据密钥表与 Key Store | `cf21084` |
+| 3 Event Registry 与 Content Protector | `795881d`；配置/认证/AAD 加固 `187105e`、`06188ef`、`ab82513` |
+| 4 Event Store 事件与快照保护 | `2b86adc`；批量解密加固 `c4c0be8` |
+| 5 回执保护与原子密钥销毁 | `86c0aea`；回执 identity 加固 `0e57298` |
+| 6 全领域保护分类 | `21b4f7e`；穷举分类加固 `8687a6a` |
+| 7 tombstone Replay 与扫描 | `6cf41e7`；并发/架构边界加固 `563b41b`、`d231d6a`、`03adff5`、`8d3c02d`、`0dc389b` |
+| 8 Seed、export、文档与交接 | `docs(security): record encrypted event baseline`（本阶段 HEAD；最终哈希见当前分支日志） |
 
-1. [`项目内容加密与删除`](../superpowers/plans/2026-08-12-project-content-encryption.md)：migration `0044`、Event/快照/回执保护、密钥销毁、Replay 与扫描。
-2. [`Worker 可靠性与 Provider 协议`](../superpowers/plans/2026-08-12-workflow-runtime-and-provider.md)：migration `0045`、心跳/租约、脱敏健康、OpenAI-compatible 本地协议与 opt-in smoke。
-3. [`新书规划后端`](../superpowers/plans/2026-08-12-book-setup-backend.md)：migration `0046`、BookSetup 聚合、Outbox/Process Manager、五阶段原子应用与重放。
-4. [`新书规划前端、端到端与最终交付`](../superpowers/plans/2026-08-12-book-setup-web-and-delivery.md)：专注式工作区、两条完整 Playwright 链路、最终数据库/全仓/浏览器验收与文档归档。
+## 当前验证状态
 
-总入口：[`生产加固与新书规划实施路线`](../superpowers/plans/2026-08-12-production-hardening-book-setup-roadmap.md)。计划执行完成后删除五份临时计划，将长期结论保留在架构、产品、规范、记忆与交接文档。
+- Task 8 RED：准确选择器得到 2 failed / 23 passed；失败分别为重复 seed 的 `COMMAND_ID_CONFLICT` 与 export 整行透传敏感字段。
+- Task 8 窄 GREEN：3 files / 25 tests passed。
+- 阶段选择器：17 files / 164 tests passed，覆盖 `src/security`、`src/eventing`、`src/modules/project`、seed integration 和 app integration。
+- 构建阻塞回归：共享架构测试 helper 移入 API `src/test` 后，2 files / 33 tests passed，API build passed。
+- API typecheck passed；repo lint passed；最终 `git diff --check` passed，提交后再次确认 clean status。
 
-## 当前风险
+这些是本阶段新鲜验证证据，不替代后续计划完成后的全仓 coverage、数据库 rebuild/seed/replay 和浏览器验收。
 
-- 项目密钥销毁后，Replay 必须先识别删除 tombstone，否则无法解密早期事件。
-- BookSetup 阶段应用横跨多个聚合，必须使用现有原子 Command Bus 能力。
-- 修改已应用但尚未完成的阶段会使下游修订失效；必须保留历史、显式生成 delta，并且只能删除该 setup 的稳定 ID 所拥有的实体。
-- 全自动规划不能把高风险删除或结构覆盖当作低风险更新。
-- 真实 Provider smoke 依赖用户环境是否配置有效凭据和网络。
+## 下一步与剩余计划
+
+下一计划：[`Worker 可靠性与 Provider 协议`](../superpowers/plans/2026-08-12-workflow-runtime-and-provider.md)。本分支尚未合并 `main`。总路线中的后续三份计划均未开始：
+
+1. `2026-08-12-workflow-runtime-and-provider.md`
+2. `2026-08-12-book-setup-backend.md`
+3. `2026-08-12-book-setup-web-and-delivery.md`
+
+当前风险：真实 Provider smoke 仍依赖最终环境提供有效凭据和网络；新书规划跨聚合应用、下游 revision 失效与正文独立授权仍待后续计划实现。

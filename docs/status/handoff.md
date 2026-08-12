@@ -1,49 +1,72 @@
 # 开发交接
 
-更新日期：2026-08-12  
-工作目录：`/Users/lhw/code/ai-novel`  
-分支：`main`  
-进入本轮前基线：`69f5a5c`
+更新日期：2026-08-13
+工作目录：`/Users/lhw/code/ai-novel/.worktrees/production-hardening-book-setup`
+分支：`codex/production-hardening-book-setup`
+进入生产加固前基线：`59c3d9f`（`main`）
 
 ## 当前状态
 
-生产加固与新书规划的长期设计已经由用户确认，四份依赖有序的详细实施计划也已完成。当前停在“选择执行方式”门禁，尚未开始业务代码实施、迁移或数据库清理。
+“项目内容加密与删除”计划 Task 1–8 已在工作分支完成，尚未合并 `main`。migration `0044_real_sugar_man.sql`、每项目内容加密、命令回执保护、密码学删除、tombstone-aware Replay、安全扫描、受保护且可重复的 seed，以及 export DTO 白名单均已落地。
 
-## 已完成
+Task 1–7 的准确提交哈希和加固提交见 [`开发记忆`](development-memory.md#task-18-提交证据)。Task 8 提交名为 `docs(security): record encrypted event baseline`，提交完成后的当前 HEAD 即其最终哈希。
 
-- 阅读当前全部必读项目文档。
-- 盘点现有事件溯源、自动写作、数据库与 UI 边界。
-- 确认可再次清空本地开发数据库。
-- 确认 guided 与 automatic 两种规划模式。
-- 确认正文自动启动为独立且默认关闭的授权。
-- 确认真实 Provider 使用本地协议测试和显式低成本 smoke。
-- 用户在可视化线框图中选择 A：专注式规划工作区。
-- 写入长期设计、开发记忆和本交接文档。
-- 编制总路线和四份实施计划，覆盖 migration `0044`–`0046`、窄测试 TDD、完整数据库重建、两条 Playwright 全链、三档浏览器检查和可选真实 Provider smoke。
-- 计划审查补齐已应用阶段修订/下游失效、setup-owned delta、安全删除、seed 走 BookSetup、Worker 重启恢复、写作完成后 replay/UI 一致性与已完成规划只读回看。
+## 运行前提
+
+生成两个独立主密钥：
+
+```bash
+openssl rand -base64 32
+openssl rand -base64 32
+```
+
+```env
+PROJECT_CONTENT_MASTER_KEY=<第一个32字节随机值的Base64>
+AI_CREDENTIAL_MASTER_KEY=<第二个32字节随机值的Base64>
+```
+
+项目内容主密钥缺失、Base64 非规范或解码后不是 32 字节时，API/seed/replay 会启动失败。不可使用默认值或与 credential 主密钥复用。
+
+## 本阶段验证证据
+
+```text
+Task 8 RED                     2 failed, 23 passed（预期行为缺失）
+Task 8 narrow GREEN            3 files, 25 tests passed
+security/eventing/project      17 files, 164 tests passed
+architecture regression       2 files, 33 tests passed
+API typecheck                  passed
+repo lint                      passed
+API build                      passed
+```
+
+最终提交门禁已重新执行阶段测试、typecheck、lint、build 和 `git diff --check`，提交后再确认 clean status；数据库 destructive rebuild 未在 Task 8 执行。安全扫描可使用 `pnpm db:verify-encryption`，只输出记录类别与 ID，不输出 payload、明文探针或密钥材料。
 
 ## 下一步
 
-1. 从 `docs/superpowers/plans/2026-08-12-production-hardening-book-setup-roadmap.md` 选择执行方式。
-2. 严格依次执行内容加密、运行可靠性、新书规划后端、前端与最终交付四份计划。
-3. 每个生产行为遵循 RED → GREEN → commit；阶段内只跑窄测试。
-4. 每个阶段更新 `development-memory.md` 与本文件；全部开发完成后再统一执行最终验证。
+严格按 [`Worker 可靠性与 Provider 协议`](../superpowers/plans/2026-08-12-workflow-runtime-and-provider.md) 开始 migration `0045`、OutboxRuntime 生命周期/心跳、脱敏健康查询和本地 OpenAI-compatible 协议验收。
 
-## 恢复命令
+后续三份计划仍待做：
+
+1. Worker 可靠性与 Provider 协议
+2. 新书规划后端
+3. 新书规划前端、端到端与最终交付
+
+不要跳过 Worker 计划直接实现 BookSetup，也不要删除五份临时计划；只有总路线全部完成后才归档计划并执行全仓、数据库、两条 Playwright 链路和三档浏览器最终验收。
+
+## 恢复与检查命令
 
 ```bash
 git status --short --branch
-git log -5 --oneline --decorate
+git log --oneline --decorate -25
 cat docs/status/development-memory.md
 cat docs/status/handoff.md
-cat docs/superpowers/specs/2026-08-12-production-hardening-and-book-setup-design.md
-cat docs/superpowers/plans/2026-08-12-production-hardening-book-setup-roadmap.md
+cat docs/superpowers/plans/2026-08-12-workflow-runtime-and-provider.md
+pnpm db:verify-encryption
 ```
 
-## 当前阻塞
+## 未决事项
 
-只有执行方式选择门禁；没有已知代码、数据库或环境阻塞。真实 Provider smoke 仍取决于最终环境是否提供有效凭据，未配置时按约定记录为“未执行”。
-
-## 最终验证约定
-
-开发期间运行窄测试完成 TDD。所有实现完成后统一执行 `pnpm check`、`pnpm test:coverage`、数据库重建、seed、replay、安全检查、两条端到端流程和三档浏览器验收。真实 Provider 未配置时，`pnpm smoke:ai` 记录为未执行而不是伪造通过。
+- 本分支尚未合并 `main`。
+- migration `0045`、`0046` 尚未创建。
+- 本 Task 没有执行本地数据库清空；允许清空时仍使用 no-conversion reset path。
+- 真实 Provider smoke 是否执行取决于环境是否提供有效凭据与网络，未配置时必须记录“未执行”，不能伪造通过。

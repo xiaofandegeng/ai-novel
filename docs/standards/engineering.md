@@ -1,7 +1,7 @@
 # 工程规范
 
-版本：v1.0  
-更新日期：2026-08-11
+版本：v1.1
+更新日期：2026-08-13
 
 ## 1. 规范入口
 
@@ -64,7 +64,11 @@ interface ApiResponse<T> {
 - migration 是完整建库与升级依据，不得清理历史文件。
 - seed 只允许在明确的本地开发数据库执行。
 - 已迁移到事件溯源的领域只能通过 Command Bus 写入；业务 service、route 和脚本不得直接写 `domain_events`、流版本、回执、checkpoint、快照或 Outbox 表。
+- Seed 同样属于产品写入方：项目数据必须经过领域 service、Command Bus 和受保护 Event Store；只允许静态、非项目事实的全局 catalog 使用明确的幂等直写。重复 seed 必须复用稳定 command identity，不能制造第二套演示数据。
 - 领域事件必须在 Event Registry 注册并验证 payload；历史 schema 通过连续 upcaster 升级，禁止在读取端散落兼容分支。
+- 每个事件定义必须显式声明 `payloadProtection`。用户内容事件、项目快照和项目命令成功回执必须由 Eventing Content Protector 加密后落库；业务代码只能看到解密后的领域对象，不得识别或拼装加密 envelope。
+- 删除项目必须通过命令事务销毁包装数据密钥；不得通过保留 key、复制明文或旁路恢复绕过不可恢复删除。Replay 必须先识别删除 tombstone，再跳过已删除项目。
+- 项目 export 是领域边界，不是数据库 dump。使用显式业务 DTO 字段白名单递归构建响应；禁止输出 `wrappedKey`、加密 envelope、`ciphertext`、`authTag`、`credentialRef`、`embeddingCredentialRef` 或以后新增的存储内部字段。
 - Command 写入的每条 stream 必须继承并校验命令的 `projectId`，跨项目批量写入直接拒绝。
 - 外部 API、通知、索引等不可回滚副作用必须写入 Outbox，不得在事件追加事务内直接执行。
 - 投影和快照必须可从事件重建，不能承载唯一业务事实。
@@ -81,6 +85,7 @@ interface ApiResponse<T> {
 
 - 支持的环境变量全部记录在 `.env.example`。
 - API 运行时代码通过 `apps/api/src/config/environment.ts` 读取环境变量。
+- `PROJECT_CONTENT_MASTER_KEY` 必须由密码学随机源生成、Base64 编码后解码为恰好 32 字节，并与 `AI_CREDENTIAL_MASTER_KEY` 分离。缺失或非法值必须在启动时失败，禁止使用默认密钥、截断、哈希补齐或明文降级。
 - 前端 API 使用 `/api` 与 Vite proxy，不硬编码后端地址。
 - 测试数据库必须使用 `_test` 后缀并由测试启动器隔离。
 
@@ -116,6 +121,14 @@ pnpm db:generate
 pnpm db:migrate
 pnpm --filter @ai-novel/api db:seed
 ```
+
+内容保护相关改动还必须执行：
+
+```bash
+pnpm db:verify-encryption
+```
+
+扫描结果只允许报告记录类型、ID 和问题类别，禁止把原始 payload、探针明文、密文、认证标签或密钥引用写入标准输出和错误日志。没有历史转换需求且已明确允许清空的本地库，使用受保护的 `db:rebuild` → `db:seed` → `db:replay` 路径，不编写一次性明文转换脚本。
 
 ## 8. 审查优先级
 

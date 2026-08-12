@@ -1,6 +1,6 @@
 # 架构总览
 
-更新日期：2026-08-12  
+更新日期：2026-08-13
 状态：当前有效
 
 ## 1. 系统边界
@@ -116,6 +116,10 @@ route → command handler → aggregate repository
 - 章节版本由 `ChapterContentApplied` 或显式 `ChapterVersionRecorded` 事件派生，版本表不接受更新或删除。删除卷只解除章节的卷关联，不级联删除章节。
 - 自动规划、写作任务、变更集和后处理不得直接修改章节投影，接受的结果必须先通过 Chapter 命令。
 - 项目 AI 凭据只以 AES-256-GCM 密文保存在 credential vault；事件、命令回执和设置投影只保存引用与末四位掩码。
+- 项目内容使用每项目 AES-256-GCM 数据密钥；数据密钥由独立的 32-byte `PROJECT_CONTENT_MASTER_KEY` 包装。Eventing Content Protector 是 `domain_events.payload`、`aggregate_snapshots.state` 和项目命令成功回执的唯一加解密边界，AAD 绑定记录身份与版本。
+- `ProjectDeleted` 和最小删除回执只含 ID、状态与时间戳。删除事务在投影与凭据清理后销毁包装数据密钥；加密历史不可恢复，Replay 先从明文事件头发现 tombstone 并跳过整个项目。
+- Event Registry 必须穷举声明每种事件的 `payloadProtection`；携带标题、正文、Prompt、叙事内容、错误细节或 AI 候选的事件使用 `project-content`，只有稳定 ID、计数、状态 token 或时间戳可评估为 `none`。
+- Seed 与维护脚本不得直写 Eventing 表；开发 seed 的产品数据复用领域 service → Command Bus → Event Store，固定 identity 保持可重复执行。项目 backup export 从读模型映射显式业务 DTO 白名单，不导出 envelope、数据密钥字段或 AI credential refs。
 - AI 执行入口必须显式传递 `projectId`，不能读取全局表或其他项目的凭据。
 - `src/architecture.test.ts` 禁止 `eventing` 反向导入 `modules`、其他生产源码直接访问事件内核表，以及非投影器直接写已迁移读模型。
 
@@ -190,6 +194,7 @@ autonomous run command
 - `.env` 是本地运行输入，不提交版本库。
 - `.env.example` 是支持变量的唯一清单。
 - `apps/api/src/config/environment.ts` 是运行时代码读取环境变量的唯一入口。
+- `PROJECT_CONTENT_MASTER_KEY` 必须是规范 Base64 编码的 32 字节随机值，且与 `AI_CREDENTIAL_MASTER_KEY` 分离；缺失或非法配置必须启动失败，禁止回退为明文存储。
 - `TEST_DATABASE_URL` 由 Vitest 测试启动器单独管理，只接受 `_test` 结尾数据库。
 - Drizzle、API 启动和 pgvector 初始化复用同一个数据库 URL 解析逻辑。
 
@@ -197,7 +202,7 @@ autonomous run command
 
 - 跨端模型和输入输出放在 `packages/shared`。
 - schema 放在 `apps/api/src/db/schema`；迁移历史放在 `apps/api/drizzle`，不得作为旧文件清理。
-- 事件内核 migration 是增量基础设施变更；产品领域切换与已确认的数据清空必须在独立迁移阶段执行，不能混入普通结构整理。
+- 事件内核 migration 是增量基础设施变更；migration `0044` 建立项目包装数据密钥与销毁 tombstone。该阶段没有明文事件转换器；已确认可丢弃数据的本地库走 `db:rebuild` no-conversion reset path。
 - 单元测试与被测模块相邻；架构边界由各应用的 `src/architecture.test.ts` 自动验证；跨 feature 测试放在 `features` 根；API HTTP 集成测试保留在 `src/app.integration.test.ts`。
 - Eventing 与 Process Manager 单独维持语句、分支、函数和行至少 90% 的覆盖率门禁。
 - API 全局语句/行至少 80%、分支至少 70%、函数至少 85%；Web 全局语句/行至少 75%、分支至少 65%、函数至少 60%。

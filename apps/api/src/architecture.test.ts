@@ -1,16 +1,16 @@
-import type { EventingWriteAnalysis } from '../test/architecture/domain-event-insert-analysis'
 import type { EventDefinition, EventPayloadProtection, JsonObject } from './eventing'
+import type { EventingWriteAnalysis } from './test/architecture/domain-event-insert-analysis'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, expectTypeOf, it } from 'vitest'
+import { domainEventRegistry } from './eventing-runtime'
+import { EVENT_PAYLOAD_PROTECTION_CATALOG } from './eventing/event-protection-catalog'
 import {
   analyzeEventingWrites,
   productionEventingInspectFiles,
-} from '../test/architecture/domain-event-insert-analysis'
-import { domainEventRegistry } from './eventing-runtime'
-import { EVENT_PAYLOAD_PROTECTION_CATALOG } from './eventing/event-protection-catalog'
+} from './test/architecture/domain-event-insert-analysis'
 
 const sourceRoot = fileURLToPath(new URL('.', import.meta.url))
 
@@ -200,6 +200,7 @@ describe('api architecture boundaries', () => {
       .filter(file => !file.endsWith('.test.ts'))
       .filter(file => !file.includes('/eventing/'))
       .filter(file => !file.includes('/db/schema/'))
+      .filter(file => !file.includes('/test/'))
       .map(file => readFileSync(file, 'utf8'))
       .join('\n')
 
