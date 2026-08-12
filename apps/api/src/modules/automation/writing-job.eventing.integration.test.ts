@@ -1,7 +1,7 @@
 import type { CommandEnvelope, JsonObject } from '../../eventing'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../../db'
-import { writingJobs, writingJobSteps } from '../../db/schema'
+import { eventOutbox, writingJobs, writingJobSteps } from '../../db/schema'
 import { AggregateRepository, CommandBus, EventRegistry, EventStore, ProjectionRegistry, ProjectionReplay } from '../../eventing'
 import { resetTestDatabase } from '../../test/database'
 import { CREATE_PROJECT_COMMAND, registerProjectEventing } from '../project/project.eventing'
@@ -12,6 +12,7 @@ import {
   CREATE_WRITING_JOB_COMMAND,
   DELETE_WRITING_JOB_COMMAND,
   registerWritingJobEventing,
+  REQUEST_WRITING_JOB_EXECUTION_COMMAND,
   WRITING_JOB_AGGREGATE_TYPE,
   WRITING_JOB_PROJECTION,
 } from './writing-job.eventing'
@@ -66,6 +67,23 @@ describe('writing job eventing', () => {
       aggregateId: 'job-other',
       projectId: 'project-2',
     })).rejects.toMatchObject({ code: 'PROJECT_NOT_FOUND' })
+  })
+
+  it('persists writing execution as a durable outbox request', async () => {
+    await seed(runtime.commands)
+    await runtime.commands.dispatch(command(CREATE_WRITING_JOB_COMMAND, {
+      mode: 'draft_only',
+      currentChapterId: 'chapter-1',
+      steps: [{ id: 'step-1', stepType: 'generate_draft' }],
+    }))
+
+    await runtime.commands.dispatch(command(REQUEST_WRITING_JOB_EXECUTION_COMMAND, {}, 'execute-job'))
+
+    await expect(db.select().from(eventOutbox)).resolves.toMatchObject([{
+      status: 'pending',
+      handlerName: 'writing-job.execute',
+      payload: { projectId: 'project-1', jobId: 'job-1' },
+    }])
   })
 
   it('deletes and replays the complete job projection', async () => {

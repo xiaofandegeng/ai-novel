@@ -14,6 +14,7 @@ export const ADD_AUTONOMOUS_RUN_JOB_COMMAND = 'AddAutonomousRunJob'
 export const CHANGE_AUTONOMOUS_RUN_JOB_COMMAND = 'ChangeAutonomousRunJob'
 export const OPEN_AUTONOMOUS_EXCEPTION_COMMAND = 'OpenAutonomousException'
 export const CHANGE_AUTONOMOUS_EXCEPTION_COMMAND = 'ChangeAutonomousException'
+export const REQUEST_AUTONOMOUS_RUN_EXECUTION_COMMAND = 'RequestAutonomousRunExecution'
 
 export const AUTONOMOUS_RUN_PREPARED = 'AutonomousRunPrepared'
 export const AUTONOMOUS_RUN_CHANGED = 'AutonomousRunChanged'
@@ -21,6 +22,8 @@ export const AUTONOMOUS_RUN_JOB_ADDED = 'AutonomousRunJobAdded'
 export const AUTONOMOUS_RUN_JOB_CHANGED = 'AutonomousRunJobChanged'
 export const AUTONOMOUS_EXCEPTION_OPENED = 'AutonomousExceptionOpened'
 export const AUTONOMOUS_EXCEPTION_CHANGED = 'AutonomousExceptionChanged'
+export const AUTONOMOUS_RUN_EXECUTION_REQUESTED = 'AutonomousRunExecutionRequested'
+export const AUTONOMOUS_RUN_OUTBOX_HANDLER = 'autonomous-run.execute'
 
 const RUN_STATUSES = ['idle', 'running', 'pausing', 'paused', 'abandoning', 'completed', 'failed', 'abandoned'] as const
 const STRATEGIES = ['safe', 'balanced', 'fast'] as const
@@ -129,6 +132,12 @@ export function registerAutonomousRunEventing(runtime: AutonomousRunEventingRunt
     runtime.events.register({ eventType, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ job: readJob(codec.object(payload)) }) })
   for (const eventType of [AUTONOMOUS_EXCEPTION_OPENED, AUTONOMOUS_EXCEPTION_CHANGED])
     runtime.events.register({ eventType, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ exception: readException(codec.object(payload)) }) })
+  runtime.events.register({
+    eventType: AUTONOMOUS_RUN_EXECUTION_REQUESTED,
+    currentSchemaVersion: 1,
+    upcasters: {},
+    validate: payload => ({ requestId: codec.string(codec.object(payload), 'requestId') }),
+  })
   registerCommands(runtime)
   registerProjection(runtime.projections)
 }
@@ -150,6 +159,24 @@ function registerCommands(runtime: AutonomousRunEventingRuntime): void {
     const timestamp = now()
     const run = changeRun(loaded.state, command.payload, timestamp)
     return decision(loaded.version, command, AUTONOMOUS_RUN_CHANGED, { run }, run, timestamp)
+  })
+  runtime.commands.register(REQUEST_AUTONOMOUS_RUN_EXECUTION_COMMAND, async (command, context) => {
+    const loaded = await loadActive(runtime, command, context.session)
+    if (loaded.state.status !== 'running')
+      throw new DomainCommandError('AUTONOMOUS_RUN_NOT_RUNNING', 'Autonomous run must be running before execution is requested')
+    const timestamp = now()
+    const requestId = command.commandId
+    const event = pendingEvent(AUTONOMOUS_RUN_EXECUTION_REQUESTED, { requestId }, command, timestamp)
+    return {
+      streams: [{ stream: stream(command), expectedVersion: loaded.version, events: [event] }],
+      result: { requestId },
+      outbox: [{
+        id: `outbox:${requestId}`,
+        eventId: event.eventId,
+        handlerName: AUTONOMOUS_RUN_OUTBOX_HANDLER,
+        payload: { projectId: command.projectId!, runId: command.aggregateId },
+      }],
+    }
   })
   runtime.commands.register(ADD_AUTONOMOUS_RUN_JOB_COMMAND, async (command, context) => {
     const loaded = await loadActive(runtime, command, context.session)

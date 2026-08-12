@@ -15,6 +15,14 @@ function sourceFiles(directory: string): string[] {
 }
 
 describe('api architecture boundaries', () => {
+  it('starts autonomous writing only through the durable outbox', () => {
+    const source = readFileSync(join(sourceRoot, 'modules/automation/autonomous-writing.service.ts'), 'utf8')
+    expect(source).not.toMatch(/runNextAutonomousStep\(projectId, runId\)\.catch/)
+    const writingSource = readFileSync(join(sourceRoot, 'modules/automation/writing-job.service.ts'), 'utf8')
+    const publicStart = writingSource.slice(writingSource.indexOf('export async function startJob'), writingSource.indexOf('export async function executeWritingJob'))
+    expect(publicStart).not.toContain('runNextSteps(')
+  })
+
   it('does not restore the legacy flat route, service, or utility directories', () => {
     for (const directory of ['routes', 'services', 'utils'])
       expect(existsSync(join(sourceRoot, directory)), directory).toBe(false)

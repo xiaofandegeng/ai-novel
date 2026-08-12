@@ -10,6 +10,7 @@ import {
   chapterPostprocessRuns,
   chapterPostprocessSuggestions,
   chapters,
+  eventOutbox,
   projectHealthReports,
   storyFactTriples,
   writingJobs,
@@ -69,6 +70,9 @@ describe('deterministic autonomous writing workflow', () => {
     expect(reviewSuggestions.every(suggestion => suggestion.status === 'pending')).toBe(true)
     expect(beforeReplay.facts).toHaveLength(1)
     expect(beforeReplay.healthReports.length).toBeGreaterThan(0)
+    const outboxRows = await db.select().from(eventOutbox)
+    expect(outboxRows.length).toBeGreaterThanOrEqual(4)
+    expect(outboxRows.every(row => row.status === 'completed')).toBe(true)
 
     await new ProjectionReplay(projectionRegistry, eventStore).replayAll()
 

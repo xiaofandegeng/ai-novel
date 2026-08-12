@@ -18,7 +18,7 @@ import {
   writingJobs,
   writingJobSteps,
 } from '../../db/schema'
-import { commandBus } from '../../eventing-runtime'
+import { commandBus, wakeEventOutbox } from '../../eventing-runtime'
 import { errorMessage, generateId, now, timestampMs } from '../../shared/utils'
 import { getProjectHealthMetrics } from '../narrative/health-metrics.service'
 import { dispatchChapterCommand } from '../story/chapter.commands'
@@ -32,6 +32,7 @@ import {
   CHANGE_AUTONOMOUS_RUN_JOB_COMMAND,
   OPEN_AUTONOMOUS_EXCEPTION_COMMAND,
   PREPARE_AUTONOMOUS_RUN_COMMAND,
+  REQUEST_AUTONOMOUS_RUN_EXECUTION_COMMAND,
 } from './autonomous-run.eventing'
 import { dispatchWritingJobCommand } from './writing-job.commands'
 import {
@@ -76,6 +77,17 @@ export async function changeAutonomousRun(
 }
 
 const changeRun = changeAutonomousRun
+
+async function requestAutonomousExecution(projectId: string, runId: string, commandId: string): Promise<void> {
+  await dispatchAutonomousRunCommand(
+    REQUEST_AUTONOMOUS_RUN_EXECUTION_COMMAND,
+    projectId,
+    runId,
+    {},
+    { commandId, correlationId: runId, causationId: runId },
+  )
+  wakeEventOutbox()
+}
 
 export async function changeAutonomousRunJob(
   projectId: string,
@@ -586,16 +598,7 @@ export async function startAutonomousRun(projectId: string, runId: string): Prom
     startedAt: now(),
   })
 
-  // P2: 异步启动，防止 API 超时
-  runNextAutonomousStep(projectId, runId).catch(async (err) => {
-    const [latest] = await db.select({ status: autonomousWritingRuns.status }).from(autonomousWritingRuns).where(and(
-      eq(autonomousWritingRuns.id, runId),
-      eq(autonomousWritingRuns.projectId, projectId),
-    ))
-    if (latest?.status !== 'running')
-      return
-    console.error(`[AutonomousRun ${runId}] execution failed:`, err)
-  })
+  await requestAutonomousExecution(projectId, runId, `StartRun:${runId}:execute`)
 }
 
 export async function runNextAutonomousStep(projectId: string, runId: string): Promise<void> {
@@ -613,14 +616,16 @@ export async function runNextAutonomousStep(projectId: string, runId: string): P
   )).orderBy(asc(autonomousRunJobs.orderIndex)).limit(1)
 
   if (nextJob.length === 0) {
-    // Check if there are still running jobs
-    const activeJobs = await db.select({ id: autonomousRunJobs.id }).from(autonomousRunJobs).where(and(
+    // A paused writing job keeps its RunJob in running state; resume it through
+    // the same durable execution handler instead of bypassing the outbox.
+    const activeJobs = await db.select().from(autonomousRunJobs).where(and(
       eq(autonomousRunJobs.runId, runId),
       eq(autonomousRunJobs.status, 'running'),
-    )).limit(1)
+    )).orderBy(asc(autonomousRunJobs.orderIndex)).limit(1)
 
     if (activeJobs.length > 0) {
-      // Still active jobs running, do not finalize yet
+      const { startJob } = await import('./writing-job.service')
+      await startJob(projectId, activeJobs[0].writingJobId)
       return
     }
 
@@ -726,13 +731,7 @@ export async function resumeAutonomousRun(projectId: string, runId: string): Pro
     }
   })
 
-  if (pausedJobs[0]) {
-    const { startJob } = await import('./writing-job.service')
-    await startJob(projectId, pausedJobs[0].id)
-  }
-  else {
-    await runNextAutonomousStep(projectId, runId)
-  }
+  await requestAutonomousExecution(projectId, runId, `ResumeRun:${runId}:execute:${run.updatedAt}`)
 }
 
 export async function abandonAutonomousRun(projectId: string, runId: string): Promise<void> {
@@ -814,8 +813,7 @@ export async function handleAutonomousJobCompletion(
     if (!latestRun || latestRun.status !== 'running')
       return
 
-    // Continue to next
-    await runNextAutonomousStep(projectId, runId)
+    await requestAutonomousExecution(projectId, runId, `ContinueRun:${runId}:job:${jobId}`)
   }
   else if (status === 'isolated') {
     // Already updated in writing-job.service.ts or elsewhere, but we can ensure it
@@ -823,8 +821,7 @@ export async function handleAutonomousJobCompletion(
     if (runJob)
       await changeAutonomousRunJob(projectId, runId, runJob.id, { status: 'isolated' })
 
-    // Continue to next immediately
-    await runNextAutonomousStep(projectId, runId)
+    await requestAutonomousExecution(projectId, runId, `ContinueRun:${runId}:isolated-job:${jobId}`)
   }
   else if (status === 'failed') {
     const [runJob] = await db.select().from(autonomousRunJobs).where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, jobId))).limit(1)
@@ -854,7 +851,7 @@ export async function handleAutonomousJobCompletion(
     // Single chapter failure never stops the run — continue to next chapter
     const [latestRun] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, runId))
     if (latestRun && latestRun.status === 'running') {
-      await runNextAutonomousStep(projectId, runId)
+      await requestAutonomousExecution(projectId, runId, `ContinueRun:${runId}:failed-job:${jobId}`)
     }
   }
 }
@@ -983,7 +980,7 @@ export async function resolveAutonomousException(projectId: string, runId: strin
       status: 'running',
     }, `ResolveException:${exceptionId}:resume-run`)
 
-    await runNextAutonomousStep(projectId, runId)
+    await requestAutonomousExecution(projectId, runId, `ResolveException:${exceptionId}:execute`)
   }
   catch (error: unknown) {
     // Revert run to failed on error
@@ -1035,7 +1032,7 @@ export async function ignoreAutonomousException(projectId: string, runId: string
       status: 'running',
     }, `IgnoreException:${exceptionId}:resume-run`)
 
-    await runNextAutonomousStep(projectId, runId)
+    await requestAutonomousExecution(projectId, runId, `IgnoreException:${exceptionId}:execute`)
   }
 }
 

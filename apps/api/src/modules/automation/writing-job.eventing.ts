@@ -24,12 +24,15 @@ export const CHANGE_WRITING_JOB_COMMAND = 'ChangeWritingJob'
 export const DELETE_WRITING_JOB_COMMAND = 'DeleteWritingJob'
 export const REPLACE_WRITING_JOB_STEPS_COMMAND = 'ReplaceWritingJobSteps'
 export const CHANGE_WRITING_JOB_STEP_COMMAND = 'ChangeWritingJobStep'
+export const REQUEST_WRITING_JOB_EXECUTION_COMMAND = 'RequestWritingJobExecution'
 
 export const WRITING_JOB_CREATED = 'WritingJobCreated'
 export const WRITING_JOB_CHANGED = 'WritingJobChanged'
 export const WRITING_JOB_DELETED = 'WritingJobDeleted'
 export const WRITING_JOB_STEPS_REPLACED = 'WritingJobStepsReplaced'
 export const WRITING_JOB_STEP_CHANGED = 'WritingJobStepChanged'
+export const WRITING_JOB_EXECUTION_REQUESTED = 'WritingJobExecutionRequested'
+export const WRITING_JOB_OUTBOX_HANDLER = 'writing-job.execute'
 
 const JOB_MODES = ['outline_only', 'draft_only', 'outline_then_draft', 'scene_draft'] as const
 const JOB_STATUSES = ['idle', 'running', 'paused', 'completed', 'failed', 'isolated'] as const
@@ -155,6 +158,12 @@ export function registerWritingJobEventing(runtime: WritingJobEventingRuntime): 
   runtime.events.register({ eventType: WRITING_JOB_DELETED, currentSchemaVersion: 1, upcasters: {}, validate: validateDeleted })
   runtime.events.register({ eventType: WRITING_JOB_STEPS_REPLACED, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ steps: readSteps(payloadCodec.object(payload)) }) })
   runtime.events.register({ eventType: WRITING_JOB_STEP_CHANGED, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ step: readStep(payloadCodec.object(payload)) }) })
+  runtime.events.register({
+    eventType: WRITING_JOB_EXECUTION_REQUESTED,
+    currentSchemaVersion: 1,
+    upcasters: {},
+    validate: payload => ({ requestId: payloadCodec.string(payloadCodec.object(payload), 'requestId') }),
+  })
   registerCommands(runtime)
   registerProjection(runtime.projections)
 }
@@ -180,6 +189,26 @@ function registerCommands(runtime: WritingJobEventingRuntime): void {
     const timestamp = now()
     const job = changeJob(loaded.state, command.payload, timestamp)
     return decision(loaded.version, command, [pendingEvent(WRITING_JOB_CHANGED, { job }, command, timestamp)], job, timestamp)
+  })
+  runtime.commands.register(REQUEST_WRITING_JOB_EXECUTION_COMMAND, async (command, context) => {
+    const loaded = await loadActive(runtime, command, context.session)
+    if (loaded.state.status === 'paused')
+      throw new DomainCommandError('WRITING_JOB_PAUSED', 'Paused writing jobs cannot execute')
+    if (loaded.state.status === 'completed' || loaded.state.status === 'isolated')
+      throw new DomainCommandError('WRITING_JOB_TERMINAL', 'Terminal writing jobs cannot execute')
+    const timestamp = now()
+    const requestId = command.commandId
+    const event = pendingEvent(WRITING_JOB_EXECUTION_REQUESTED, { requestId }, command, timestamp)
+    return {
+      streams: [{ stream: stream(command), expectedVersion: loaded.version, events: [event] }],
+      result: { requestId },
+      outbox: [{
+        id: `outbox:${requestId}`,
+        eventId: event.eventId,
+        handlerName: WRITING_JOB_OUTBOX_HANDLER,
+        payload: { projectId: command.projectId!, jobId: command.aggregateId },
+      }],
+    }
   })
   runtime.commands.register(DELETE_WRITING_JOB_COMMAND, async (command, context) => {
     const loaded = await loadActive(runtime, command, context.session)

@@ -1,7 +1,7 @@
 import type { CommandEnvelope, JsonObject } from '../../eventing'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../../db'
-import { autonomousRunExceptions, autonomousRunJobs, autonomousWritingRuns } from '../../db/schema'
+import { autonomousRunExceptions, autonomousRunJobs, autonomousWritingRuns, eventOutbox } from '../../db/schema'
 import { AggregateRepository, CommandBus, EventRegistry, EventStore, ProjectionRegistry, ProjectionReplay } from '../../eventing'
 import { resetTestDatabase } from '../../test/database'
 import { CREATE_PROJECT_COMMAND, registerProjectEventing } from '../project/project.eventing'
@@ -16,6 +16,7 @@ import {
   OPEN_AUTONOMOUS_EXCEPTION_COMMAND,
   PREPARE_AUTONOMOUS_RUN_COMMAND,
   registerAutonomousRunEventing,
+  REQUEST_AUTONOMOUS_RUN_EXECUTION_COMMAND,
 } from './autonomous-run.eventing'
 
 afterAll(() => sql.end())
@@ -49,6 +50,25 @@ describe('autonomous run eventing', () => {
 
     await expect(db.select().from(autonomousWritingRuns)).resolves.toMatchObject([{ id: 'run-1', status: 'running' }])
     await expect(db.select().from(autonomousRunJobs)).resolves.toMatchObject([{ id: 'run-job-1', status: 'completed' }])
+  })
+
+  it('persists a durable execution request in the same command transaction', async () => {
+    await seed(runtime.commands)
+    await runtime.commands.dispatch(command(PREPARE_AUTONOMOUS_RUN_COMMAND, {
+      strategy: 'balanced',
+      scopeType: 'next_n_chapters',
+      targetChapterCount: 1,
+      targetWordsPerChapter: 3000,
+    }))
+    await runtime.commands.dispatch(command(CHANGE_AUTONOMOUS_RUN_COMMAND, { status: 'running' }, 'start-for-outbox'))
+
+    await runtime.commands.dispatch(command(REQUEST_AUTONOMOUS_RUN_EXECUTION_COMMAND, {}, 'request-execution'))
+
+    await expect(db.select().from(eventOutbox)).resolves.toMatchObject([{
+      status: 'pending',
+      handlerName: 'autonomous-run.execute',
+      payload: { projectId: 'project-1', runId: 'run-1' },
+    }])
   })
 
   it('enforces run lifecycle transitions and accepts the realized target count', async () => {

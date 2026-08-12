@@ -6,7 +6,7 @@ import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { autonomousRunJobs, autonomousWritingRuns, chapters, chapterScenes, writingJobs, writingJobSteps } from '../../db/schema'
 import { DomainCommandError } from '../../eventing'
-import { commandBus } from '../../eventing-runtime'
+import { commandBus, wakeEventOutbox } from '../../eventing-runtime'
 import { assertOptionalChapterBelongsToProject } from '../../shared/ownership'
 import { errorMessage, generateId, now } from '../../shared/utils'
 import { renderAIContext } from '../ai/ai-context-renderer'
@@ -37,6 +37,7 @@ import {
   CREATE_WRITING_JOB_COMMAND,
   DELETE_WRITING_JOB_COMMAND,
   REPLACE_WRITING_JOB_STEPS_COMMAND,
+  REQUEST_WRITING_JOB_EXECUTION_COMMAND,
 } from './writing-job.eventing'
 
 function mapActionToDecision(action: 'continue' | 'repair' | 'isolate' | 'skip' | 'stop_run'): 'approved' | 'medium_risk_repair' | 'isolated' | 'skipped' | 'failed' {
@@ -233,12 +234,14 @@ export async function continueWritingJob(projectId: string, id: string) {
   const current = await getWritingJob(projectId, id)
   if (!current || current.status !== 'paused')
     return null
-  return dispatchWritingJobCommand<WritingJobSnapshot>(
+  const job = await dispatchWritingJobCommand<WritingJobSnapshot>(
     CHANGE_WRITING_JOB_COMMAND,
     projectId,
     id,
     { status: 'running', lastError: null },
   )
+  await requestWritingJobExecution(projectId, id, `ContinueWritingJob:${id}:${current.updatedAt}`)
+  return job
 }
 
 export async function deleteWritingJob(projectId: string, id: string) {
@@ -1473,7 +1476,22 @@ export async function startJob(projectId: string, jobId: string): Promise<void> 
     await initializeJobSteps(jobId)
   }
 
+  await requestWritingJobExecution(projectId, jobId, `StartWritingJob:${jobId}:${job.updatedAt}`)
+}
+
+export async function executeWritingJob(projectId: string, jobId: string): Promise<void> {
   await runNextSteps(projectId, jobId)
+}
+
+async function requestWritingJobExecution(projectId: string, jobId: string, commandId: string): Promise<void> {
+  await dispatchWritingJobCommand(
+    REQUEST_WRITING_JOB_EXECUTION_COMMAND,
+    projectId,
+    jobId,
+    {},
+    { commandId, correlationId: jobId, causationId: jobId },
+  )
+  wakeEventOutbox()
 }
 
 export async function retryStep(projectId: string, jobId: string, stepId: string): Promise<void> {
@@ -1534,6 +1552,5 @@ export async function retryStep(projectId: string, jobId: string, stepId: string
     }
   }
 
-  // Run from the retry point
-  await runNextSteps(projectId, jobId)
+  await requestWritingJobExecution(projectId, jobId, `RetryWritingJob:${jobId}:step:${stepId}:${step.updatedAt}`)
 }
