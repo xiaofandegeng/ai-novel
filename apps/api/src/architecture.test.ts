@@ -110,6 +110,8 @@ describe('api architecture boundaries', () => {
       'knowledgeChunks',
       'knowledgeNotes',
       'authoringEvents',
+      'writingJobs',
+      'writingJobSteps',
     ]
     const applicationFiles = sourceFiles(sourceRoot)
       .filter(file => !file.endsWith('.test.ts'))

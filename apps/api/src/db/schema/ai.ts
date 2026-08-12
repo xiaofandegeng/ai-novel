@@ -6,8 +6,8 @@ import { novelProjects } from './project'
 export const writingJobs = pgTable('writing_jobs', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  currentChapterId: text('current_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
-  sceneId: text('scene_id').references(() => chapterScenes.id, { onDelete: 'set null' }),
+  currentChapterId: text('current_chapter_id'),
+  sceneId: text('scene_id'),
   mode: text('mode').$type<'outline_only' | 'draft_only' | 'outline_then_draft' | 'scene_draft'>().notNull(),
   status: text('status').$type<'idle' | 'running' | 'paused' | 'completed' | 'failed' | 'isolated'>().notNull().default('idle'),
   executionMode: text('execution_mode').$type<'auto'>().notNull().default('auto'),

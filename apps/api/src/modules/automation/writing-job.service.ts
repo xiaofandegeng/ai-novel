@@ -1,8 +1,10 @@
 import type { AutonomousStrategy, CreateWritingJobInput, WritingJob, WritingJobStepType } from '@ai-novel/shared'
 import type { ChapterSnapshot, SceneSnapshot } from '../story/chapter.eventing'
-import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm'
+import type { WritingJobSnapshot } from './writing-job.eventing'
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { autonomousRunExceptions, autonomousRunJobs, autonomousWritingRuns, chapters, chapterScenes, projectHealthReports, writingJobs, writingJobSteps } from '../../db/schema'
+import { DomainCommandError } from '../../eventing'
 import { assertOptionalChapterBelongsToProject } from '../../shared/ownership'
 import { errorMessage, generateId, now } from '../../shared/utils'
 import { renderAIContext } from '../ai/ai-context-renderer'
@@ -25,6 +27,14 @@ import { applyChangeSet as applyChangeSetSvc, approveChangeSet as approveChangeS
 import { extractChapterChanges, runChapterPostprocess, runScenePostprocess } from './chapter-postprocess.service'
 import { applyAutoSuggestions, getSuggestions } from './postprocess-suggestion.service'
 import { runGraphInference } from './story-graph-inference.service'
+import { compactWritingJobPayload, dispatchWritingJobCommand } from './writing-job.commands'
+import {
+  CHANGE_WRITING_JOB_COMMAND,
+  CHANGE_WRITING_JOB_STEP_COMMAND,
+  CREATE_WRITING_JOB_COMMAND,
+  DELETE_WRITING_JOB_COMMAND,
+  REPLACE_WRITING_JOB_STEPS_COMMAND,
+} from './writing-job.eventing'
 
 function mapActionToDecision(action: 'continue' | 'repair' | 'isolate' | 'skip' | 'stop_run'): 'approved' | 'medium_risk_repair' | 'isolated' | 'skipped' | 'failed' {
   switch (action) {
@@ -171,46 +181,62 @@ export async function createWritingJob(projectId: string, input: CreateWritingJo
     return { row: null, error: '必须选择目标章节，以便自动写入正文' }
 
   const id = generateId()
-  const [row] = await db.insert(writingJobs).values({
-    id,
+  const row = await dispatchWritingJobCommand<WritingJobSnapshot>(
+    CREATE_WRITING_JOB_COMMAND,
     projectId,
-    mode,
-    currentChapterId,
-    sceneId,
-    executionMode: 'auto',
-    status: 'idle',
-  }).returning()
-  await initializeJobSteps(id)
+    id,
+    compactWritingJobPayload({
+      mode,
+      currentChapterId,
+      sceneId,
+      steps: buildJobSteps(id, mode),
+    }),
+  )
   return { row, error: null }
 }
 
 export async function pauseWritingJob(projectId: string, id: string) {
-  const [row] = await db.update(writingJobs).set({
-    status: 'paused',
-    updatedAt: now(),
-  }).where(and(eq(writingJobs.id, id), eq(writingJobs.projectId, projectId))).returning()
-  return row ?? null
+  try {
+    return await dispatchWritingJobCommand<WritingJobSnapshot>(
+      CHANGE_WRITING_JOB_COMMAND,
+      projectId,
+      id,
+      { status: 'paused' },
+    )
+  }
+  catch (error: unknown) {
+    if (isWritingJobMissing(error))
+      return null
+    throw error
+  }
 }
 
 export async function continueWritingJob(projectId: string, id: string) {
-  const [row] = await db.update(writingJobs).set({
-    status: 'running',
-    lastError: null,
-    updatedAt: now(),
-  }).where(and(
-    eq(writingJobs.id, id),
-    eq(writingJobs.projectId, projectId),
-    eq(writingJobs.status, 'paused'),
-  )).returning()
-  return row ?? null
+  const current = await getWritingJob(projectId, id)
+  if (!current || current.status !== 'paused')
+    return null
+  return dispatchWritingJobCommand<WritingJobSnapshot>(
+    CHANGE_WRITING_JOB_COMMAND,
+    projectId,
+    id,
+    { status: 'running', lastError: null },
+  )
 }
 
 export async function deleteWritingJob(projectId: string, id: string) {
-  const [row] = await db.delete(writingJobs).where(and(
-    eq(writingJobs.id, id),
-    eq(writingJobs.projectId, projectId),
-  )).returning()
-  return row ?? null
+  try {
+    return await dispatchWritingJobCommand<WritingJobSnapshot>(
+      DELETE_WRITING_JOB_COMMAND,
+      projectId,
+      id,
+      {},
+    )
+  }
+  catch (error: unknown) {
+    if (isWritingJobMissing(error))
+      return null
+    throw error
+  }
 }
 
 export async function getProjectJobSteps(projectId: string, jobId: string) {
@@ -229,27 +255,22 @@ export async function initializeJobSteps(jobId: string): Promise<void> {
   if (!job)
     throw new Error('Job not found')
 
-  const sequence = STEP_SEQUENCE[job.mode]
-  const timestamp = now()
+  await dispatchWritingJobCommand(
+    REPLACE_WRITING_JOB_STEPS_COMMAND,
+    job.projectId,
+    jobId,
+    { steps: buildJobSteps(jobId, job.mode) },
+  )
+}
 
-  // Delete any existing steps first (in case of re-initialization)
-  await db.delete(writingJobSteps).where(eq(writingJobSteps.jobId, jobId))
-
-  const values = sequence.map((stepType, index) => ({
+function buildJobSteps(jobId: string, mode: JobMode) {
+  return STEP_SEQUENCE[mode].map((stepType, index) => ({
     id: generateId(),
     jobId,
     stepType,
     status: 'pending' as const,
     input: JSON.stringify({ stepIndex: index }),
-    output: null,
-    error: null,
-    startedAt: null,
-    finishedAt: null,
-    createdAt: timestamp,
-    updatedAt: timestamp,
   }))
-
-  await db.insert(writingJobSteps).values(values)
 }
 
 export async function getJobSteps(jobId: string) {
@@ -271,14 +292,19 @@ export async function getJobSteps(jobId: string) {
 }
 
 async function updateJobStatus(jobId: string, status: WritingJobStatus, lastError?: string | null) {
-  const fields: Partial<typeof writingJobs.$inferInsert> = {
-    status,
-    updatedAt: now(),
-  }
+  const [current] = await db.select({ projectId: writingJobs.projectId }).from(writingJobs).where(eq(writingJobs.id, jobId))
+  if (!current)
+    throw new Error('Job not found')
+  const fields: Partial<typeof writingJobs.$inferInsert> = { status }
   if (lastError !== undefined) {
     fields.lastError = lastError
   }
-  await db.update(writingJobs).set(fields).where(eq(writingJobs.id, jobId))
+  await dispatchWritingJobCommand(
+    CHANGE_WRITING_JOB_COMMAND,
+    current.projectId,
+    jobId,
+    compactWritingJobPayload(fields),
+  )
 
   // P1-3: 如果是自动驾驶任务，通知 Run 进度
   if (isTerminalWritingJobStatus(status)) {
@@ -297,7 +323,22 @@ async function updateJobStatus(jobId: string, status: WritingJobStatus, lastErro
 }
 
 async function updateStep(stepId: string, fields: JobStepUpdate) {
-  await db.update(writingJobSteps).set({ ...fields, updatedAt: now() }).where(eq(writingJobSteps.id, stepId))
+  const [step] = await db.select({ jobId: writingJobSteps.jobId }).from(writingJobSteps).where(eq(writingJobSteps.id, stepId))
+  if (!step)
+    throw new Error('Step not found')
+  const [job] = await db.select({ projectId: writingJobs.projectId }).from(writingJobs).where(eq(writingJobs.id, step.jobId))
+  if (!job)
+    throw new Error('Job not found')
+  await dispatchWritingJobCommand(
+    CHANGE_WRITING_JOB_STEP_COMMAND,
+    job.projectId,
+    step.jobId,
+    compactWritingJobPayload({ id: stepId, ...fields }),
+  )
+}
+
+function isWritingJobMissing(error: unknown) {
+  return error instanceof DomainCommandError && error.code === 'WRITING_JOB_NOT_FOUND'
 }
 
 async function getJobAndChapter(jobId: string, projectId: string) {
@@ -1322,17 +1363,15 @@ async function executeStep(
               await updateStep(generateStep.id, { output: repairResult.planContent })
             }
 
-            await db.update(writingJobSteps).set({
-              status: 'pending',
-              output: null,
-              finishedAt: null,
-              autoDecision: null,
-              autoDecisionReason: null,
-              updatedAt: now(),
-            }).where(and(
-              eq(writingJobSteps.jobId, job.id),
-              eq(writingJobSteps.stepType, 'validate_plan'),
-            ))
+            if (validatePlanStep) {
+              await updateStep(validatePlanStep.id, {
+                status: 'pending',
+                output: null,
+                finishedAt: null,
+                autoDecision: null,
+                autoDecisionReason: null,
+              })
+            }
 
             await updateStep(step.id, { status: 'completed', output: JSON.stringify({ success: true, report: repairResult.repairReport }) })
           }
@@ -1372,18 +1411,18 @@ async function executeStep(
               await rejectChangeSetSvc(projectId, oldBuildStep.changeSetId)
             }
 
-            await db.update(writingJobSteps).set({
-              status: 'pending',
-              output: null,
-              changeSetId: null,
-              finishedAt: null,
-              autoDecision: null,
-              autoDecisionReason: null,
-              updatedAt: now(),
-            }).where(and(
-              eq(writingJobSteps.jobId, job.id),
-              or(eq(writingJobSteps.stepType, 'build_change_set'), eq(writingJobSteps.stepType, 'evaluate_change_set')),
-            ))
+            for (const reviewStep of reviewSteps.filter(item => (
+              item.stepType === 'build_change_set' || item.stepType === 'evaluate_change_set'
+            ))) {
+              await updateStep(reviewStep.id, {
+                status: 'pending',
+                output: null,
+                changeSetId: null,
+                finishedAt: null,
+                autoDecision: null,
+                autoDecisionReason: null,
+              })
+            }
 
             await updateStep(step.id, { status: 'completed', output: JSON.stringify({ success: true, report: repairResult.repairReport }) })
           }
@@ -1471,13 +1510,12 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
         runStrategy: strategy,
       })
 
-      await db.update(writingJobSteps).set({
+      await updateStep(step.id, {
         autoDecision: mapActionToDecision(decision.action),
         autoRiskLevel: decision.riskLevel,
         autoDecisionReason: decision.reason,
         autoDecisionReport: decision.report,
-        updatedAt: now(),
-      }).where(eq(writingJobSteps.id, step.id))
+      })
 
       if (decision.action === 'isolate' || decision.action === 'skip') {
         await updateJobStatus(jobId, 'isolated', decision.reason)
@@ -1527,15 +1565,14 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
       })
 
       // 更新步骤决策信息
-      await db.update(writingJobSteps).set({
+      await updateStep(step.id, {
         autoDecision: mapActionToDecision(decision.action),
         autoRiskLevel: decision.riskLevel,
         autoDecisionReason: decision.reason,
         autoDecisionReport: decision.report,
         status: 'completed',
         finishedAt: now(),
-        updatedAt: now(),
-      }).where(eq(writingJobSteps.id, step.id))
+      })
 
       if (decision.action === 'continue') {
         // P1-1: 自动通过变更集后必须将变更项转入可应用状态
@@ -1548,7 +1585,9 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
       if (decision.action === 'repair') {
         const hasTriedRepair = allSteps.some(s => s.stepType === 'auto_repair' && s.status !== 'pending')
         if (!hasTriedRepair) {
-          await db.update(writingJobSteps).set({ status: 'pending', updatedAt: now() }).where(and(eq(writingJobSteps.jobId, jobId), eq(writingJobSteps.stepType, 'auto_repair')))
+          const repairStep = allSteps.find(item => item.stepType === 'auto_repair')
+          if (repairStep)
+            await updateStep(repairStep.id, { status: 'pending' })
 
           await updateJobStatus(jobId, 'running', '正在执行自动修复...')
           continue

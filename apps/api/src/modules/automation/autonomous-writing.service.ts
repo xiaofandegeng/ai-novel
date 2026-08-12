@@ -18,6 +18,12 @@ import {
 } from '../../db/schema'
 import { errorMessage, generateId, now, timestampMs } from '../../shared/utils'
 import { getProjectHealthMetrics } from '../narrative/health-metrics.service'
+import { dispatchWritingJobCommand } from './writing-job.commands'
+import {
+  CHANGE_WRITING_JOB_COMMAND,
+  CREATE_WRITING_JOB_COMMAND,
+  REPLACE_WRITING_JOB_STEPS_COMMAND,
+} from './writing-job.eventing'
 
 const STEP_LABEL_ZH: Record<string, string> = {
   prepare_context: '构建上下文',
@@ -323,18 +329,6 @@ async function prepareRunJobs(
 
     // Create a WritingJob first
     const writingJobId = generateId()
-    await tx.insert(writingJobs).values({
-      id: writingJobId,
-      projectId,
-      currentChapterId: ch.id,
-      mode: 'outline_then_draft',
-      status: 'idle',
-      targetWords: params.targetWordsPerChapter,
-      autonomousRunId: runId,
-      createdAt: now(),
-      updatedAt: now(),
-    })
-
     // Add steps for the writing job. Autonomous writing must always plan first,
     // so draft generation cannot consume an empty or stale outline.
     const steps: WritingJobStepType[] = [
@@ -353,16 +347,24 @@ async function prepareRunJobs(
       'done',
     ]
 
-    for (let j = 0; j < steps.length; j++) {
-      await tx.insert(writingJobSteps).values({
-        id: generateId(),
-        jobId: writingJobId,
-        stepType: steps[j],
-        status: 'pending',
-        createdAt: now(),
-        updatedAt: now(),
-      })
-    }
+    await dispatchWritingJobCommand(
+      CREATE_WRITING_JOB_COMMAND,
+      projectId,
+      writingJobId,
+      {
+        currentChapterId: ch.id,
+        mode: 'outline_then_draft',
+        status: 'idle',
+        targetWords: params.targetWordsPerChapter ?? null,
+        autonomousRunId: runId,
+        steps: steps.map(stepType => ({ id: generateId(), stepType })),
+      },
+      {
+        commandId: `PrepareRun:${runId}:job:${writingJobId}`,
+        correlationId: runId,
+        causationId: runId,
+      },
+    )
 
     // Link to Autonomous Run
     await tx.insert(autonomousRunJobs).values({
@@ -748,23 +750,33 @@ export async function resolveAutonomousException(projectId: string, runId: strin
     // Reset the failed/isolated job so it can be re-run
     if (ex.writingJobId) {
       // Reset job steps to pending so startJob re-initializes them
-      await db.update(writingJobSteps).set({
-        status: 'pending',
-        error: null,
-        output: null,
-        finishedAt: null,
-        autoDecision: null,
-        autoDecisionReason: null,
-        autoDecisionReport: null,
-        updatedAt: now(),
-      }).where(eq(writingJobSteps.jobId, ex.writingJobId))
+      const jobSteps = await db.select({ id: writingJobSteps.id, stepType: writingJobSteps.stepType })
+        .from(writingJobSteps)
+        .where(eq(writingJobSteps.jobId, ex.writingJobId))
+      await dispatchWritingJobCommand(
+        REPLACE_WRITING_JOB_STEPS_COMMAND,
+        projectId,
+        ex.writingJobId,
+        { steps: jobSteps.map(step => ({ id: step.id, stepType: step.stepType })) },
+        {
+          commandId: `ResolveException:${exceptionId}:reset-steps`,
+          correlationId: runId,
+          causationId: exceptionId,
+        },
+      )
 
       // Reset job status
-      await db.update(writingJobs).set({
-        status: 'idle',
-        lastError: null,
-        updatedAt: now(),
-      }).where(eq(writingJobs.id, ex.writingJobId))
+      await dispatchWritingJobCommand(
+        CHANGE_WRITING_JOB_COMMAND,
+        projectId,
+        ex.writingJobId,
+        { status: 'idle', lastError: null },
+        {
+          commandId: `ResolveException:${exceptionId}:reset-job`,
+          correlationId: runId,
+          causationId: exceptionId,
+        },
+      )
 
       // Reset run job status
       await db.update(autonomousRunJobs).set({

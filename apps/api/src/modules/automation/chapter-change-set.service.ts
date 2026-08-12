@@ -20,6 +20,8 @@ import { dispatchChapterCommand } from '../story/chapter.commands'
 import { CHANGE_CHAPTER_COMMAND, CHANGE_SCENE_COMMAND } from '../story/chapter.eventing'
 import { createSnapshot } from '../story/version.service'
 import { applyOneSuggestion } from './postprocess-suggestion.service'
+import { dispatchWritingJobCommand } from './writing-job.commands'
+import { CHANGE_WRITING_JOB_STEP_COMMAND } from './writing-job.eventing'
 
 type ChapterPostprocessResult = ExtractedChapterChanges
 
@@ -114,9 +116,23 @@ export async function createChapterChangeSet(input: {
 
   // Update the writing job step if provided
   if (sourceStepId) {
-    await db.update(writingJobSteps)
-      .set({ changeSetId: id })
+    const [sourceStep] = await db.select({ jobId: writingJobSteps.jobId })
+      .from(writingJobSteps)
       .where(eq(writingJobSteps.id, sourceStepId))
+      .limit(1)
+    if (sourceStep) {
+      await dispatchWritingJobCommand(
+        CHANGE_WRITING_JOB_STEP_COMMAND,
+        projectId,
+        sourceStep.jobId,
+        { id: sourceStepId, changeSetId: id },
+        {
+          commandId: `CreateChangeSet:${id}:link-step`,
+          correlationId: id,
+          causationId: id,
+        },
+      )
+    }
   }
 
   return changeSet

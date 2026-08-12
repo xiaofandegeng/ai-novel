@@ -7,6 +7,7 @@ import {
 } from './eventing'
 import { registerProjectSettingsEventing } from './modules/ai/project-settings.eventing'
 import { registerPromptSettingsEventing } from './modules/ai/prompt-settings.eventing'
+import { registerWritingJobEventing } from './modules/automation/writing-job.eventing'
 import { registerCharacterEventing } from './modules/character/character.eventing'
 import { registerRelationshipEventing } from './modules/character/relationship.eventing'
 import { registerConflictEventing } from './modules/narrative/conflict.eventing'
@@ -84,6 +85,12 @@ registerChapterKnowledgeEventing({
   projections: projectionRegistry,
 })
 registerNarrativeKnowledgeEventing({
+  aggregates: aggregateRepository,
+  commands: commandBus,
+  events: domainEventRegistry,
+  projections: projectionRegistry,
+})
+registerWritingJobEventing({
   aggregates: aggregateRepository,
   commands: commandBus,
   events: domainEventRegistry,
