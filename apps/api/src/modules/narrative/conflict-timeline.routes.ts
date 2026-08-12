@@ -1,6 +1,8 @@
 import type { Hono } from 'hono'
+import { httpCommandOptions } from '../../shared/http/command-options'
 import { fail, success } from '../../shared/http/responses'
 import { ConflictTimelineService } from './conflict-timeline.service'
+import { RECORD_CONFLICT_TIMELINE_COMMAND, REMOVE_CONFLICT_TIMELINE_COMMAND } from './conflict.eventing'
 
 export function registerConflictTimelineRoutes(app: Hono) {
   app.get('/api/projects/:projectId/conflicts/:conflictId/timeline', async (c) => {
@@ -19,14 +21,22 @@ export function registerConflictTimelineRoutes(app: Hono) {
   app.post('/api/projects/:projectId/conflict-timeline', async (c) => {
     const projectId = c.req.param('projectId')
     const body = await c.req.json()
-    const row = await ConflictTimelineService.createEvent(projectId, body)
+    const row = await ConflictTimelineService.createEvent(
+      projectId,
+      body,
+      httpCommandOptions(c, RECORD_CONFLICT_TIMELINE_COMMAND, projectId, body.conflictId),
+    )
     return c.json(success(row))
   })
 
   app.delete('/api/projects/:projectId/conflict-timeline/:id', async (c) => {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
-    const row = await ConflictTimelineService.deleteEvent(projectId, id)
+    const row = await ConflictTimelineService.deleteEvent(
+      projectId,
+      id,
+      httpCommandOptions(c, REMOVE_CONFLICT_TIMELINE_COMMAND, projectId, id),
+    )
     if (!row)
       return c.json(fail('Timeline event not found'), 404)
     return c.json(success(row, 'Timeline event deleted'))

@@ -225,6 +225,13 @@
       "when": 1786499022207,
       "tag": "0031_spooky_lethal_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1786499760126,
+      "tag": "0032_secret_lionheart",
+      "breakpoints": true
     }
   ]
 }

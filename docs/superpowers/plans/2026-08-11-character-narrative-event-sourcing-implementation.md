@@ -64,11 +64,11 @@
 - Modify: conflict and timeline services/routes
 - Modify: `apps/api/src/eventing-runtime.ts`
 
-- [ ] Define `ConflictCreated`, `ConflictChanged`, `ConflictDeleted`, `ConflictParticipantsReplaced`, `ConflictTimelineRecorded`, and `ConflictTimelineRemoved`.
-- [ ] Keep participant replacement atomic inside the Conflict stream.
-- [ ] Validate participant, chapter, and scene ownership before append.
-- [ ] Project and replay conflict state, participant links, and timeline rows.
-- [ ] Commit: `feat(api): event source conflicts and timelines`.
+- [x] Define `ConflictCreated`, `ConflictChanged`, `ConflictDeleted`, `ConflictParticipantsReplaced`, `ConflictTimelineRecorded`, and `ConflictTimelineRemoved`.
+- [x] Keep participant replacement atomic inside the Conflict stream.
+- [x] Validate participant, chapter, and scene ownership before append.
+- [x] Project and replay conflict state, participant links, and timeline rows.
+- [x] Commit: `feat(api): event source conflicts and timelines`.
 
 ## Task 5: Foreshadowing aggregate
 

@@ -9,6 +9,7 @@ import { registerProjectSettingsEventing } from './modules/ai/project-settings.e
 import { registerPromptSettingsEventing } from './modules/ai/prompt-settings.eventing'
 import { registerCharacterEventing } from './modules/character/character.eventing'
 import { registerRelationshipEventing } from './modules/character/relationship.eventing'
+import { registerConflictEventing } from './modules/narrative/conflict.eventing'
 import { registerProjectEventing } from './modules/project/project.eventing'
 import { registerChapterEventing } from './modules/story/chapter.eventing'
 import { registerStoryStructureEventing } from './modules/story/story-structure.eventing'
@@ -56,6 +57,12 @@ registerCharacterEventing({
   projections: projectionRegistry,
 })
 registerRelationshipEventing({
+  aggregates: aggregateRepository,
+  commands: commandBus,
+  events: domainEventRegistry,
+  projections: projectionRegistry,
+})
+registerConflictEventing({
   aggregates: aggregateRepository,
   commands: commandBus,
   events: domainEventRegistry,
