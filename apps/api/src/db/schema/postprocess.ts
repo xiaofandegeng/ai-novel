@@ -45,7 +45,7 @@ export const storyFactTriples = pgTable('story_fact_triples', {
   objectName: text('object_name').notNull(),
   confidence: integer('confidence').notNull().default(70),
   sourceType: text('source_type').$type<'manual' | 'ai_extracted' | 'auto_inferred'>().notNull().default('manual'),
-  sourceChapterId: text('source_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
+  sourceChapterId: text('source_chapter_id'),
   status: text('status').$type<'pending' | 'confirmed' | 'rejected'>().notNull().default('pending'),
   relatedChapters: text('related_chapters'),
   notes: text('notes'),

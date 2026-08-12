@@ -109,11 +109,11 @@
 - Modify: authoring event service/routes and knowledge callers
 - Modify: seed flow
 
-- [ ] Define fact record/change/remove, knowledge source/chunk/note, and authoring activity events.
-- [ ] Keep embeddings as disposable derived indexes keyed by content hash.
-- [ ] Make reference knowledge and authoring activity project-scoped and replayable.
-- [ ] Replace automation fact writes with correlated NarrativeKnowledge commands.
-- [ ] Commit: `feat(api): event source narrative knowledge`.
+- [x] Define fact record/change/remove, knowledge source/chunk/note, and authoring activity events.
+- [x] Keep embeddings as disposable derived indexes keyed by content hash.
+- [x] Make reference knowledge and authoring activity project-scoped and replayable.
+- [x] Replace automation fact writes with correlated NarrativeKnowledge commands.
+- [x] Commit: `feat(api): event source narrative knowledge`.
 
 ## Task 8: Remove automation narrative write bypasses
 

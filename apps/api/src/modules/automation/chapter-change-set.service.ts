@@ -543,6 +543,11 @@ export async function applyChangeSet(
                 fullChangeSet.chapterId,
                 70, // Default confidence for change sets
                 tx,
+                {
+                  commandId: `ApplyChangeSet:${changeSetId}:item:${item.id}`,
+                  correlationId: changeSetId,
+                  causationId: item.id,
+                },
               )
             }
             break

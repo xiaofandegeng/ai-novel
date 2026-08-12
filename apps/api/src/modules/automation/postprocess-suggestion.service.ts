@@ -1,3 +1,4 @@
+import type { StoryFactSnapshot } from '../narrative/narrative-knowledge.eventing'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import {
@@ -9,11 +10,13 @@ import {
   conflicts,
   conflictTimelineEvents,
   foreshadowingItems,
-  storyFactTriples,
 } from '../../db/schema'
+import { DomainCommandError } from '../../eventing'
 import { errorMessage, generateId, now } from '../../shared/utils'
 import { getOrCreateEmbedding } from '../ai/embedding.service'
 import { normalizeCharacterPair } from '../character/character-utils.service'
+import { compactNarrativeKnowledgePayload, dispatchNarrativeKnowledgeCommand } from '../narrative/narrative-knowledge.commands'
+import { RECORD_STORY_FACT_COMMAND } from '../narrative/narrative-knowledge.eventing'
 
 type ApprovalLevel = 'conservative' | 'balanced' | 'aggressive'
 type SuggestionType = typeof chapterPostprocessSuggestions.$inferInsert['suggestionType']
@@ -118,6 +121,12 @@ export interface ApplyResult {
   acknowledged: number
   failed: number
   skipped: number
+}
+
+export interface SuggestionCommandContext {
+  commandId: string
+  correlationId: string
+  causationId: string
 }
 
 export async function createSuggestion(
@@ -229,6 +238,11 @@ export async function applySuggestion(projectId: string, id: string) {
         suggestion.chapterId,
         suggestion.confidence,
         tx,
+        {
+          commandId: `ApplySuggestion:${suggestion.id}`,
+          correlationId: suggestion.runId ?? suggestion.id,
+          causationId: suggestion.id,
+        },
       )
 
       if (resultStatus !== 'applied') {
@@ -364,43 +378,52 @@ export async function applyOneSuggestion(
   chapterId: string,
   confidence: number,
   tx: Transaction,
+  commandContext?: SuggestionCommandContext,
 ): Promise<'applied' | 'acknowledged'> {
   switch (suggestionType) {
     case 'fact_triple': {
       if (!payload.subjectName || !payload.predicate || !payload.objectName)
         throw new Error('事实三元组缺少必要字段')
-      const [insertedFact] = await tx.insert(storyFactTriples).values({
-        id: generateId(),
-        projectId,
-        subjectType: payload.subjectType || 'unknown',
-        subjectName: payload.subjectName,
-        predicate: payload.predicate,
-        objectType: payload.objectType || 'unknown',
-        objectName: payload.objectName,
-        confidence,
-        sourceType: payload.sourceType === 'auto_inferred' ? 'auto_inferred' : 'ai_extracted',
-        sourceChapterId: chapterId,
-        status: 'confirmed',
-        relatedChapters: payload.relatedChapters ? JSON.stringify(payload.relatedChapters) : undefined,
-        notes: payload.inferenceRule || payload.reason
-          ? JSON.stringify({
-              inferenceRule: payload.inferenceRule,
-              inferenceKey: payload.inferenceKey,
-              sourceTripleIds: payload.sourceTripleIds,
-              sourceElementIds: payload.sourceElementIds,
-              sourceFacts: payload.sourceFacts,
-              reason: payload.reason,
-            })
-          : undefined,
-      }).onConflictDoNothing().returning()
-
-      if (insertedFact) {
+      try {
+        const insertedFact = await dispatchNarrativeKnowledgeCommand<StoryFactSnapshot>(
+          RECORD_STORY_FACT_COMMAND,
+          projectId,
+          compactNarrativeKnowledgePayload({
+            id: generateId(),
+            subjectType: payload.subjectType || 'unknown',
+            subjectName: payload.subjectName,
+            predicate: payload.predicate,
+            objectType: payload.objectType || 'unknown',
+            objectName: payload.objectName,
+            confidence,
+            sourceType: payload.sourceType === 'auto_inferred' ? 'auto_inferred' : 'ai_extracted',
+            sourceChapterId: chapterId,
+            status: 'confirmed',
+            relatedChapters: payload.relatedChapters ? JSON.stringify(payload.relatedChapters) : undefined,
+            notes: payload.inferenceRule || payload.reason
+              ? JSON.stringify({
+                  inferenceRule: payload.inferenceRule,
+                  inferenceKey: payload.inferenceKey,
+                  sourceTripleIds: payload.sourceTripleIds,
+                  sourceElementIds: payload.sourceElementIds,
+                  sourceFacts: payload.sourceFacts,
+                  reason: payload.reason,
+                })
+              : undefined,
+          }),
+          commandContext,
+        )
         await getOrCreateEmbedding({
           projectId,
-          text: `${insertedFact.subjectName} ${insertedFact.predicate} ${insertedFact.objectName}`,
+          text: `${payload.subjectName} ${payload.predicate} ${payload.objectName}`,
           contentType: 'fact_summary',
           sourceId: insertedFact.id,
         }).catch(err => console.error('Failed to embed fact triple:', err))
+      }
+      catch (error: unknown) {
+        if (error instanceof DomainCommandError && error.code === 'STORY_FACT_ALREADY_EXISTS')
+          return 'acknowledged'
+        throw error
       }
 
       return 'applied'

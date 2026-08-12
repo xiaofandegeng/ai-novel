@@ -7,7 +7,7 @@ import { novelProjects } from './project'
 export const authoringEvents = pgTable('authoring_events', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
+  chapterId: text('chapter_id'),
   sceneId: text('scene_id'),
   eventType: text('event_type').notNull(),
   source: text('source').notNull(), // manual, ai, system, task, smoke

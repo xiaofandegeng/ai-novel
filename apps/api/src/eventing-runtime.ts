@@ -11,6 +11,7 @@ import { registerCharacterEventing } from './modules/character/character.eventin
 import { registerRelationshipEventing } from './modules/character/relationship.eventing'
 import { registerConflictEventing } from './modules/narrative/conflict.eventing'
 import { registerForeshadowingEventing } from './modules/narrative/foreshadowing.eventing'
+import { registerNarrativeKnowledgeEventing } from './modules/narrative/narrative-knowledge.eventing'
 import { registerProjectEventing } from './modules/project/project.eventing'
 import { registerChapterKnowledgeEventing } from './modules/story/chapter-knowledge.eventing'
 import { registerChapterEventing } from './modules/story/chapter.eventing'
@@ -77,6 +78,12 @@ registerForeshadowingEventing({
   projections: projectionRegistry,
 })
 registerChapterKnowledgeEventing({
+  aggregates: aggregateRepository,
+  commands: commandBus,
+  events: domainEventRegistry,
+  projections: projectionRegistry,
+})
+registerNarrativeKnowledgeEventing({
   aggregates: aggregateRepository,
   commands: commandBus,
   events: domainEventRegistry,
