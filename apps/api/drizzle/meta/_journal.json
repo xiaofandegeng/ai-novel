@@ -281,6 +281,20 @@
       "when": 1786508321681,
       "tag": "0039_wakeful_yellowjacket",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1786509453006,
+      "tag": "0040_gorgeous_major_mapleleaf",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1786509757097,
+      "tag": "0041_flaky_blazing_skull",
+      "breakpoints": true
     }
   ]
 }

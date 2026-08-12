@@ -1,6 +1,8 @@
 import type { Hono } from 'hono'
+import { httpCommandOptions } from '../../shared/http/command-options'
 import { fail, success } from '../../shared/http/responses'
 import { AICandidateService } from './ai-candidate.service'
+import { CHANGE_AI_OPERATION_COMMAND, RECORD_AI_OPERATION_COMMAND } from './ai-operations.eventing'
 
 export function registerAICandidateRoutes(app: Hono) {
   // List candidates with optional filters
@@ -24,7 +26,7 @@ export function registerAICandidateRoutes(app: Hono) {
     const body = await c.req.json()
 
     try {
-      const candidate = await AICandidateService.createCandidate(projectId, body)
+      const candidate = await AICandidateService.createCandidate(projectId, body, httpCommandOptions(c, RECORD_AI_OPERATION_COMMAND, projectId, 'candidate'))
       return c.json(success(candidate))
     }
     catch {
@@ -38,7 +40,7 @@ export function registerAICandidateRoutes(app: Hono) {
     const id = c.req.param('id')
 
     try {
-      const candidate = await AICandidateService.selectCandidate(projectId, id)
+      const candidate = await AICandidateService.selectCandidate(projectId, id, httpCommandOptions(c, CHANGE_AI_OPERATION_COMMAND, projectId, id, 'select'))
       if (!candidate)
         return c.json(fail('候选结果不存在'), 404)
       return c.json(success(candidate))
@@ -59,7 +61,7 @@ export function registerAICandidateRoutes(app: Hono) {
     }
 
     try {
-      const candidate = await AICandidateService.rateCandidate(projectId, id, rating)
+      const candidate = await AICandidateService.rateCandidate(projectId, id, rating, httpCommandOptions(c, CHANGE_AI_OPERATION_COMMAND, projectId, id, 'rate'))
       if (!candidate)
         return c.json(fail('候选结果不存在'), 404)
       return c.json(success(candidate))

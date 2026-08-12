@@ -3,7 +3,7 @@ import type { ChapterSnapshot, SceneSnapshot } from '../story/chapter.eventing'
 import type { WritingJobSnapshot } from './writing-job.eventing'
 import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
-import { autonomousRunJobs, autonomousWritingRuns, chapters, chapterScenes, projectHealthReports, writingJobs, writingJobSteps } from '../../db/schema'
+import { autonomousRunJobs, autonomousWritingRuns, chapters, chapterScenes, writingJobs, writingJobSteps } from '../../db/schema'
 import { DomainCommandError } from '../../eventing'
 import { commandBus } from '../../eventing-runtime'
 import { assertOptionalChapterBelongsToProject } from '../../shared/ownership'
@@ -11,6 +11,8 @@ import { errorMessage, generateId, now } from '../../shared/utils'
 import { renderAIContext } from '../ai/ai-context-renderer'
 import { createAIContextSnapshot } from '../ai/ai-context-snapshot.service'
 import { buildProjectAIContext } from '../ai/ai-context.service'
+import { compactAIOperationPayload, dispatchAIOperationCommand } from '../ai/ai-operations.commands'
+import { RECORD_AI_OPERATION_COMMAND } from '../ai/ai-operations.eventing'
 import { callAIJSON, getEffectiveAISettings } from '../ai/ai.service'
 import { runConsistencyGuard } from '../ai/consistency-guard.service'
 import { AuthoringEventService } from '../narrative/authoring-event.service'
@@ -967,9 +969,7 @@ async function executeUpdateHealth(
   const { riskLevel, score } = calculateHealthScore(metrics)
   const reportId = generateId()
 
-  await db.insert(projectHealthReports).values({
-    id: reportId,
-    projectId,
+  await dispatchAIOperationCommand(RECORD_AI_OPERATION_COMMAND, projectId, reportId, compactAIOperationPayload({ kind: 'health_report', data: {
     scope: 'overall',
     score,
     riskLevel,
@@ -985,7 +985,7 @@ async function executeUpdateHealth(
       riskCount: metrics.risks.length,
       topRisks,
     },
-  })
+  } }))
 
   const output = {
     reportId,

@@ -2,10 +2,12 @@ import type { AutonomousStrategy, ConsistencyGuardReport } from '@ai-novel/share
 import type { SceneSnapshot } from '../story/chapter.eventing'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { chapters, projectHealthReports } from '../../db/schema'
+import { chapters } from '../../db/schema'
 import { errorMessage, generateId } from '../../shared/utils'
 import { renderAIContext } from '../ai/ai-context-renderer'
 import { buildProjectAIContext } from '../ai/ai-context.service'
+import { compactAIOperationPayload, dispatchAIOperationCommand } from '../ai/ai-operations.commands'
+import { RECORD_AI_OPERATION_COMMAND } from '../ai/ai-operations.eventing'
 import { callAIJSON } from '../ai/ai.service'
 import { getProjectHealthMetrics } from '../narrative/health-metrics.service'
 import { dispatchChapterCommand } from '../story/chapter.commands'
@@ -328,9 +330,7 @@ ${chapterInfo}
   const { riskLevel, score } = calculateHealthScoreLocal(metrics)
   const reportId = generateId()
 
-  await db.insert(projectHealthReports).values({
-    id: reportId,
-    projectId,
+  await dispatchAIOperationCommand(RECORD_AI_OPERATION_COMMAND, projectId, reportId, compactAIOperationPayload({ kind: 'health_report', data: {
     scope: 'overall',
     score,
     riskLevel,
@@ -346,7 +346,7 @@ ${chapterInfo}
       riskCount: metrics.risks.length,
       topRisks,
     },
-  })
+  } }))
 
   return { success: true }
 }

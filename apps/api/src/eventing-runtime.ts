@@ -5,6 +5,7 @@ import {
   EventStore,
   ProjectionRegistry,
 } from './eventing'
+import { registerAIOperationsEventing } from './modules/ai/ai-operations.eventing'
 import { registerProjectSettingsEventing } from './modules/ai/project-settings.eventing'
 import { registerPromptSettingsEventing } from './modules/ai/prompt-settings.eventing'
 import { registerAutonomousRunEventing } from './modules/automation/autonomous-run.eventing'
@@ -28,6 +29,12 @@ export const commandBus = new CommandBus(eventStore, projectionRegistry, domainE
 export const aggregateRepository = new AggregateRepository(eventStore, domainEventRegistry)
 
 registerProjectEventing({
+  aggregates: aggregateRepository,
+  commands: commandBus,
+  events: domainEventRegistry,
+  projections: projectionRegistry,
+})
+registerAIOperationsEventing({
   aggregates: aggregateRepository,
   commands: commandBus,
   events: domainEventRegistry,

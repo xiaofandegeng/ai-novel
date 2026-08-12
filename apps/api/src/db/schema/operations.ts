@@ -65,8 +65,8 @@ export const projectPromptOverrides = pgTable('project_prompt_overrides', {
 export const promptTemplateRuns = pgTable('prompt_template_runs', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  contextSnapshotId: text('context_snapshot_id').references(() => aiContextSnapshots.id, { onDelete: 'set null' }),
-  templateId: text('template_id').notNull().references(() => promptTemplates.id),
+  contextSnapshotId: text('context_snapshot_id'),
+  templateId: text('template_id').notNull(),
   templateVersion: text('template_version').notNull(),
   renderedPreview: text('rendered_preview'),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().$defaultFn(() => new Date().toISOString()),
@@ -75,8 +75,8 @@ export const promptTemplateRuns = pgTable('prompt_template_runs', {
 export const aiUsageRecords = pgTable('ai_usage_records', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
-  contextSnapshotId: text('context_snapshot_id').references(() => aiContextSnapshots.id, { onDelete: 'set null' }),
+  chapterId: text('chapter_id'),
+  contextSnapshotId: text('context_snapshot_id'),
   provider: text('provider').notNull(),
   model: text('model').notNull(),
   taskType: text('task_type').notNull(),

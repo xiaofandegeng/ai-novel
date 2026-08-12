@@ -2,7 +2,9 @@ import crypto from 'node:crypto'
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { knowledgeEmbeddings } from '../../db/schema'
-import { generateId, now } from '../../shared/utils'
+import { generateId } from '../../shared/utils'
+import { compactAIOperationPayload, dispatchAIOperationCommand } from './ai-operations.commands'
+import { CHANGE_AI_OPERATION_COMMAND, RECORD_AI_OPERATION_COMMAND } from './ai-operations.eventing'
 import { callAIEmbedding, getEffectiveAISettings } from './ai.service'
 
 export type EmbeddingContentType
@@ -63,32 +65,15 @@ export async function getOrCreateEmbedding(input: EmbeddingInput): Promise<numbe
   const vector = await callAIEmbedding(input.text, { projectId: input.projectId, model })
 
   // 3. 存储到数据库
-  const timestamp = now()
-  await db.insert(knowledgeEmbeddings).values({
-    id: generateId(),
-    projectId: input.projectId,
+  const embeddingId = existing?.id ?? generateId()
+  await dispatchAIOperationCommand(existing ? CHANGE_AI_OPERATION_COMMAND : RECORD_AI_OPERATION_COMMAND, input.projectId, embeddingId, compactAIOperationPayload({ kind: 'embedding', data: {
     sourceId: input.sourceId,
     chunkId: input.chunkId,
     embeddingModel: model,
     embeddingVector: vector,
     contentType: input.contentType,
     contentHash,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  }).onConflictDoUpdate({
-    target: [
-      knowledgeEmbeddings.projectId,
-      knowledgeEmbeddings.embeddingModel,
-      knowledgeEmbeddings.contentType,
-      knowledgeEmbeddings.contentHash,
-    ],
-    set: {
-      embeddingVector: vector,
-      sourceId: input.sourceId,
-      chunkId: input.chunkId,
-      updatedAt: timestamp,
-    },
-  })
+  } }))
 
   return vector
 }

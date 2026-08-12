@@ -120,6 +120,13 @@ describe('api architecture boundaries', () => {
       'chapterPostprocessRuns',
       'chapterPostprocessSuggestions',
       'chapterStyleFingerprints',
+      'aiGenerationCandidates',
+      'aiContextSnapshots',
+      'aiUsageRecords',
+      'promptTemplateRuns',
+      'projectHealthReports',
+      'knowledgeEmbeddings',
+      'qualityReports',
     ]
     const applicationFiles = sourceFiles(sourceRoot)
       .filter(file => !file.endsWith('.test.ts'))

@@ -1,6 +1,5 @@
 import { integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
-import { chapters } from './chapter'
 import { novelProjects } from './project'
 
 export const writingJobs = pgTable('writing_jobs', {
@@ -40,7 +39,7 @@ export const writingJobSteps = pgTable('writing_job_steps', {
 export const aiContextSnapshots = pgTable('ai_context_snapshots', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id'),
   scene: text('scene'),
   requestId: text('request_id').notNull(),
   modelProvider: text('model_provider'),
@@ -54,7 +53,7 @@ export const aiContextSnapshots = pgTable('ai_context_snapshots', {
 export const qualityReports = pgTable('quality_reports', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id'),
   scope: text('scope').$type<'chapter' | 'book'>().notNull(),
   score: integer('score').notNull(),
   rhythmScore: integer('rhythm_score'),

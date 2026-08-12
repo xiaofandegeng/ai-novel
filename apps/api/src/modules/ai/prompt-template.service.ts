@@ -2,9 +2,11 @@ import type { JsonObject } from '../../eventing'
 import type { ProjectPromptOverrideSnapshot } from './prompt-settings.eventing'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { projectPromptOverrides, promptTemplateRuns, promptTemplates } from '../../db/schema'
+import { projectPromptOverrides, promptTemplates } from '../../db/schema'
 import { commandBus } from '../../eventing-runtime'
 import { generateId } from '../../shared/utils'
+import { compactAIOperationPayload, dispatchAIOperationCommand } from './ai-operations.commands'
+import { RECORD_AI_OPERATION_COMMAND } from './ai-operations.eventing'
 import {
   PROJECT_PROMPT_OVERRIDE_AGGREGATE_TYPE,
   promptOverrideAggregateId,
@@ -112,14 +114,12 @@ export class PromptTemplateService {
     renderedPreview?: string | null
   }) {
     const id = generateId()
-    await db.insert(promptTemplateRuns).values({
-      id,
-      projectId: params.projectId,
+    await dispatchAIOperationCommand(RECORD_AI_OPERATION_COMMAND, params.projectId, id, compactAIOperationPayload({ kind: 'prompt_run', data: {
       templateId: params.templateId,
       templateVersion: params.templateVersion,
       contextSnapshotId: params.contextSnapshotId || null,
       renderedPreview: params.renderedPreview || null,
-    })
+    } }))
     return id
   }
 }
