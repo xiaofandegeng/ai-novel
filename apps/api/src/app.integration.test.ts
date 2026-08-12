@@ -391,6 +391,9 @@ describe('http application boundary', () => {
     })
     expect(overlapResponse.status).toBe(400)
 
+    const startResponse = await app.request(`/api/projects/${projectId}/autonomous-runs/${created.data.id}/start`, { method: 'POST' })
+    expect(startResponse.status).toBe(200)
+
     const abandonResponse = await app.request(`/api/projects/${projectId}/autonomous-runs/${created.data.id}/abandon`, { method: 'POST' })
     expect(abandonResponse.status).toBe(200)
     await expect((await app.request(`/api/projects/${projectId}/autonomous-runs/active`)).json()).resolves.toEqual({ success: true, data: null })

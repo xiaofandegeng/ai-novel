@@ -88,6 +88,11 @@ describe('autonomous writing service', () => {
     await expect(db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.id, runJob.id))).resolves.toMatchObject([
       { status: 'running' },
     ])
+    const pauseEvents = await db.select({ payload: domainEvents.payload }).from(domainEvents).where(and(
+      eq(domainEvents.aggregateId, run.id),
+      eq(domainEvents.eventType, 'AutonomousRunChanged'),
+    )).orderBy(domainEvents.globalPosition)
+    expect(pauseEvents.slice(-2).map(row => (row.payload as { run: { status: string } }).run.status)).toEqual(['pausing', 'paused'])
   })
 
   it('abandons the run, unfinished jobs, and open exceptions atomically', async () => {
@@ -112,7 +117,12 @@ describe('autonomous writing service', () => {
     await expect(db.select().from(autonomousRunExceptions).where(eq(autonomousRunExceptions.runId, run.id))).resolves.toMatchObject([{ status: 'ignored' }])
 
     const correlationIds = await db.select({ correlationId: domainEvents.correlationId }).from(domainEvents).where(eq(domainEvents.aggregateId, run.id)).orderBy(domainEvents.globalPosition)
-    expect(correlationIds.slice(-3).map(row => row.correlationId)).toEqual([run.id, run.id, run.id])
+    expect(correlationIds.slice(-4).map(row => row.correlationId)).toEqual([run.id, run.id, run.id, run.id])
+    const abandonEvents = await db.select({ payload: domainEvents.payload }).from(domainEvents).where(and(
+      eq(domainEvents.aggregateId, run.id),
+      eq(domainEvents.eventType, 'AutonomousRunChanged'),
+    )).orderBy(domainEvents.globalPosition)
+    expect(abandonEvents.slice(-2).map(row => (row.payload as { run: { status: string } }).run.status)).toEqual(['abandoning', 'abandoned'])
   })
 })
 

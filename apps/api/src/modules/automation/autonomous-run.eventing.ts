@@ -22,7 +22,7 @@ export const AUTONOMOUS_RUN_JOB_CHANGED = 'AutonomousRunJobChanged'
 export const AUTONOMOUS_EXCEPTION_OPENED = 'AutonomousExceptionOpened'
 export const AUTONOMOUS_EXCEPTION_CHANGED = 'AutonomousExceptionChanged'
 
-const RUN_STATUSES = ['idle', 'running', 'paused', 'completed', 'failed', 'abandoned'] as const
+const RUN_STATUSES = ['idle', 'running', 'pausing', 'paused', 'abandoning', 'completed', 'failed', 'abandoned'] as const
 const STRATEGIES = ['safe', 'balanced', 'fast'] as const
 const SCOPES = ['project', 'volume', 'chapter_range', 'next_n_chapters', 'from_current_forward', 'continue_incomplete', 'rewrite_selected'] as const
 const JOB_STATUSES = ['pending', 'running', 'completed', 'failed', 'skipped', 'isolated'] as const
@@ -292,11 +292,13 @@ function assertRunTransition(current: AutonomousRunSnapshot['status'], next: Aut
   if (current === next)
     return
   const allowed: Record<AutonomousRunSnapshot['status'], AutonomousRunSnapshot['status'][]> = {
-    idle: ['running', 'failed', 'abandoned'],
-    running: ['paused', 'completed', 'failed', 'abandoned'],
-    paused: ['running', 'failed', 'abandoned'],
+    idle: ['running'],
+    running: ['pausing', 'abandoning', 'completed', 'failed'],
+    pausing: ['paused', 'abandoning'],
+    paused: ['running', 'abandoning'],
+    abandoning: ['abandoned'],
     completed: [],
-    failed: ['running', 'abandoned'],
+    failed: [],
     abandoned: [],
   }
   if (!allowed[current].includes(next))

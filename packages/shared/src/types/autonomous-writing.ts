@@ -1,7 +1,9 @@
 export type AutonomousRunStatus
   = | 'idle'
     | 'running'
+    | 'pausing'
     | 'paused'
+    | 'abandoning'
     | 'completed'
     | 'failed'
     | 'abandoned'

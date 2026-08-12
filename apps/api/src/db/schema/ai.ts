@@ -72,7 +72,9 @@ export const autonomousWritingRuns = pgTable('autonomous_writing_runs', {
   status: text('status').$type<
     'idle'
     | 'running'
+    | 'pausing'
     | 'paused'
+    | 'abandoning'
     | 'completed'
     | 'failed'
     | 'abandoned'

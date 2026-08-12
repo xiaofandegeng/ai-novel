@@ -72,6 +72,28 @@ describe('autonomous run eventing', () => {
     await expect(db.select().from(autonomousWritingRuns)).resolves.toMatchObject([{ targetChapterCount: 1, status: 'completed' }])
   })
 
+  it('requires pausing and abandoning states and keeps failed runs terminal', async () => {
+    await seed(runtime.commands)
+    await runtime.commands.dispatch(command(PREPARE_AUTONOMOUS_RUN_COMMAND, {
+      strategy: 'safe',
+      scopeType: 'project',
+      targetWordsPerChapter: 2500,
+    }))
+    await runtime.commands.dispatch(command(CHANGE_AUTONOMOUS_RUN_COMMAND, { status: 'running' }, 'start'))
+
+    await expect(runtime.commands.dispatch(command(CHANGE_AUTONOMOUS_RUN_COMMAND, { status: 'paused' }, 'skip-pausing')))
+      .rejects
+      .toMatchObject({ code: 'INVALID_AUTONOMOUS_RUN_TRANSITION' })
+    await runtime.commands.dispatch(command(CHANGE_AUTONOMOUS_RUN_COMMAND, { status: 'pausing' }, 'request-pause'))
+    await runtime.commands.dispatch(command(CHANGE_AUTONOMOUS_RUN_COMMAND, { status: 'paused' }, 'finish-pause'))
+    await runtime.commands.dispatch(command(CHANGE_AUTONOMOUS_RUN_COMMAND, { status: 'running' }, 'resume'))
+    await runtime.commands.dispatch(command(CHANGE_AUTONOMOUS_RUN_COMMAND, { status: 'failed' }, 'fail'))
+
+    await expect(runtime.commands.dispatch(command(CHANGE_AUTONOMOUS_RUN_COMMAND, { status: 'running' }, 'restart-failed')))
+      .rejects
+      .toMatchObject({ code: 'INVALID_AUTONOMOUS_RUN_TRANSITION' })
+  })
+
   it('owns exception lifecycle and rejects foreign chapters', async () => {
     await seed(runtime.commands)
     await runtime.commands.dispatch(command(PREPARE_AUTONOMOUS_RUN_COMMAND, {

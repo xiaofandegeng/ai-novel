@@ -226,7 +226,9 @@ export async function createAutonomousRun(
       eq(autonomousWritingRuns.projectId, projectId),
       or(
         eq(autonomousWritingRuns.status, 'running'),
+        eq(autonomousWritingRuns.status, 'pausing'),
         eq(autonomousWritingRuns.status, 'paused'),
+        eq(autonomousWritingRuns.status, 'abandoning'),
         eq(autonomousWritingRuns.status, 'idle'),
       ),
     ))
@@ -242,7 +244,9 @@ export async function createAutonomousRun(
 
     for (const r of activeRuns) {
       if (r.status === 'idle' && !trulyActive.includes(r)) {
-        await changeRun(projectId, r.id, { status: 'abandoned', finishedAt: now() }, `CleanupStaleRun:${r.id}`)
+        await changeRun(projectId, r.id, { status: 'running', startedAt: now() }, `CleanupStaleRun:${r.id}:start`)
+        await changeRun(projectId, r.id, { status: 'abandoning' }, `CleanupStaleRun:${r.id}:request`)
+        await changeRun(projectId, r.id, { status: 'abandoned', finishedAt: now() }, `CleanupStaleRun:${r.id}:complete`)
         const staleJobs = await tx.select().from(autonomousRunJobs).where(and(
           eq(autonomousRunJobs.runId, r.id),
           not(eq(autonomousRunJobs.status, 'completed')),
@@ -519,7 +523,9 @@ export async function getLatestActiveRun(projectId: string) {
     eq(autonomousWritingRuns.projectId, projectId),
     or(
       eq(autonomousWritingRuns.status, 'running'),
+      eq(autonomousWritingRuns.status, 'pausing'),
       eq(autonomousWritingRuns.status, 'paused'),
+      eq(autonomousWritingRuns.status, 'abandoning'),
       eq(autonomousWritingRuns.status, 'idle'),
     ),
   )).orderBy(desc(autonomousWritingRuns.updatedAt)).limit(1)
@@ -550,7 +556,9 @@ export async function startAutonomousRun(projectId: string, runId: string): Prom
     eq(autonomousWritingRuns.projectId, projectId),
     or(
       eq(autonomousWritingRuns.status, 'running'),
+      eq(autonomousWritingRuns.status, 'pausing'),
       eq(autonomousWritingRuns.status, 'paused'),
+      eq(autonomousWritingRuns.status, 'abandoning'),
       eq(autonomousWritingRuns.status, 'idle'),
     ),
     not(eq(autonomousWritingRuns.id, runId)),
@@ -563,7 +571,11 @@ export async function startAutonomousRun(projectId: string, runId: string): Prom
   })
   for (const r of otherActive) {
     if (r.status === 'idle' && !trulyActiveOther.includes(r)) {
-      await changeRun(projectId, r.id, { status: 'abandoned', finishedAt: now() }, `CleanupStaleRun:${r.id}`)
+      await commandBus.runAtomically(async () => {
+        await changeRun(projectId, r.id, { status: 'running', startedAt: now() }, `CleanupStaleRun:${r.id}:start`)
+        await changeRun(projectId, r.id, { status: 'abandoning' }, `CleanupStaleRun:${r.id}:request`)
+        await changeRun(projectId, r.id, { status: 'abandoned', finishedAt: now() }, `CleanupStaleRun:${r.id}:complete`)
+      })
     }
   }
   if (trulyActiveOther.length > 0)
@@ -575,7 +587,13 @@ export async function startAutonomousRun(projectId: string, runId: string): Prom
   })
 
   // P2: 异步启动，防止 API 超时
-  runNextAutonomousStep(projectId, runId).catch((err) => {
+  runNextAutonomousStep(projectId, runId).catch(async (err) => {
+    const [latest] = await db.select({ status: autonomousWritingRuns.status }).from(autonomousWritingRuns).where(and(
+      eq(autonomousWritingRuns.id, runId),
+      eq(autonomousWritingRuns.projectId, projectId),
+    ))
+    if (latest?.status !== 'running')
+      return
     console.error(`[AutonomousRun ${runId}] execution failed:`, err)
   })
 }
@@ -653,9 +671,9 @@ export async function pauseAutonomousRun(projectId: string, runId: string, reaso
 
   await commandBus.runAtomically(async (tx) => {
     await changeRun(projectId, runId, {
-      status: 'paused',
+      status: 'pausing',
       pausedReason: reason || 'Manual pause',
-    }, `PauseRun:${runId}:run`)
+    }, `PauseRun:${runId}:request`)
     const activeJobs = await tx.select({ id: writingJobs.id }).from(writingJobs).where(and(
       eq(writingJobs.autonomousRunId, runId),
       eq(writingJobs.status, 'running'),
@@ -669,6 +687,10 @@ export async function pauseAutonomousRun(projectId: string, runId: string, reaso
         { commandId: `PauseRun:${runId}:job:${job.id}`, correlationId: runId, causationId: runId },
       )
     }
+    await changeRun(projectId, runId, {
+      status: 'paused',
+      pausedReason: reason || 'Manual pause',
+    }, `PauseRun:${runId}:complete`)
   })
 }
 
@@ -721,10 +743,14 @@ export async function abandonAutonomousRun(projectId: string, runId: string): Pr
 
   if (!run)
     throw new Error('Run not found')
-  if (!['idle', 'running', 'paused'].includes(run.status))
+  if (!['running', 'pausing', 'paused'].includes(run.status))
     throw new Error('只能放弃进行中或暂停的任务')
 
   await commandBus.runAtomically(async (tx) => {
+    await changeRun(projectId, runId, {
+      status: 'abandoning',
+      pausedReason: '用户请求放弃本轮自动驾驶',
+    }, `AbandonRun:${runId}:request`)
     const unfinishedJobs = await tx.select().from(autonomousRunJobs).where(and(
       eq(autonomousRunJobs.runId, runId),
       sql`${autonomousRunJobs.status} NOT IN ('completed', 'skipped', 'isolated')`,
@@ -757,7 +783,7 @@ export async function abandonAutonomousRun(projectId: string, runId: string): Pr
       status: 'abandoned',
       pausedReason: '用户放弃本轮自动驾驶',
       finishedAt: now(),
-    }, `AbandonRun:${runId}:run`)
+    }, `AbandonRun:${runId}:complete`)
   })
 }
 

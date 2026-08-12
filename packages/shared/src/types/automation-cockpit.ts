@@ -9,7 +9,7 @@ export interface CockpitProjectSummary {
 
 export interface CockpitRunSummary {
   id: string
-  status: 'running' | 'paused' | 'waiting_review' | 'completed' | 'failed' | 'abandoned' | 'cancelled' | 'idle'
+  status: 'running' | 'pausing' | 'paused' | 'abandoning' | 'completed' | 'failed' | 'abandoned' | 'idle'
   strategy: 'safe' | 'balanced' | 'fast'
   targetChapterCount: number
   completedChapterCount: number
