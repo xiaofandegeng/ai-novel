@@ -56,6 +56,30 @@ describe('automation cockpit composables', () => {
     expect(cockpit.run.value?.id).toBe('run-1')
   })
 
+  it('starts an existing idle run instead of creating a conflicting second run', async () => {
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => response(undefined))
+      .mockImplementationOnce(() => response({
+        ...payload,
+        run: { ...payload.run!, id: 'run-idle', status: 'running' },
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+    const store = useAutomationCockpitStore()
+    store.payload = {
+      ...payload,
+      run: { ...payload.run!, id: 'run-idle', status: 'idle' },
+    }
+    const cockpit = useAutomationCockpit('project-1')
+
+    await cockpit.startRun({ strategy: 'safe', scopeType: 'next_n_chapters', targetChapterCount: 1 })
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/projects/project-1/autonomous-runs/run-idle/start',
+      '/api/projects/project-1/cockpit',
+    ])
+    expect(cockpit.run.value?.status).toBe('running')
+  })
+
   it('polls only while a run is active and stops after unmount', async () => {
     vi.useFakeTimers()
     const fetchMock = vi.fn().mockImplementation(() => response(payload))

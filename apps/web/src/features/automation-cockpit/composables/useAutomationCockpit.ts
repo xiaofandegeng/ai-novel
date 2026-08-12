@@ -34,8 +34,10 @@ export function useAutomationCockpit(projectId: string) {
   async function startRun(input: CreateAutonomousRunInput) {
     if (!projectId)
       return
-    const newRun = await runsApi.createAutonomousRun(projectId, input)
-    await runsApi.startAutonomousRun(projectId, newRun.id)
+    const runId = run.value?.status === 'idle'
+      ? run.value.id
+      : (await runsApi.createAutonomousRun(projectId, input)).id
+    await runsApi.startAutonomousRun(projectId, runId)
     await loadCockpit()
   }
 

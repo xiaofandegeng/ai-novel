@@ -325,4 +325,45 @@ async function handleExceptionAction(exceptionId: string, action: AutonomousExce
     }
   }
 }
+
+@media (max-width: 767px) {
+  .automation-cockpit-view {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+
+    .cockpit-content-layout {
+      flex-direction: column;
+      overflow: visible;
+      padding: 0.75rem;
+
+      .left-control-region {
+        flex: none;
+        width: 100%;
+        overflow: visible;
+        padding-right: 0;
+
+        .pipeline-card {
+          min-height: 0;
+
+          .pipeline-scroll-wrap {
+            overflow: visible;
+          }
+        }
+
+        .event-stream-container {
+          height: auto;
+          min-height: 320px;
+        }
+      }
+
+      .right-narrative-region {
+        flex: none;
+        width: 100%;
+        height: auto;
+        min-height: 560px;
+      }
+    }
+  }
+}
 </style>
