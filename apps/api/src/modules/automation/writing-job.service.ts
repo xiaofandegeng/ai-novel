@@ -2,7 +2,7 @@ import type { AutonomousStrategy, CreateWritingJobInput, WritingJob, WritingJobS
 import type { ChapterSnapshot, SceneSnapshot } from '../story/chapter.eventing'
 import type { SuggestionRunScope } from './postprocess-suggestion.service'
 import type { WritingJobSnapshot } from './writing-job.eventing'
-import { and, asc, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { autonomousRunJobs, autonomousWritingRuns, chapters, chapterScenes, writingJobs, writingJobSteps } from '../../db/schema'
 import { DomainCommandError } from '../../eventing'
@@ -39,6 +39,9 @@ import {
   REPLACE_WRITING_JOB_STEPS_COMMAND,
   REQUEST_WRITING_JOB_EXECUTION_COMMAND,
 } from './writing-job.eventing'
+import { getWritingJob } from './writing-job.queries'
+
+export { getLatestWritingJob, getWritingJob } from './writing-job.queries'
 
 function mapActionToDecision(action: 'continue' | 'repair' | 'isolate' | 'skip' | 'stop_run'): 'approved' | 'medium_risk_repair' | 'isolated' | 'skipped' | 'failed' {
   switch (action) {
@@ -156,26 +159,6 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
     'update_health',
     'done',
   ],
-}
-
-export async function getLatestWritingJob(projectId: string) {
-  const [activeRow] = await db.select().from(writingJobs).where(and(
-    eq(writingJobs.projectId, projectId),
-    inArray(writingJobs.status, ['idle', 'running']),
-  )).orderBy(desc(writingJobs.createdAt))
-  if (activeRow)
-    return activeRow
-
-  const [row] = await db.select().from(writingJobs).where(eq(writingJobs.projectId, projectId)).orderBy(desc(writingJobs.createdAt))
-  return row ?? null
-}
-
-export async function getWritingJob(projectId: string, id: string) {
-  const [row] = await db.select().from(writingJobs).where(and(
-    eq(writingJobs.id, id),
-    eq(writingJobs.projectId, projectId),
-  ))
-  return row ?? null
 }
 
 export async function createWritingJob(projectId: string, input: CreateWritingJobInput) {

@@ -3,13 +3,16 @@ import type { Hono } from 'hono'
 import { fail, success } from '../../shared/http/responses'
 import { errorMessage } from '../../shared/utils'
 import {
-  abandonAutonomousRun,
-  createAutonomousRun,
   getAutonomousExceptions,
   getAutonomousRun,
   getAutonomousRunInsight,
   getLatestActiveRun,
   getLatestRun,
+  getProjectNarrativeInsight,
+} from './autonomous-writing.queries'
+import {
+  abandonAutonomousRun,
+  createAutonomousRun,
   pauseAutonomousRun,
   resolveAutonomousExceptionAction,
   resumeAutonomousRun,
@@ -32,7 +35,6 @@ export function registerAutonomousRunRoutes(app: Hono) {
 
   app.get('/api/projects/:projectId/autonomous-runs/insight', async (c) => {
     const projectId = c.req.param('projectId')
-    const { getProjectNarrativeInsight } = await import('./autonomous-writing.service')
     const insight = await getProjectNarrativeInsight(projectId)
     return c.json(success(insight))
   })

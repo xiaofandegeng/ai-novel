@@ -1,26 +1,18 @@
 import type { AutonomousExceptionAction, AutonomousScopeType, AutonomousWritingRun, CreateAutonomousRunInput, WritingJobStepType } from '@ai-novel/shared'
 import type { AutonomousExceptionSnapshot, AutonomousRunJobSnapshot, AutonomousRunSnapshot } from './autonomous-run.eventing'
-import { and, asc, desc, eq, inArray, isNull, not, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, not, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import {
   autonomousRunExceptions,
   autonomousRunJobs,
   autonomousWritingRuns,
-  chapterChangeSetItems,
-  chapterChangeSets,
-  chapterPostprocessSuggestions,
   chapters,
-  characterRelationships,
-  characters,
-  conflicts,
-  foreshadowingItems,
   novelProjects,
   writingJobs,
   writingJobSteps,
 } from '../../db/schema'
 import { commandBus, wakeEventOutbox } from '../../eventing-runtime'
 import { generateId, now, timestampMs } from '../../shared/utils'
-import { getProjectHealthMetrics } from '../narrative/health-metrics.service'
 import { dispatchChapterCommand } from '../story/chapter.commands'
 import { CREATE_CHAPTER_COMMAND } from '../story/chapter.eventing'
 import { compactAutonomousRunPayload, dispatchAutonomousRunCommand } from './autonomous-run.commands'
@@ -42,23 +34,7 @@ import {
   REPLACE_WRITING_JOB_STEPS_COMMAND,
 } from './writing-job.eventing'
 
-const STEP_LABEL_ZH: Record<string, string> = {
-  prepare_context: '构建上下文',
-  generate_plan: '生成大纲',
-  generate_draft: '生成正文',
-  build_change_set: '构建变更集',
-  evaluate_change_set: '评估变更集',
-  auto_repair: '自动修复',
-  apply_change_set: '应用变更集',
-  postprocess: '章后管线',
-  classify_suggestions: '分类建议',
-  apply_suggestions: '应用建议',
-  update_health: '更新健康指标',
-  done: '任务完成',
-}
-
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
-type RunJobRow = typeof autonomousRunJobs.$inferSelect
 type ChapterRow = typeof chapters.$inferSelect
 type ExceptionType = typeof autonomousRunExceptions.$inferInsert['exceptionType']
 
@@ -120,97 +96,6 @@ async function changeException(
     compactAutonomousRunPayload({ id: exceptionId, ...fields }),
     commandId ? { commandId, correlationId: runId, causationId: exceptionId } : {},
   )
-}
-
-async function attachStepSummaries(jobs: RunJobRow[]) {
-  const writingJobIds = jobs.map(j => j.writingJobId).filter(Boolean) as string[]
-  if (writingJobIds.length === 0) {
-    return jobs.map(j => ({ ...j, stepSummary: null }))
-  }
-  const allSteps = await db.select({
-    jobId: writingJobSteps.jobId,
-    stepType: writingJobSteps.stepType,
-    status: writingJobSteps.status,
-  }).from(writingJobSteps).where(inArray(writingJobSteps.jobId, writingJobIds))
-
-  const summaries = new Map<string, { totalSteps: number, completedSteps: number, currentStep: string | null, currentStepLabel: string | null }>()
-  for (const step of allSteps) {
-    let s = summaries.get(step.jobId)
-    if (!s) {
-      s = { totalSteps: 0, completedSteps: 0, currentStep: null, currentStepLabel: null }
-      summaries.set(step.jobId, s)
-    }
-    s.totalSteps++
-    if (step.status === 'completed' || step.status === 'skipped')
-      s.completedSteps++
-    if (step.status === 'running') {
-      s.currentStep = step.stepType
-      s.currentStepLabel = STEP_LABEL_ZH[step.stepType] || step.stepType
-    }
-  }
-
-  return jobs.map(j => ({
-    ...j,
-    stepSummary: summaries.get(j.writingJobId) || { totalSteps: 0, completedSteps: 0, currentStep: null, currentStepLabel: null },
-  }))
-}
-
-export async function getProjectNarrativeInsight(projectId: string) {
-  const health = await getProjectHealthMetrics(projectId)
-
-  const [charCount] = await db.select({ count: sql`count(*)` }).from(characters).where(eq(characters.projectId, projectId))
-  const [relCount] = await db.select({ count: sql`count(*)` }).from(characterRelationships).where(eq(characterRelationships.projectId, projectId))
-  const [conflictCount] = await db.select({ count: sql`count(*)` }).from(conflicts).where(and(
-    eq(conflicts.projectId, projectId),
-    not(eq(conflicts.status, 'resolved')),
-  ))
-  const [openForeshadowingCount] = await db.select({ count: sql`count(*)` }).from(foreshadowingItems).where(and(
-    eq(foreshadowingItems.projectId, projectId),
-    or(eq(foreshadowingItems.status, 'open'), eq(foreshadowingItems.status, 'progressing')),
-  ))
-  const [pendingSuggestionCount] = await db.select({ count: sql`count(*)` }).from(chapterPostprocessSuggestions).where(and(
-    eq(chapterPostprocessSuggestions.projectId, projectId),
-    eq(chapterPostprocessSuggestions.status, 'pending'),
-  ))
-  const [appliedSuggestionCount] = await db.select({ count: sql`count(*)` }).from(chapterPostprocessSuggestions).where(and(
-    eq(chapterPostprocessSuggestions.projectId, projectId),
-    or(
-      eq(chapterPostprocessSuggestions.status, 'applied'),
-      eq(chapterPostprocessSuggestions.status, 'acknowledged'),
-    ),
-  ))
-
-  // Get recent structural changes
-  const recentEvents = await db.select()
-    .from(chapterChangeSetItems)
-    .where(and(
-      eq(chapterChangeSetItems.projectId, projectId),
-      not(eq(chapterChangeSetItems.itemType, 'draft')),
-    ))
-    .orderBy(desc(chapterChangeSetItems.createdAt))
-    .limit(10)
-
-  return {
-    stats: {
-      totalChapters: health.totalChapters,
-      completedChapters: health.completedChapters,
-      totalWords: health.totalWords,
-      characterCount: Number(charCount?.count || 0),
-      relationshipCount: Number(relCount?.count || 0),
-      activeConflictCount: Number(conflictCount?.count || health.activeConflicts || 0),
-      openForeshadowingCount: Number(openForeshadowingCount?.count || 0),
-      pendingSuggestionCount: Number(pendingSuggestionCount?.count || 0),
-      appliedSuggestionCount: Number(appliedSuggestionCount?.count || 0),
-    },
-    radarMetrics: health.radarMetrics,
-    recentEvents: recentEvents.map(ev => ({
-      id: ev.id,
-      type: ev.itemType,
-      title: ev.title,
-      status: ev.status,
-      createdAt: ev.createdAt,
-    })),
-  }
 }
 
 export async function createAutonomousRun(
@@ -516,42 +401,6 @@ async function prepareRunJobs(
   return targetChapters.length
 }
 
-export async function getAutonomousRun(projectId: string, runId: string) {
-  const [run] = await db.select().from(autonomousWritingRuns).where(and(
-    eq(autonomousWritingRuns.id, runId),
-    eq(autonomousWritingRuns.projectId, projectId),
-  ))
-
-  if (!run)
-    return null
-
-  const jobs = await db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.runId, runId)).orderBy(asc(autonomousRunJobs.orderIndex))
-  const jobsWithSteps = await attachStepSummaries(jobs)
-
-  return { ...run, jobs: jobsWithSteps }
-}
-
-export async function getLatestActiveRun(projectId: string) {
-  const [run] = await db.select().from(autonomousWritingRuns).where(and(
-    eq(autonomousWritingRuns.projectId, projectId),
-    or(
-      eq(autonomousWritingRuns.status, 'running'),
-      eq(autonomousWritingRuns.status, 'pausing'),
-      eq(autonomousWritingRuns.status, 'paused'),
-      eq(autonomousWritingRuns.status, 'abandoning'),
-      eq(autonomousWritingRuns.status, 'idle'),
-    ),
-  )).orderBy(desc(autonomousWritingRuns.updatedAt)).limit(1)
-
-  if (!run)
-    return null
-
-  const jobs = await db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.runId, run.id)).orderBy(asc(autonomousRunJobs.orderIndex))
-  const jobsWithSteps = await attachStepSummaries(jobs)
-
-  return { ...run, jobs: jobsWithSteps }
-}
-
 export async function startAutonomousRun(projectId: string, runId: string): Promise<void> {
   const [run] = await db.select().from(autonomousWritingRuns).where(and(
     eq(autonomousWritingRuns.id, runId),
@@ -847,13 +696,6 @@ export async function recordAutonomousException(
   )
 }
 
-export async function getAutonomousExceptions(projectId: string, runId: string) {
-  return db.select().from(autonomousRunExceptions).where(and(
-    eq(autonomousRunExceptions.runId, runId),
-    eq(autonomousRunExceptions.projectId, projectId),
-  )).orderBy(desc(autonomousRunExceptions.createdAt))
-}
-
 export async function resolveAutonomousExceptionAction(
   projectId: string,
   runId: string,
@@ -955,152 +797,4 @@ function exceptionResolution(action: AutonomousExceptionAction): string {
     stop_run: '作者决定终止本轮自动写作',
   }
   return labels[action]
-}
-
-export async function getLatestRun(projectId: string) {
-  const [run] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.projectId, projectId)).orderBy(desc(autonomousWritingRuns.updatedAt)).limit(1)
-
-  if (!run)
-    return null
-
-  const jobs = await db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.runId, run.id)).orderBy(asc(autonomousRunJobs.orderIndex))
-
-  return { ...run, jobs }
-}
-
-export async function getAutonomousRunInsight(projectId: string, runId: string) {
-  const [run] = await db.select().from(autonomousWritingRuns).where(and(
-    eq(autonomousWritingRuns.id, runId),
-    eq(autonomousWritingRuns.projectId, projectId),
-  ))
-  if (!run)
-    throw new Error('未找到自动驾驶记录')
-
-  // 获取这一轮下的所有 jobs
-  const jobs = await db.select({
-    writingJobId: autonomousRunJobs.writingJobId,
-    chapterId: autonomousRunJobs.chapterId,
-    status: autonomousRunJobs.status,
-  }).from(autonomousRunJobs).where(eq(autonomousRunJobs.runId, runId))
-
-  const jobIds = jobs.map(j => j.writingJobId).filter(Boolean) as string[]
-
-  let changeItems: Array<{
-    id: string
-    itemType: typeof chapterChangeSetItems.$inferSelect['itemType']
-    title: string
-    status: typeof chapterChangeSetItems.$inferSelect['status']
-    createdAt: string
-  }> = []
-  if (jobIds.length > 0) {
-    // 找出所有属于本轮 jobs 的 changeset items
-    changeItems = await db.select({
-      id: chapterChangeSetItems.id,
-      itemType: chapterChangeSetItems.itemType,
-      title: chapterChangeSetItems.title,
-      status: chapterChangeSetItems.status,
-      createdAt: chapterChangeSetItems.createdAt,
-    })
-      .from(chapterChangeSetItems)
-      .innerJoin(chapterChangeSets, eq(chapterChangeSetItems.changeSetId, chapterChangeSets.id))
-      .where(inArray(chapterChangeSets.writingJobId, jobIds))
-  }
-
-  // 聚合计数
-  const createdCharacters = changeItems.filter(i => i.itemType === 'character_create' && i.status === 'applied').length
-  const updatedCharacters = changeItems.filter(i => i.itemType === 'character_update' && i.status === 'applied').length
-  const createdRelationships = changeItems.filter(i => i.itemType === 'relationship_create' && i.status === 'applied').length
-  const updatedRelationships = changeItems.filter(i => i.itemType === 'relationship_update' && i.status === 'applied').length
-  const createdConflicts = changeItems.filter(i => i.itemType === 'conflict_create' && i.status === 'applied').length
-  const updatedConflicts = changeItems.filter(i => i.itemType === 'conflict_update' && i.status === 'applied').length
-  const createdForeshadowing = changeItems.filter(i => i.itemType === 'foreshadowing_create' && i.status === 'applied').length
-  const paidOffForeshadowing = changeItems.filter(i => i.itemType === 'foreshadowing_payoff' && i.status === 'applied').length
-  const createdFacts = changeItems.filter(i => i.itemType === 'fact_create' && i.status === 'applied').length
-
-  // 获取整个项目的建议统计
-  const [pendingSuggestionCount] = await db.select({ count: sql`count(*)` }).from(chapterPostprocessSuggestions).where(and(
-    eq(chapterPostprocessSuggestions.projectId, projectId),
-    eq(chapterPostprocessSuggestions.status, 'pending'),
-  ))
-  const [appliedSuggestionCount] = await db.select({ count: sql`count(*)` }).from(chapterPostprocessSuggestions).where(and(
-    eq(chapterPostprocessSuggestions.projectId, projectId),
-    or(
-      eq(chapterPostprocessSuggestions.status, 'applied'),
-      eq(chapterPostprocessSuggestions.status, 'acknowledged'),
-    ),
-  ))
-
-  const health = await getProjectHealthMetrics(projectId)
-
-  // 截取前 10 条非草稿的剧情和设定变更事件
-  const recentEvents = changeItems
-    .filter(i => i.itemType !== 'draft')
-    .sort((a, b) => timestampMs(b.createdAt) - timestampMs(a.createdAt))
-    .slice(0, 10)
-
-  // 进度统计
-  const totalChapters = jobs.length
-  const completedChapters = jobs.filter(j => j.status === 'completed').length
-
-  // 真实字数：从已完成章节的 draft 字段统计
-  const completedChapterIds = jobs.filter(j => j.status === 'completed').map(j => j.chapterId).filter(Boolean) as string[]
-  let writtenWords = 0
-  if (completedChapterIds.length > 0) {
-    const completedChaptersData = await db.select({ draft: chapters.draft }).from(chapters).where(inArray(chapters.id, completedChapterIds))
-    writtenWords = completedChaptersData.reduce((sum, ch) => sum + (ch.draft?.length || 0), 0)
-  }
-  const targetWords = totalChapters * run.targetWordsPerChapter
-
-  return {
-    runId: run.id,
-    projectId: run.projectId,
-    status: run.status,
-    stats: {
-      pendingSuggestionCount: Number(pendingSuggestionCount?.count || 0),
-      appliedSuggestionCount: Number(appliedSuggestionCount?.count || 0),
-    },
-    progress: {
-      completedChapters,
-      totalChapters,
-      writtenWords,
-      targetWords,
-    },
-    syncSummary: {
-      createdCharacters,
-      updatedCharacters,
-      createdRelationships,
-      updatedRelationships,
-      createdConflicts,
-      updatedConflicts,
-      createdForeshadowing,
-      paidOffForeshadowing,
-      createdFacts,
-      pendingSuggestions: Number(pendingSuggestionCount?.count || 0),
-      appliedSuggestions: Number(appliedSuggestionCount?.count || 0),
-    },
-    health: {
-      score: health.radarMetrics?.theme
-        ? Math.round((
-            (health.radarMetrics.theme || 80)
-            + (health.radarMetrics.character || 80)
-            + (health.radarMetrics.foreshadowing || 80)
-            + (health.radarMetrics.conflict || 80)
-            + (health.radarMetrics.pacing || 80)
-            + (health.radarMetrics.style || 80)
-          ) / 6)
-        : 85,
-      themeRisk: 100 - (health.radarMetrics?.theme || 80),
-      characterRisk: 100 - (health.radarMetrics?.character || 80),
-      continuityRisk: 100 - (health.radarMetrics?.conflict || 80),
-      foreshadowingRisk: 100 - (health.radarMetrics?.foreshadowing || 80),
-      rhythmRisk: 100 - (health.radarMetrics?.pacing || 80),
-    },
-    recentEvents: recentEvents.map(ev => ({
-      id: ev.id,
-      type: ev.itemType,
-      title: ev.title,
-      status: ev.status,
-      createdAt: ev.createdAt,
-    })),
-  }
 }
