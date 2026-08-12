@@ -30,7 +30,7 @@ export const chapterPostprocessSuggestions = pgTable('chapter_postprocess_sugges
   suggestionType: text('suggestion_type').$type<'fact_triple' | 'foreshadowing_add' | 'foreshadowing_payoff' | 'chapter_element' | 'character_add' | 'character_state' | 'conflict_add' | 'conflict_update' | 'continuity_note' | 'style_note' | 'relationship_update'>().notNull(),
   payload: text('payload').notNull(),
   confidence: integer('confidence').notNull().default(70),
-  status: text('status').$type<'pending' | 'accepted' | 'rejected' | 'applied' | 'acknowledged' | 'apply_failed'>().notNull().default('pending'),
+  status: text('status').$type<'pending' | 'accepted' | 'applying' | 'rejected' | 'applied' | 'acknowledged' | 'apply_failed'>().notNull().default('pending'),
   reason: text('reason'),
   ...timestamps,
 })

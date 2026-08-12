@@ -2,6 +2,7 @@ import type { EventRegistry } from './event-registry'
 import type { EventStore, EventStoreSession } from './event-store'
 import type { CommandDecision, CommandEnvelope, JsonObject } from './event-types'
 import type { ProjectionRegistry } from './projection-runner'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { eq } from 'drizzle-orm'
 import { db } from '../db'
 import { commandReceipts } from '../db/schema'
@@ -24,6 +25,7 @@ type CommandReceipt = typeof commandReceipts.$inferSelect
 
 export class CommandBus {
   private readonly handlers = new Map<string, RegisteredCommandHandler>()
+  private readonly sessionStorage = new AsyncLocalStorage<EventStoreSession>()
 
   constructor(
     private readonly store: EventStore,
@@ -48,49 +50,20 @@ export class CommandBus {
     if (!handler)
       throw new UnknownCommandTypeError(command.commandType)
 
+    const activeSession = this.sessionStorage.getStore()
+    if (activeSession)
+      return this.dispatchInSession<TResult>(command, handler, activeSession)
+
     const existing = await this.readReceipt(command.commandId)
     if (existing)
       return receiptResult<TResult>(existing)
 
     try {
       return await this.store.withTransaction(async (session) => {
-        const [receipt] = await session.transaction.select()
-          .from(commandReceipts)
-          .where(eq(commandReceipts.commandId, command.commandId))
-          .limit(1)
-        if (receipt)
-          return receiptResult<TResult>(receipt)
-
-        const decision = await handler(command, { session })
-        assertProjectScope(command, decision)
-        const streams = this.events
-          ? decision.streams.map(append => ({
-              ...append,
-              events: append.events.map(event => this.events!.normalizePending(event)),
-            }))
-          : decision.streams
-
-        const events = await session.appendBatch({
-          commandId: command.commandId,
-          correlationId: command.correlationId,
-          ...(command.causationId ? { causationId: command.causationId } : {}),
-          streams,
-        })
-        await this.projections.projectSync(session.transaction, events)
-        await session.enqueueOutbox(decision.outbox ?? [])
-
-        const finishedAt = new Date().toISOString()
-        await session.transaction.insert(commandReceipts).values({
-          commandId: command.commandId,
-          commandType: command.commandType,
-          aggregateType: command.aggregateType,
-          aggregateId: command.aggregateId,
-          projectId: command.projectId ?? null,
-          status: 'completed',
-          result: decision.result,
-          finishedAt,
-        })
-        return decision.result as TResult
+        return this.sessionStorage.run(
+          session,
+          () => this.dispatchInSession<TResult>(command, handler, session),
+        )
       })
     }
     catch (error: unknown) {
@@ -98,6 +71,61 @@ export class CommandBus {
         await this.storeFailure(command, error)
       throw error
     }
+  }
+
+  async runAtomically<TResult>(
+    work: (transaction: EventStoreSession['transaction']) => Promise<TResult>,
+  ): Promise<TResult> {
+    const activeSession = this.sessionStorage.getStore()
+    if (activeSession)
+      return work(activeSession.transaction)
+    return this.store.withTransaction(session => this.sessionStorage.run(
+      session,
+      () => work(session.transaction),
+    ))
+  }
+
+  private async dispatchInSession<TResult extends JsonObject>(
+    command: CommandEnvelope,
+    handler: RegisteredCommandHandler,
+    session: EventStoreSession,
+  ): Promise<TResult> {
+    const [receipt] = await session.transaction.select()
+      .from(commandReceipts)
+      .where(eq(commandReceipts.commandId, command.commandId))
+      .limit(1)
+    if (receipt)
+      return receiptResult<TResult>(receipt)
+
+    const decision = await handler(command, { session })
+    assertProjectScope(command, decision)
+    const streams = this.events
+      ? decision.streams.map(append => ({
+          ...append,
+          events: append.events.map(event => this.events!.normalizePending(event)),
+        }))
+      : decision.streams
+
+    const events = await session.appendBatch({
+      commandId: command.commandId,
+      correlationId: command.correlationId,
+      ...(command.causationId ? { causationId: command.causationId } : {}),
+      streams,
+    })
+    await this.projections.projectSync(session.transaction, events)
+    await session.enqueueOutbox(decision.outbox ?? [])
+
+    await session.transaction.insert(commandReceipts).values({
+      commandId: command.commandId,
+      commandType: command.commandType,
+      aggregateType: command.aggregateType,
+      aggregateId: command.aggregateId,
+      projectId: command.projectId ?? null,
+      status: 'completed',
+      result: decision.result,
+      finishedAt: new Date().toISOString(),
+    })
+    return decision.result as TResult
   }
 
   private async readReceipt(commandId: string): Promise<CommandReceipt | undefined> {

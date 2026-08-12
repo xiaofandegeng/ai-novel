@@ -121,11 +121,11 @@
 - Modify: `apps/api/src/modules/automation/*.service.ts`
 - Modify: affected automation and HTTP tests
 
-- [ ] Route accepted character, relationship, conflict, foreshadowing, fact, element, and memory changes through domain commands.
-- [ ] Preserve correlation and causation from run, job, change-set, postprocess, and suggestion context.
-- [ ] Ensure rejected, blocked, stale, or failed suggestions never mutate narrative projections.
-- [ ] Verify retries cannot duplicate domain entities or timeline entries.
-- [ ] Commit: `refactor(api): command all narrative automation writes`.
+- [x] Route accepted character, relationship, conflict, foreshadowing, fact, element, and memory changes through domain commands.
+- [x] Preserve correlation and causation from run, job, change-set, postprocess, and suggestion context.
+- [x] Ensure rejected, blocked, stale, or failed suggestions never mutate narrative projections.
+- [x] Verify retries cannot duplicate domain entities or timeline entries.
+- [x] Commit: `refactor(api): command all narrative automation writes`.
 
 ## Task 9: Architecture gates and phase verification
 

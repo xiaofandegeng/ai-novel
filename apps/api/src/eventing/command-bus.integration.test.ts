@@ -121,6 +121,30 @@ describe('commandBus', () => {
     await expect(readReceipt('command-1')).resolves.toBeUndefined()
   })
 
+  it('runs multiple dispatched commands in one atomic unit of work', async () => {
+    const bus = new CommandBus(store, new ProjectionRegistry())
+    const secondStream = { ...stream, aggregateId: 'thing-2' }
+    bus.register('CreateKernelThing', async command => ({
+      streams: [{
+        stream: command.aggregateId === secondStream.aggregateId ? secondStream : stream,
+        expectedVersion: 0,
+        events: [pending(`event-${command.aggregateId}`, 'KernelThingCreated')],
+      }],
+      result: { id: command.aggregateId },
+    }))
+
+    await expect(bus.runAtomically(async () => {
+      await bus.dispatch(command())
+      await bus.dispatch({ ...command(), commandId: 'command-2', aggregateId: secondStream.aggregateId })
+      throw new Error('unit failed')
+    })).rejects.toThrow('unit failed')
+
+    await expect(store.loadStream(stream)).resolves.toHaveLength(0)
+    await expect(store.loadStream(secondStream)).resolves.toHaveLength(0)
+    await expect(readReceipt('command-1')).resolves.toBeUndefined()
+    await expect(readReceipt('command-2')).resolves.toBeUndefined()
+  })
+
   it('persists a deterministic domain rejection and does not execute it twice', async () => {
     let handlerCalls = 0
     const bus = new CommandBus(store, new ProjectionRegistry())

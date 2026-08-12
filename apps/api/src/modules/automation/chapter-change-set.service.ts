@@ -12,6 +12,7 @@ import {
   chapterScenes,
   writingJobSteps,
 } from '../../db/schema'
+import { commandBus } from '../../eventing-runtime'
 import { errorMessage, generateId, now } from '../../shared/utils'
 import { dispatchChapterKnowledgeCommand } from '../story/chapter-knowledge.commands'
 import { RECORD_CHAPTER_MEMORY_COMMAND } from '../story/chapter-knowledge.eventing'
@@ -418,7 +419,7 @@ export async function applyChangeSet(
     return { alreadyApplied: true }
 
   try {
-    return await db.transaction(async (tx) => {
+    return await commandBus.runAtomically(async (tx) => {
       // 1. Get current content for before snapshot
       // P1-5: 章节查询增加 projectId 限制
       const [chapter] = await tx.select({ draft: chapters.draft })
@@ -542,7 +543,6 @@ export async function applyChangeSet(
                 projectId,
                 fullChangeSet.chapterId,
                 70, // Default confidence for change sets
-                tx,
                 {
                   commandId: `ApplyChangeSet:${changeSetId}:item:${item.id}`,
                   correlationId: changeSetId,

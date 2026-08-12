@@ -95,6 +95,21 @@ describe('api architecture boundaries', () => {
       'chapters',
       'chapterScenes',
       'chapterVersions',
+      'characters',
+      'characterArcEvents',
+      'characterRelationships',
+      'conflicts',
+      'conflictParticipants',
+      'conflictTimelineEvents',
+      'foreshadowingItems',
+      'foreshadowingCharacters',
+      'chapterElements',
+      'chapterMemories',
+      'storyFactTriples',
+      'knowledgeSources',
+      'knowledgeChunks',
+      'knowledgeNotes',
+      'authoringEvents',
     ]
     const applicationFiles = sourceFiles(sourceRoot)
       .filter(file => !file.endsWith('.test.ts'))
