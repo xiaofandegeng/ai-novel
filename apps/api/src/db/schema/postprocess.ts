@@ -1,8 +1,6 @@
 import { integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
 import { autonomousWritingRuns } from './ai'
-import { chapterPostprocessRuns, chapters } from './chapter'
-
 import { novelProjects } from './project'
 
 export const chapterElements = pgTable('chapter_elements', {
@@ -25,8 +23,8 @@ export const chapterElements = pgTable('chapter_elements', {
 export const chapterPostprocessSuggestions = pgTable('chapter_postprocess_suggestions', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
-  runId: text('run_id').references(() => chapterPostprocessRuns.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull(),
+  runId: text('run_id'),
   suggestionType: text('suggestion_type').$type<'fact_triple' | 'foreshadowing_add' | 'foreshadowing_payoff' | 'chapter_element' | 'character_add' | 'character_state' | 'conflict_add' | 'conflict_update' | 'continuity_note' | 'style_note' | 'relationship_update'>().notNull(),
   payload: text('payload').notNull(),
   confidence: integer('confidence').notNull().default(70),

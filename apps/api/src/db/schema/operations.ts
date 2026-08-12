@@ -103,7 +103,7 @@ export const projectHealthReports = pgTable('project_health_reports', {
 export const chapterStyleFingerprints = pgTable('chapter_style_fingerprints', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull(),
   sceneId: text('scene_id'), // Optional, references chapter_scenes if scope is 'scene'
   scope: text('scope').$type<'chapter' | 'scene'>().notNull().default('chapter'),
   sentenceLengthAvg: integer('sentence_length_avg'),

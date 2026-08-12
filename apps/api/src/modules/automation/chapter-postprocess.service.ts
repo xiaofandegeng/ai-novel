@@ -1,8 +1,9 @@
 import type { ChapterMemory, ChapterPostprocessResult } from '@ai-novel/shared'
 import type { ChapterMemorySnapshot } from '../story/chapter-knowledge.eventing'
+import type { PostprocessRunSnapshot, StyleFingerprintSnapshot } from './postprocess.eventing'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, chapterStyleFingerprints, characters, conflicts, foreshadowingItems, novelProjects } from '../../db/schema'
+import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, characters, conflicts, foreshadowingItems, novelProjects } from '../../db/schema'
 import { errorMessage, generateId } from '../../shared/utils'
 import { callAIJSON } from '../ai/ai.service'
 import { getOrCreateEmbedding } from '../ai/embedding.service'
@@ -11,6 +12,12 @@ import { RECORD_CHAPTER_MEMORY_COMMAND } from '../story/chapter-knowledge.eventi
 import { dispatchChapterCommand } from '../story/chapter.commands'
 import { CHANGE_CHAPTER_COMMAND } from '../story/chapter.eventing'
 import { createSuggestion } from './postprocess-suggestion.service'
+import { compactPostprocessPayload, dispatchPostprocessRunCommand, dispatchStyleFingerprintCommand } from './postprocess.commands'
+import {
+  CHANGE_POSTPROCESS_RUN_COMMAND,
+  RECORD_STYLE_FINGERPRINT_COMMAND,
+  REQUEST_POSTPROCESS_RUN_COMMAND,
+} from './postprocess.eventing'
 
 export async function getChapterMemory(projectId: string, chapterId: string): Promise<ChapterMemory | null> {
   const [row] = await db.select().from(chapterMemories).where(and(
@@ -289,15 +296,10 @@ export async function runChapterPostprocess(input: {
     throw new Error('章节不存在')
 
   const runId = generateId()
-  const now = new Date().toISOString()
-  await db.insert(chapterPostprocessRuns).values({
-    id: runId,
-    projectId,
+  await dispatchPostprocessRunCommand<PostprocessRunSnapshot>(REQUEST_POSTPROCESS_RUN_COMMAND, projectId, runId, {
     chapterId,
-    status: 'running',
     trigger,
-    startedAt: now,
-  })
+  }, { commandId: `RequestPostprocess:${runId}`, correlationId: runId })
 
   try {
     const parsed = await extractChapterChanges({ projectId, chapterId, content, trigger })
@@ -610,13 +612,8 @@ export async function runChapterPostprocess(input: {
     }
 
     const styleFingerprint = buildStyleFingerprint(content, styleNotesStr)
-    await db.delete(chapterStyleFingerprints).where(and(
-      eq(chapterStyleFingerprints.projectId, projectId),
-      eq(chapterStyleFingerprints.chapterId, chapterId),
-    ))
-    const [fingerprint] = await db.insert(chapterStyleFingerprints).values({
-      id: generateId(),
-      projectId,
+    const fingerprintId = `chapter:${chapterId}`
+    const fingerprint = await dispatchStyleFingerprintCommand<StyleFingerprintSnapshot>(RECORD_STYLE_FINGERPRINT_COMMAND, projectId, fingerprintId, compactPostprocessPayload({
       chapterId,
       sceneId: null,
       scope: 'chapter',
@@ -626,7 +623,7 @@ export async function runChapterPostprocess(input: {
       conflictDensity: styleFingerprint.conflictDensity,
       hookDensity: styleFingerprint.hookDensity,
       styleSummary: styleFingerprint.styleSummary,
-    }).returning()
+    }), { commandId: `RecordStyleFingerprint:${runId}`, correlationId: runId, causationId: runId })
 
     if (fingerprint) {
       await getOrCreateEmbedding({
@@ -637,19 +634,19 @@ export async function runChapterPostprocess(input: {
       }).catch(err => console.error('Failed to embed style fingerprint:', err))
     }
 
-    await db.update(chapterPostprocessRuns).set({
+    await dispatchPostprocessRunCommand(CHANGE_POSTPROCESS_RUN_COMMAND, projectId, runId, {
       status: 'completed',
       finishedAt: new Date().toISOString(),
-    }).where(eq(chapterPostprocessRuns.id, runId))
+    }, { commandId: `CompletePostprocess:${runId}`, correlationId: runId, causationId: runId })
 
     return { memory, warnings, conflictUpdates: conflictUpdatesToReturn }
   }
   catch (error: unknown) {
-    await db.update(chapterPostprocessRuns).set({
+    await dispatchPostprocessRunCommand(CHANGE_POSTPROCESS_RUN_COMMAND, projectId, runId, {
       status: 'failed',
       errorMessage: errorMessage(error, 'Unknown error'),
       finishedAt: new Date().toISOString(),
-    }).where(eq(chapterPostprocessRuns.id, runId))
+    }, { commandId: `FailPostprocess:${runId}`, correlationId: runId, causationId: runId })
     throw error
   }
 }
@@ -963,9 +960,8 @@ ${truncatedContent}
     ? parsed.styleNotes.map(s => `${s.title}：${s.description}`).join('；')
     : null
   const styleFingerprint = buildStyleFingerprint(content, styleNotesStr)
-  const [fingerprint] = await db.insert(chapterStyleFingerprints).values({
-    id: generateId(),
-    projectId,
+  const fingerprintId = `scene:${sceneId}`
+  const fingerprint = await dispatchStyleFingerprintCommand<StyleFingerprintSnapshot>(RECORD_STYLE_FINGERPRINT_COMMAND, projectId, fingerprintId, compactPostprocessPayload({
     chapterId,
     sceneId,
     scope: 'scene',
@@ -975,7 +971,7 @@ ${truncatedContent}
     conflictDensity: styleFingerprint.conflictDensity,
     hookDensity: styleFingerprint.hookDensity,
     styleSummary: styleFingerprint.styleSummary,
-  }).returning()
+  }), { correlationId: sceneId, causationId: sceneId })
 
   if (fingerprint) {
     await getOrCreateEmbedding({

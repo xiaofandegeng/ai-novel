@@ -4,7 +4,9 @@ import type { ConflictSnapshot, ConflictTimelineSnapshot } from '../narrative/co
 import type { ForeshadowingSnapshot } from '../narrative/foreshadowing.eventing'
 import type { StoryFactSnapshot } from '../narrative/narrative-knowledge.eventing'
 import type { ChapterElementSnapshot } from '../story/chapter-knowledge.eventing'
-import { and, eq, inArray } from 'drizzle-orm'
+import type { PostprocessCommandOptions } from './postprocess.commands'
+import type { PostprocessSuggestionSnapshot } from './postprocess.eventing'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import {
   chapterPostprocessSuggestions,
@@ -15,7 +17,7 @@ import {
 } from '../../db/schema'
 import { DomainCommandError } from '../../eventing'
 import { commandBus } from '../../eventing-runtime'
-import { errorMessage, generateId, now } from '../../shared/utils'
+import { errorMessage, generateId } from '../../shared/utils'
 import { normalizeCharacterPair } from '../character/character-utils.service'
 import { compactCharacterPayload, dispatchCharacterCommand } from '../character/character.commands'
 import {
@@ -37,6 +39,11 @@ import { compactNarrativeKnowledgePayload, dispatchNarrativeKnowledgeCommand } f
 import { RECORD_STORY_FACT_COMMAND } from '../narrative/narrative-knowledge.eventing'
 import { compactChapterKnowledgePayload, dispatchChapterKnowledgeCommand } from '../story/chapter-knowledge.commands'
 import { ADD_CHAPTER_ELEMENT_COMMAND } from '../story/chapter-knowledge.eventing'
+import { compactPostprocessPayload, dispatchPostprocessSuggestionCommand } from './postprocess.commands'
+import {
+  CHANGE_POSTPROCESS_SUGGESTION_COMMAND,
+  GENERATE_POSTPROCESS_SUGGESTION_COMMAND,
+} from './postprocess.eventing'
 
 type ApprovalLevel = 'conservative' | 'balanced' | 'aggressive'
 type SuggestionType = typeof chapterPostprocessSuggestions.$inferInsert['suggestionType']
@@ -166,6 +173,7 @@ export async function createSuggestion(
   payload: object,
   confidence = 70,
   reason?: string,
+  options: PostprocessCommandOptions = {},
 ) {
   const normalizedType = parseSuggestionType(suggestionType)
   const payloadText = JSON.stringify(payload)
@@ -179,17 +187,21 @@ export async function createSuggestion(
   if (existing)
     return existing
 
-  const [row] = await db.insert(chapterPostprocessSuggestions).values({
-    id: generateId(),
+  const id = generateId()
+  return dispatchPostprocessSuggestionCommand<PostprocessSuggestionSnapshot>(
+    GENERATE_POSTPROCESS_SUGGESTION_COMMAND,
     projectId,
-    chapterId,
-    runId,
-    suggestionType: normalizedType,
-    payload: payloadText,
-    confidence,
-    reason,
-  }).returning()
-  return row
+    id,
+    compactPostprocessPayload({
+      chapterId,
+      runId,
+      suggestionType: normalizedType,
+      payload: payloadText,
+      confidence,
+      reason: reason ?? null,
+    }),
+    options,
+  )
 }
 
 export async function getSuggestions(projectId: string, chapterId: string, runId?: string) {
@@ -212,83 +224,54 @@ export async function getProjectSuggestions(projectId: string, type?: string) {
   return db.select().from(chapterPostprocessSuggestions).where(and(...conditions))
 }
 
-export async function acceptSuggestion(projectId: string, id: string) {
-  const [row] = await db.update(chapterPostprocessSuggestions).set({
-    status: 'accepted',
-    updatedAt: new Date().toISOString(),
-  }).where(and(
-    eq(chapterPostprocessSuggestions.id, id),
-    eq(chapterPostprocessSuggestions.projectId, projectId),
-    eq(chapterPostprocessSuggestions.status, 'pending'),
-  )).returning()
-  return row
+export async function acceptSuggestion(projectId: string, id: string, options: PostprocessCommandOptions = {}) {
+  return dispatchPostprocessSuggestionCommand<PostprocessSuggestionSnapshot>(CHANGE_POSTPROCESS_SUGGESTION_COMMAND, projectId, id, { status: 'accepted' }, options)
 }
 
-export async function applySuggestion(projectId: string, id: string) {
+export async function applySuggestion(projectId: string, id: string, options: PostprocessCommandOptions = {}) {
   try {
     const suggestion = await claimSuggestion(projectId, id)
     if (suggestion.status === 'applied' || suggestion.status === 'acknowledged')
       return suggestion
 
     const payload = parseSuggestionPayload(suggestion.payload)
-    const resultStatus = await commandBus.runAtomically(() => applyOneSuggestion(
-      suggestion.suggestionType,
-      payload,
-      projectId,
-      suggestion.chapterId,
-      suggestion.confidence,
-      {
-        commandId: `ApplySuggestion:${suggestion.id}`,
-        correlationId: suggestion.runId ?? suggestion.id,
-        causationId: suggestion.id,
-      },
-    ))
-
-    const [updated] = await db.update(chapterPostprocessSuggestions)
-      .set({ status: resultStatus, updatedAt: now() })
-      .where(and(
-        eq(chapterPostprocessSuggestions.id, id),
-        eq(chapterPostprocessSuggestions.projectId, projectId),
-        eq(chapterPostprocessSuggestions.status, 'applying'),
-      ))
-      .returning()
-    if (updated)
-      return updated
-    const [current] = await db.select().from(chapterPostprocessSuggestions).where(and(
-      eq(chapterPostprocessSuggestions.id, id),
-      eq(chapterPostprocessSuggestions.projectId, projectId),
-    ))
-    if (current?.status === resultStatus)
-      return current
-    throw new Error('建议状态在应用期间发生变化')
+    return await commandBus.runAtomically(async () => {
+      const resultStatus = await applyOneSuggestion(
+        suggestion.suggestionType,
+        payload,
+        projectId,
+        suggestion.chapterId,
+        suggestion.confidence,
+        {
+          commandId: options.commandId ? `${options.commandId}:domain` : `ApplySuggestion:${suggestion.id}`,
+          correlationId: options.correlationId ?? suggestion.runId ?? suggestion.id,
+          causationId: suggestion.id,
+        },
+      )
+      return dispatchPostprocessSuggestionCommand<PostprocessSuggestionSnapshot>(
+        CHANGE_POSTPROCESS_SUGGESTION_COMMAND,
+        projectId,
+        id,
+        { status: resultStatus },
+        { commandId: options.commandId ? `${options.commandId}:complete` : undefined, correlationId: options.correlationId },
+      )
+    })
   }
   catch (error: unknown) {
     const message = errorMessage(error)
     if (message !== '建议不存在' && message !== '建议已拒绝，不能应用') {
-      await db.update(chapterPostprocessSuggestions)
-        .set({ status: 'apply_failed', updatedAt: now() })
-        .where(and(
-          eq(chapterPostprocessSuggestions.id, id),
-          eq(chapterPostprocessSuggestions.projectId, projectId),
-          eq(chapterPostprocessSuggestions.status, 'applying'),
-        ))
+      await dispatchPostprocessSuggestionCommand(
+        CHANGE_POSTPROCESS_SUGGESTION_COMMAND,
+        projectId,
+        id,
+        { status: 'apply_failed' },
+      )
     }
     throw error
   }
 }
 
 async function claimSuggestion(projectId: string, id: string) {
-  const [claimed] = await db.update(chapterPostprocessSuggestions)
-    .set({ status: 'applying', updatedAt: now() })
-    .where(and(
-      eq(chapterPostprocessSuggestions.id, id),
-      eq(chapterPostprocessSuggestions.projectId, projectId),
-      inArray(chapterPostprocessSuggestions.status, ['pending', 'accepted', 'apply_failed']),
-    ))
-    .returning()
-  if (claimed)
-    return claimed
-
   const [current] = await db.select().from(chapterPostprocessSuggestions).where(and(
     eq(chapterPostprocessSuggestions.id, id),
     eq(chapterPostprocessSuggestions.projectId, projectId),
@@ -297,6 +280,14 @@ async function claimSuggestion(projectId: string, id: string) {
     throw new Error('建议不存在')
   if (current.status === 'rejected')
     throw new Error('建议已拒绝，不能应用')
+  if (['pending', 'accepted', 'apply_failed'].includes(current.status)) {
+    return dispatchPostprocessSuggestionCommand<PostprocessSuggestionSnapshot>(
+      CHANGE_POSTPROCESS_SUGGESTION_COMMAND,
+      projectId,
+      id,
+      { status: 'applying' },
+    )
+  }
   return current
 }
 
@@ -312,16 +303,8 @@ function parseSuggestionPayload(value: string): SuggestionPayload {
   }
 }
 
-export async function rejectSuggestion(projectId: string, id: string) {
-  const [row] = await db.update(chapterPostprocessSuggestions).set({
-    status: 'rejected',
-    updatedAt: new Date().toISOString(),
-  }).where(and(
-    eq(chapterPostprocessSuggestions.id, id),
-    eq(chapterPostprocessSuggestions.projectId, projectId),
-    eq(chapterPostprocessSuggestions.status, 'pending'),
-  )).returning()
-  return row
+export async function rejectSuggestion(projectId: string, id: string, options: PostprocessCommandOptions = {}) {
+  return dispatchPostprocessSuggestionCommand<PostprocessSuggestionSnapshot>(CHANGE_POSTPROCESS_SUGGESTION_COMMAND, projectId, id, { status: 'rejected' }, options)
 }
 
 export async function applyAcceptedSuggestions(projectId: string, chapterId: string): Promise<ApplyResult> {
@@ -398,13 +381,8 @@ export async function applyAutoSuggestions(projectId: string, chapterId: string,
   }
 
   if (autoAcceptableIds.length > 0) {
-    await db.update(chapterPostprocessSuggestions).set({
-      status: 'accepted',
-      updatedAt: now(),
-    }).where(and(
-      eq(chapterPostprocessSuggestions.projectId, projectId),
-      inArray(chapterPostprocessSuggestions.id, autoAcceptableIds),
-    ))
+    for (const id of autoAcceptableIds)
+      await acceptSuggestion(projectId, id)
   }
 
   return applyAcceptedSuggestions(projectId, chapterId)

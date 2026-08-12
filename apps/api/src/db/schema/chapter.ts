@@ -83,7 +83,7 @@ export const chapterScenes = pgTable('chapter_scenes', {
 export const chapterPostprocessRuns = pgTable('chapter_postprocess_runs', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull(),
   status: text('status').$type<'pending' | 'running' | 'completed' | 'failed'>().notNull().default('pending'),
   trigger: text('trigger').notNull(),
   errorMessage: text('error_message'),
