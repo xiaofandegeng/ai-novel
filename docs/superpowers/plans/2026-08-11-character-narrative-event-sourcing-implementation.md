@@ -94,11 +94,11 @@
 - Modify: chapter element and memory services/routes
 - Modify: automation callers
 
-- [ ] Define element add/change/remove/replace events and `ChapterMemoryRecorded`.
-- [ ] Make bulk element replacement one atomic command with deterministic duplicate validation.
-- [ ] Preserve character-name normalization and project ownership checks.
-- [ ] Replace direct memory and element writes in change-set and postprocess paths with correlated commands.
-- [ ] Commit: `feat(api): event source chapter knowledge`.
+- [x] Define element add/change/remove/replace events and `ChapterMemoryRecorded`.
+- [x] Make bulk element replacement one atomic command with deterministic duplicate validation.
+- [x] Preserve character-name normalization and project ownership checks.
+- [x] Replace direct memory writes in change-set and postprocess paths with correlated commands; suggestion element writes remain in Task 8's unified bypass cleanup.
+- [x] Commit: `feat(api): event source chapter knowledge`.
 
 ## Task 7: Narrative facts, reference knowledge, and authoring activity
 

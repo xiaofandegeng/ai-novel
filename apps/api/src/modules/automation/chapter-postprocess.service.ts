@@ -1,10 +1,13 @@
 import type { ChapterMemory, ChapterPostprocessResult } from '@ai-novel/shared'
+import type { ChapterMemorySnapshot } from '../story/chapter-knowledge.eventing'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, chapterStyleFingerprints, characters, conflicts, foreshadowingItems, novelProjects } from '../../db/schema'
 import { errorMessage, generateId } from '../../shared/utils'
 import { callAIJSON } from '../ai/ai.service'
 import { getOrCreateEmbedding } from '../ai/embedding.service'
+import { dispatchChapterKnowledgeCommand } from '../story/chapter-knowledge.commands'
+import { RECORD_CHAPTER_MEMORY_COMMAND } from '../story/chapter-knowledge.eventing'
 import { dispatchChapterCommand } from '../story/chapter.commands'
 import { CHANGE_CHAPTER_COMMAND } from '../story/chapter.eventing'
 import { createSuggestion } from './postprocess-suggestion.service'
@@ -584,23 +587,17 @@ export async function runChapterPostprocess(input: {
       warnings.push('检测到新增伏笔，后续章节应注意回收。')
     }
 
-    // Upsert memory
-    const [memory] = await db
-      .insert(chapterMemories)
-      .values({
-        id: generateId(),
-        projectId,
-        chapterId,
-        ...fields,
-      })
-      .onConflictDoUpdate({
-        target: [chapterMemories.projectId, chapterMemories.chapterId],
-        set: {
-          ...fields,
-          updatedAt: new Date().toISOString(),
-        },
-      })
-      .returning()
+    const memory = await dispatchChapterKnowledgeCommand<ChapterMemorySnapshot>(
+      RECORD_CHAPTER_MEMORY_COMMAND,
+      projectId,
+      chapterId,
+      { id: generateId(), ...fields },
+      {
+        commandId: `RecordChapterMemory:${runId}`,
+        correlationId: runId,
+        causationId: runId,
+      },
+    )
 
     // Trigger embedding for chapter memory RAG
     if (memory && memory.summary) {

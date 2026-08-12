@@ -8,12 +8,13 @@ import { db } from '../../db'
 import {
   chapterChangeSetItems,
   chapterChangeSets,
-  chapterMemories,
   chapters,
   chapterScenes,
   writingJobSteps,
 } from '../../db/schema'
 import { errorMessage, generateId, now } from '../../shared/utils'
+import { dispatchChapterKnowledgeCommand } from '../story/chapter-knowledge.commands'
+import { RECORD_CHAPTER_MEMORY_COMMAND } from '../story/chapter-knowledge.eventing'
 import { dispatchChapterCommand } from '../story/chapter.commands'
 import { CHANGE_CHAPTER_COMMAND, CHANGE_SCENE_COMMAND } from '../story/chapter.eventing'
 import { createSnapshot } from '../story/version.service'
@@ -498,33 +499,25 @@ export async function applyChangeSet(
             break
           case 'chapter_memory': {
             const payload = objectPayload(item.payloadJson)
-            const memoryFields = {
+            const memoryFields = Object.fromEntries(Object.entries({
               summary: optionalText(payload.summary),
               keyEvents: optionalText(payload.keyEvents),
               characterStateChanges: optionalText(payload.characterStateChanges),
               relationshipChanges: optionalText(payload.relationshipChanges),
               conflictProgress: optionalText(payload.conflictProgress),
               themeProgress: optionalText(payload.themeProgress),
-            }
-            const existing = await tx.select().from(chapterMemories).where(and(
-              eq(chapterMemories.projectId, projectId),
-              eq(chapterMemories.chapterId, fullChangeSet.chapterId),
-            ))
-            if (existing.length > 0) {
-              await tx.update(chapterMemories)
-                .set({ ...memoryFields, updatedAt: now() })
-                .where(eq(chapterMemories.id, existing[0].id))
-            }
-            else {
-              await tx.insert(chapterMemories).values({
-                id: generateId(),
-                projectId,
-                chapterId: fullChangeSet.chapterId,
-                ...memoryFields,
-                createdAt: now(),
-                updatedAt: now(),
-              })
-            }
+            }).filter(([, value]) => value !== undefined))
+            await dispatchChapterKnowledgeCommand(
+              RECORD_CHAPTER_MEMORY_COMMAND,
+              projectId,
+              fullChangeSet.chapterId,
+              { id: generateId(), ...memoryFields },
+              {
+                commandId: `ApplyChangeSet:${changeSetId}:memory:${item.id}`,
+                correlationId: changeSetId,
+                causationId: item.id,
+              },
+            )
             break
           }
           default: {

@@ -36,7 +36,7 @@ export const chapterVersions = pgTable('chapter_versions', {
 export const chapterMemories = pgTable('chapter_memories', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull(),
   summary: text('summary'),
   keyEvents: text('key_events'),
   newFacts: text('new_facts'),

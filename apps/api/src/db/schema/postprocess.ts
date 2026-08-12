@@ -8,7 +8,7 @@ import { novelProjects } from './project'
 export const chapterElements = pgTable('chapter_elements', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull(),
   elementType: text('element_type').$type<'character' | 'location' | 'item' | 'organization' | 'event'>().notNull(),
   elementId: text('element_id'),
   elementName: text('element_name').notNull(),
