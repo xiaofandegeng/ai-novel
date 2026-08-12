@@ -1,6 +1,8 @@
+import type { EventingContentProtector, EventingExecutor } from './content-protector'
 import type {
   AggregateSnapshot,
   AppendBatch,
+  JsonObject,
   OutboxIntent,
   StoredEvent,
   StreamRef,
@@ -13,6 +15,7 @@ import {
   domainEvents,
   eventOutbox,
 } from '../db/schema'
+import { NoopEventingContentProtector } from './content-protector'
 import { DuplicateEventError, EventConcurrencyError } from './errors'
 
 export type EventingTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -27,10 +30,23 @@ export interface EventStoreSession {
   putSnapshot: (snapshot: AggregateSnapshot) => Promise<void>
 }
 
+export interface EventStoreOptions {
+  contentProtector?: EventingContentProtector
+  projectDeletedEventType?: string
+}
+
 export class EventStore {
+  private readonly contentProtector: EventingContentProtector
+  private readonly projectDeletedEventType: string | undefined
+
+  constructor(options: EventStoreOptions = {}) {
+    this.contentProtector = options.contentProtector ?? new NoopEventingContentProtector()
+    this.projectDeletedEventType = options.projectDeletedEventType
+  }
+
   async withTransaction<T>(work: (session: EventStoreSession) => Promise<T>): Promise<T> {
     return db.transaction(async (transaction) => {
-      return work(createSession(transaction))
+      return work(createSession(transaction, this.contentProtector))
     })
   }
 
@@ -47,7 +63,7 @@ export class EventStore {
         gt(domainEvents.aggregateVersion, fromVersion),
       ))
       .orderBy(asc(domainEvents.aggregateVersion))
-    return rows.map(toStoredEvent)
+    return unprotectEvents(this.contentProtector, db, rows.map(toStoredEvent))
   }
 
   async readAll(afterPosition: number, limit: number): Promise<StoredEvent[]> {
@@ -56,11 +72,24 @@ export class EventStore {
       .where(gt(domainEvents.globalPosition, afterPosition))
       .orderBy(asc(domainEvents.globalPosition))
       .limit(limit)
-    return rows.map(toStoredEvent)
+    return unprotectEvents(this.contentProtector, db, rows.map(toStoredEvent))
+  }
+
+  async readHeadersForDeletedProjects(): Promise<Set<string>> {
+    if (!this.projectDeletedEventType)
+      throw new Error('Project deleted event type is not configured')
+
+    const rows = await db.select({ projectId: domainEvents.projectId })
+      .from(domainEvents)
+      .where(eq(domainEvents.eventType, this.projectDeletedEventType))
+    return new Set(rows.flatMap(row => row.projectId ? [row.projectId] : []))
   }
 }
 
-function createSession(transaction: EventingTransaction): EventStoreSession {
+function createSession(
+  transaction: EventingTransaction,
+  contentProtector: EventingContentProtector,
+): EventStoreSession {
   return {
     transaction,
     async loadStream(stream, fromVersion = 0) {
@@ -76,7 +105,7 @@ function createSession(transaction: EventingTransaction): EventStoreSession {
           gt(domainEvents.aggregateVersion, fromVersion),
         ))
         .orderBy(asc(domainEvents.aggregateVersion))
-      return rows.map(toStoredEvent)
+      return unprotectEvents(contentProtector, transaction, rows.map(toStoredEvent))
     },
     async readAll(afterPosition, limit) {
       const rows = await transaction.select()
@@ -84,7 +113,7 @@ function createSession(transaction: EventingTransaction): EventStoreSession {
         .where(gt(domainEvents.globalPosition, afterPosition))
         .orderBy(asc(domainEvents.globalPosition))
         .limit(limit)
-      return rows.map(toStoredEvent)
+      return unprotectEvents(contentProtector, transaction, rows.map(toStoredEvent))
     },
     async appendBatch(batch) {
       const streams = normalizeStreams(batch)
@@ -142,14 +171,15 @@ function createSession(transaction: EventingTransaction): EventStoreSession {
         )
       }
 
-      const values = streams.flatMap((append) => {
+      const events = streams.flatMap((append) => {
         const startingVersion = versions.get(keyOf(append.stream)) ?? append.expectedVersion
-        return append.events.map((event, index) => ({
+        return append.events.map((event, index): StoredEvent => ({
+          globalPosition: 0,
           eventId: event.eventId,
           aggregateType: append.stream.aggregateType,
           aggregateId: append.stream.aggregateId,
           aggregateVersion: startingVersion + index + 1,
-          projectId: append.stream.projectId ?? null,
+          ...(append.stream.projectId ? { projectId: append.stream.projectId } : {}),
           eventType: event.eventType,
           schemaVersion: event.schemaVersion,
           payload: event.payload,
@@ -157,14 +187,19 @@ function createSession(transaction: EventingTransaction): EventStoreSession {
           commandId: batch.commandId,
           eventIndex: 0,
           correlationId: batch.correlationId,
-          causationId: batch.causationId ?? null,
+          ...(batch.causationId ? { causationId: batch.causationId } : {}),
           occurredAt: event.occurredAt,
         }))
       }).map((event, eventIndex) => ({ ...event, eventIndex }))
+      const values: Array<typeof domainEvents.$inferInsert> = []
+      for (const event of events) {
+        const payload = await contentProtector.protectEvent(transaction, event)
+        values.push(toEventInsert(event, payload))
+      }
 
       try {
         const inserted = await transaction.insert(domainEvents).values(values).returning()
-        return inserted.map(toStoredEvent)
+        return unprotectEvents(contentProtector, transaction, inserted.map(toStoredEvent))
       }
       catch (error: unknown) {
         if (isConstraintViolation(error, 'domain_events_event_id_unique')) {
@@ -203,7 +238,7 @@ function createSession(transaction: EventingTransaction): EventStoreSession {
         .limit(1)
       if (!snapshot)
         return null
-      return {
+      const protectedSnapshot: AggregateSnapshot = {
         aggregateType: snapshot.aggregateType,
         aggregateId: snapshot.aggregateId,
         ...(snapshot.projectId ? { projectId: snapshot.projectId } : {}),
@@ -212,8 +247,13 @@ function createSession(transaction: EventingTransaction): EventStoreSession {
         state: snapshot.state,
         createdAt: normalizeTimestamp(snapshot.createdAt),
       }
+      return {
+        ...protectedSnapshot,
+        state: await contentProtector.unprotectSnapshot(transaction, protectedSnapshot),
+      }
     },
     async putSnapshot(snapshot) {
+      const protectedState = await contentProtector.protectSnapshot(transaction, snapshot)
       await transaction.insert(aggregateSnapshots)
         .values({
           aggregateType: snapshot.aggregateType,
@@ -221,7 +261,7 @@ function createSession(transaction: EventingTransaction): EventStoreSession {
           projectId: snapshot.projectId ?? null,
           aggregateVersion: snapshot.aggregateVersion,
           schemaVersion: snapshot.schemaVersion,
-          state: snapshot.state,
+          state: protectedState,
           createdAt: snapshot.createdAt,
         })
         .onConflictDoUpdate({
@@ -230,12 +270,49 @@ function createSession(transaction: EventingTransaction): EventStoreSession {
             projectId: snapshot.projectId ?? null,
             aggregateVersion: snapshot.aggregateVersion,
             schemaVersion: snapshot.schemaVersion,
-            state: snapshot.state,
+            state: protectedState,
             createdAt: snapshot.createdAt,
           },
         })
     },
   }
+}
+
+function toEventInsert(
+  event: StoredEvent,
+  payload: JsonObject,
+): typeof domainEvents.$inferInsert {
+  return {
+    eventId: event.eventId,
+    aggregateType: event.aggregateType,
+    aggregateId: event.aggregateId,
+    aggregateVersion: event.aggregateVersion,
+    projectId: event.projectId ?? null,
+    eventType: event.eventType,
+    schemaVersion: event.schemaVersion,
+    payload,
+    metadata: event.metadata,
+    commandId: event.commandId,
+    eventIndex: event.eventIndex,
+    correlationId: event.correlationId,
+    causationId: event.causationId ?? null,
+    occurredAt: event.occurredAt,
+  }
+}
+
+async function unprotectEvents(
+  contentProtector: EventingContentProtector,
+  executor: EventingExecutor,
+  events: StoredEvent[],
+): Promise<StoredEvent[]> {
+  const plaintextEvents: StoredEvent[] = []
+  for (const event of events) {
+    plaintextEvents.push({
+      ...event,
+      payload: await contentProtector.unprotectEvent(executor, event),
+    })
+  }
+  return plaintextEvents
 }
 
 function normalizeStreams(batch: AppendBatch): AppendBatch['streams'] {

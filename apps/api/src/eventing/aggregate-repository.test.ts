@@ -1,12 +1,19 @@
 import type { AggregateDefinition } from './aggregate-repository'
 import type { AppendBatch, JsonObject, PendingEvent, StreamRef } from './event-types'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { sql } from '../db'
+import { db, sql } from '../db'
+import { aggregateSnapshots } from '../db/schema'
+import { ProjectDataKeyStore } from '../security/project-data-key.store'
 import { resetTestDatabase } from '../test/database'
 import { AggregateRepository } from './aggregate-repository'
+import { ProjectEventingContentProtector } from './content-protector'
 import { InvalidSnapshotError, UnknownEventTypeError } from './errors'
 import { EventRegistry } from './event-registry'
 import { EventStore } from './event-store'
+
+const PROJECT_CREATED = 'FixtureProjectCreated'
+const PROJECT_DELETED = 'FixtureProjectDeleted'
+const CHAPTER_CREATED = 'FixtureChapterCreated'
 
 const stream: StreamRef = {
   aggregateType: 'KernelAggregate',
@@ -127,6 +134,57 @@ describe('aggregateRepository', () => {
     })
   })
 
+  it('encrypts project snapshots while aggregate loads preserve the original state', async () => {
+    const registry = protectedChapterRegistry()
+    const contentProtector = new ProjectEventingContentProtector(
+      registry,
+      new ProjectDataKeyStore(),
+      {
+        projectCreatedEventType: PROJECT_CREATED,
+        projectDeletedEventType: PROJECT_DELETED,
+      },
+    )
+    const protectedStore = new EventStore({
+      contentProtector,
+      projectDeletedEventType: PROJECT_DELETED,
+    })
+    const repository = new AggregateRepository(protectedStore, registry)
+    const projectTitle = '快照不应泄露的项目标题'
+    const chapterBody = '快照不应泄露的章节正文'
+    await appendTo(protectedStore, {
+      aggregateType: 'Project',
+      aggregateId: 'project-1',
+      projectId: stream.projectId,
+    }, [pending('event-protected-project', PROJECT_CREATED, { title: projectTitle })])
+    await appendTo(protectedStore, stream, [
+      pending('event-protected-chapter', CHAPTER_CREATED, {
+        title: projectTitle,
+        body: chapterBody,
+      }),
+    ])
+
+    const definition: AggregateDefinition<JsonObject> = {
+      aggregateType: stream.aggregateType,
+      initialState: () => ({ title: '', body: '' }),
+      evolve: (_state, event) => ({
+        title: readString(event.payload, 'title'),
+        body: readString(event.payload, 'body'),
+      }),
+      snapshotEvery: 1,
+      snapshotSchemaVersion: 1,
+    }
+    const expected = {
+      state: { title: projectTitle, body: chapterBody },
+      version: 1,
+    }
+
+    await expect(repository.load(definition, stream)).resolves.toEqual(expected)
+    const [rawSnapshot] = await db.select().from(aggregateSnapshots)
+    expect(JSON.stringify(rawSnapshot?.state)).not.toContain(projectTitle)
+    expect(JSON.stringify(rawSnapshot?.state)).not.toContain(chapterBody)
+    await expect(repository.load(definition, stream)).resolves.toEqual(expected)
+  })
+
   it('rejects aggregate definitions with mismatched or invalid version settings', async () => {
     const repository = new AggregateRepository(store, new EventRegistry())
     await expect(repository.load({
@@ -188,14 +246,22 @@ function countRegistry(): EventRegistry {
 
 async function append(events: PendingEvent[]): Promise<void> {
   const store = new EventStore()
-  await store.withTransaction(session => session.appendBatch(batch(events)))
+  await appendTo(store, stream, events)
 }
 
-function batch(events: PendingEvent[]): AppendBatch {
+async function appendTo(
+  store: EventStore,
+  targetStream: StreamRef,
+  events: PendingEvent[],
+): Promise<void> {
+  await store.withTransaction(session => session.appendBatch(batch(targetStream, events)))
+}
+
+function batch(targetStream: StreamRef, events: PendingEvent[]): AppendBatch {
   return {
     commandId: `command-${events[0]?.eventId ?? 'empty'}`,
     correlationId: 'correlation-aggregate-repository',
-    streams: [{ stream, expectedVersion: 0, events }],
+    streams: [{ stream: targetStream, expectedVersion: 0, events }],
   }
 }
 
@@ -233,4 +299,25 @@ function readObject(value: unknown): JsonObject {
   if (typeof value !== 'object' || value === null || Array.isArray(value))
     throw new Error('value must be an object')
   return value as JsonObject
+}
+
+function protectedChapterRegistry(): EventRegistry {
+  const registry = new EventRegistry()
+  for (const eventType of [PROJECT_CREATED, CHAPTER_CREATED]) {
+    registry.register({
+      eventType,
+      currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
+      upcasters: {},
+      validate: payload => readObject(payload),
+    })
+  }
+  registry.register({
+    eventType: PROJECT_DELETED,
+    currentSchemaVersion: 1,
+    payloadProtection: 'none',
+    upcasters: {},
+    validate: payload => readObject(payload),
+  })
+  return registry
 }

@@ -1,9 +1,18 @@
 import type { AggregateSnapshot, AppendBatch, PendingEvent, StreamRef } from './event-types'
+import { asc } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
-import { sql } from '../db'
+import { db, sql } from '../db'
+import { domainEvents } from '../db/schema'
+import { ProjectDataKeyStore } from '../security/project-data-key.store'
 import { resetTestDatabase } from '../test/database'
+import { ProjectEventingContentProtector } from './content-protector'
 import { DuplicateEventError, EventConcurrencyError } from './errors'
+import { EventRegistry } from './event-registry'
 import { EventStore } from './event-store'
+
+const PROJECT_CREATED = 'FixtureProjectCreated'
+const PROJECT_DELETED = 'FixtureProjectDeleted'
+const CHAPTER_CREATED = 'FixtureChapterCreated'
 
 const firstStream: StreamRef = {
   aggregateType: 'KernelTest',
@@ -36,6 +45,95 @@ describe('eventStore', () => {
       { eventId: 'event-1', eventType: 'KernelTestCreated', aggregateVersion: 1 },
       { eventId: 'event-2', eventType: 'KernelTestRenamed', aggregateVersion: 2 },
     ])
+  })
+
+  it('encrypts protected event rows while every append and read path returns plaintext', async () => {
+    const protectedStore = createProtectedStore()
+    const projectTitle = '数据库中不应出现的项目标题'
+    const chapterBody = '数据库中不应出现的章节正文'
+    const projectStream: StreamRef = {
+      aggregateType: 'Project',
+      aggregateId: 'protected-project',
+      projectId: 'protected-project',
+    }
+    const chapterStream: StreamRef = {
+      aggregateType: 'Chapter',
+      aggregateId: 'protected-chapter',
+      projectId: 'protected-project',
+    }
+
+    await protectedStore.withTransaction(async (session) => {
+      await expect(session.appendBatch(createBatch([{
+        stream: projectStream,
+        expectedVersion: 0,
+        events: [pending('event-project-created', PROJECT_CREATED, { title: projectTitle })],
+      }], 'command-project-created'))).resolves.toMatchObject([{
+        aggregateVersion: 1,
+        payload: { title: projectTitle },
+      }])
+      await expect(session.appendBatch(createBatch([{
+        stream: chapterStream,
+        expectedVersion: 0,
+        events: [pending('event-chapter-created', CHAPTER_CREATED, { body: chapterBody })],
+      }], 'command-chapter-created'))).resolves.toMatchObject([{
+        aggregateVersion: 1,
+        payload: { body: chapterBody },
+      }])
+
+      await expect(session.loadStream(chapterStream)).resolves.toMatchObject([{
+        payload: { body: chapterBody },
+      }])
+      await expect(session.readAll(0, 10)).resolves.toMatchObject([
+        { payload: { title: projectTitle } },
+        { payload: { body: chapterBody } },
+      ])
+    })
+
+    const rawRows = await db.select({ payload: domainEvents.payload })
+      .from(domainEvents)
+      .orderBy(asc(domainEvents.globalPosition))
+    const rawJson = JSON.stringify(rawRows)
+    expect(rawJson).not.toContain(projectTitle)
+    expect(rawJson).not.toContain(chapterBody)
+
+    await expect(protectedStore.loadStream(projectStream)).resolves.toMatchObject([{
+      payload: { title: projectTitle },
+    }])
+    await expect(protectedStore.readAll(0, 10)).resolves.toMatchObject([
+      { payload: { title: projectTitle } },
+      { payload: { body: chapterBody } },
+    ])
+  })
+
+  it('discovers deleted projects from clear headers without decrypting event payloads', async () => {
+    await store.withTransaction(session => session.appendBatch(createBatch([{
+      stream: firstStream,
+      expectedVersion: 0,
+      events: [pending('event-project-deleted', PROJECT_DELETED, { deletedAt: 'secret' })],
+    }])))
+    const registry = new EventRegistry()
+    registry.register({
+      eventType: PROJECT_DELETED,
+      currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
+      upcasters: {},
+      validate: payload => payload as Record<string, unknown>,
+    })
+    const protectedStore = new EventStore({
+      contentProtector: new ProjectEventingContentProtector(
+        registry,
+        new ProjectDataKeyStore(),
+        {
+          projectCreatedEventType: PROJECT_CREATED,
+          projectDeletedEventType: PROJECT_DELETED,
+        },
+      ),
+      projectDeletedEventType: PROJECT_DELETED,
+    })
+
+    await expect(protectedStore.readHeadersForDeletedProjects())
+      .resolves
+      .toEqual(new Set(['project-1']))
   })
 
   it('does not load events or snapshots through another project scope', async () => {
@@ -258,15 +356,48 @@ describe('eventStore', () => {
   })
 })
 
-function pending(eventId: string, eventType: string): PendingEvent {
+function pending(
+  eventId: string,
+  eventType: string,
+  payload: PendingEvent['payload'] = { value: eventId },
+): PendingEvent {
   return {
     eventId,
     eventType,
     schemaVersion: 1,
-    payload: { value: eventId },
+    payload,
     metadata: { actorType: 'system' },
     occurredAt: '2026-08-11T00:00:00.000Z',
   }
+}
+
+function createProtectedStore(): EventStore {
+  const registry = new EventRegistry()
+  for (const eventType of [PROJECT_CREATED, CHAPTER_CREATED]) {
+    registry.register({
+      eventType,
+      currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
+      upcasters: {},
+      validate: payload => payload as Record<string, unknown>,
+    })
+  }
+  registry.register({
+    eventType: PROJECT_DELETED,
+    currentSchemaVersion: 1,
+    payloadProtection: 'none',
+    upcasters: {},
+    validate: payload => payload as Record<string, unknown>,
+  })
+  const contentProtector = new ProjectEventingContentProtector(
+    registry,
+    new ProjectDataKeyStore(),
+    {
+      projectCreatedEventType: PROJECT_CREATED,
+      projectDeletedEventType: PROJECT_DELETED,
+    },
+  )
+  return new EventStore({ contentProtector, projectDeletedEventType: PROJECT_DELETED })
 }
 
 function createBatch(streams: AppendBatch['streams'], commandId = 'command-1'): AppendBatch {

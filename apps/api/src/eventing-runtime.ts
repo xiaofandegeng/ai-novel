@@ -5,6 +5,7 @@ import {
   EventStore,
   OutboxHandlerRegistry,
   OutboxWorker,
+  ProjectEventingContentProtector,
   ProjectionRegistry,
 } from './eventing'
 import { registerAIOperationsEventing } from './modules/ai/ai-operations.eventing'
@@ -19,13 +20,30 @@ import { registerRelationshipEventing } from './modules/character/relationship.e
 import { registerConflictEventing } from './modules/narrative/conflict.eventing'
 import { registerForeshadowingEventing } from './modules/narrative/foreshadowing.eventing'
 import { registerNarrativeKnowledgeEventing } from './modules/narrative/narrative-knowledge.eventing'
-import { registerProjectEventing } from './modules/project/project.eventing'
+import {
+  PROJECT_CREATED,
+  PROJECT_DELETED,
+  registerProjectEventing,
+} from './modules/project/project.eventing'
 import { registerChapterKnowledgeEventing } from './modules/story/chapter-knowledge.eventing'
 import { registerChapterEventing } from './modules/story/chapter.eventing'
 import { registerStoryStructureEventing } from './modules/story/story-structure.eventing'
+import { ProjectDataKeyStore } from './security/project-data-key.store'
 
-export const eventStore = new EventStore()
 export const domainEventRegistry = new EventRegistry()
+export const projectDataKeyStore = new ProjectDataKeyStore()
+export const eventingContentProtector = new ProjectEventingContentProtector(
+  domainEventRegistry,
+  projectDataKeyStore,
+  {
+    projectCreatedEventType: PROJECT_CREATED,
+    projectDeletedEventType: PROJECT_DELETED,
+  },
+)
+export const eventStore = new EventStore({
+  contentProtector: eventingContentProtector,
+  projectDeletedEventType: PROJECT_DELETED,
+})
 export const projectionRegistry = new ProjectionRegistry(domainEventRegistry)
 export const commandBus = new CommandBus(eventStore, projectionRegistry, domainEventRegistry)
 export const aggregateRepository = new AggregateRepository(eventStore, domainEventRegistry)
