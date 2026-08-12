@@ -1,13 +1,16 @@
 import type { AppendBatch, PendingEvent, StreamRef } from './event-types'
 import type { ProjectionDefinition } from './projection-runner'
 import { Buffer } from 'node:buffer'
-import { sql as drizzleSql, eq } from 'drizzle-orm'
+import { asc, sql as drizzleSql, eq, inArray } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../db'
 import { projectionCheckpoints } from '../db/schema'
 import { ProjectDataKeyStore } from '../security/project-data-key.store'
 import { resetTestDatabase } from '../test/database'
-import { ProjectEventingContentProtector } from './content-protector'
+import {
+  NoopEventingContentProtector,
+  ProjectEventingContentProtector,
+} from './content-protector'
 import { EventRegistry } from './event-registry'
 import { EventStore } from './event-store'
 import { ProjectionRegistry, ProjectionRunner } from './projection-runner'
@@ -193,18 +196,18 @@ describe('projectionReplay', () => {
 
     const replay = new ProjectionReplay(runtime.projections, runtime.store)
       .replayAll({ batchSize: 1 })
-    const replayWaitedForKey = await waitForBlockedDatabaseQuery('for share')
+    const replayWaitedForAppend = await waitForBlockedDatabaseQuery('pg_advisory_xact_lock(')
     releaseDeletion.resolve()
     const [deletionOutcome, replayOutcome] = await Promise.allSettled([deletion, replay])
 
-    expect(replayWaitedForKey).toBe(true)
+    expect(replayWaitedForAppend).toBe(true)
     expect(deletionOutcome.status).toBe('fulfilled')
     expect(replayOutcome).toEqual({
       status: 'fulfilled',
       value: [{
         projectionName: 'kernel-replay',
         processedEvents: 0,
-        lastGlobalPosition: 1,
+        lastGlobalPosition: 2,
       }],
     })
     expect(await readProject('racing-project')).toBeUndefined()
@@ -232,14 +235,14 @@ describe('projectionReplay', () => {
       'racing-project',
       'racing-event',
     )
-    const deletionWaitedForKey = await Promise.race([
-      waitForBlockedDatabaseQuery('for update'),
+    const deletionWaitedForReplay = await Promise.race([
+      waitForBlockedDatabaseQuery('pg_advisory_xact_lock_shared'),
       deletion.then(() => false),
     ])
     releaseReplay.resolve()
     const [replayOutcome, deletionOutcome] = await Promise.allSettled([replay, deletion])
 
-    expect(deletionWaitedForKey).toBe(true)
+    expect(deletionWaitedForReplay).toBe(true)
     expect(replayOutcome.status).toBe('fulfilled')
     expect(deletionOutcome.status).toBe('fulfilled')
     expect(await readProject('racing-project')).toBeUndefined()
@@ -266,11 +269,14 @@ describe('projectionReplay', () => {
     const replay = new ProjectionReplay(projections, runtime.store)
       .replayAll({ batchSize: 1 })
     await firstProjectionEntered.promise
-    await appendProtectedReplayEvent(
+    const laterAppend = appendProtectedReplayEvent(
       runtime.store,
       'horizon-project',
       'after-horizon',
       1,
+    )
+    const laterAppendWaitedForReplay = await waitForBlockedDatabaseQuery(
+      'pg_advisory_xact_lock_shared',
     )
     releaseFirstProjection.resolve()
 
@@ -278,9 +284,86 @@ describe('projectionReplay', () => {
       { projectionName: 'horizon-first', processedEvents: 1, lastGlobalPosition: 1 },
       { projectionName: 'horizon-second', processedEvents: 1, lastGlobalPosition: 1 },
     ])
+    await expect(laterAppend).resolves.toBeUndefined()
+    expect(laterAppendWaitedForReplay).toBe(true)
     expect(firstSeen).toEqual(['before-horizon'])
     expect(secondSeen).toEqual(['before-horizon'])
   })
+
+  it('waits for an uncommitted lower position before capturing one horizon for every projection', async () => {
+    const appendInserted = deferred()
+    const releaseAppend = deferred()
+    const pausingStore = new EventStore({
+      contentProtector: new PausingAfterInsertContentProtector(
+        appendInserted,
+        releaseAppend,
+      ),
+    })
+    const lowerAppend = appendReplayEvent(
+      pausingStore,
+      'gap-lower-project',
+      'gap-lower-event',
+    )
+    await appendInserted.promise
+    await appendReplayEvent(
+      new EventStore(),
+      'gap-higher-project',
+      'gap-higher-event',
+    )
+
+    const firstSeen: string[] = []
+    const secondSeen: string[] = []
+    const projections = new ProjectionRegistry()
+    projections.register(memoryProjection('gap-first', firstSeen))
+    projections.register(memoryProjection('gap-second', secondSeen))
+    const replay = new ProjectionReplay(projections, new EventStore()).replayAll({ batchSize: 1 })
+
+    const replayWaitedForAppend = await waitForBlockedDatabaseQuery('pg_advisory_xact_lock(')
+    releaseAppend.resolve()
+    const [appendOutcome, replayOutcome] = await Promise.allSettled([lowerAppend, replay])
+
+    expect(replayWaitedForAppend).toBe(true)
+    expect(appendOutcome.status).toBe('fulfilled')
+    expect(replayOutcome).toEqual({
+      status: 'fulfilled',
+      value: [
+        { projectionName: 'gap-first', processedEvents: 2, lastGlobalPosition: 2 },
+        { projectionName: 'gap-second', processedEvents: 2, lastGlobalPosition: 2 },
+      ],
+    })
+    expect(firstSeen).toEqual(['gap-lower-event', 'gap-higher-event'])
+    expect(secondSeen).toEqual(firstSeen)
+    await expect(readCheckpoints(['gap-first', 'gap-second'])).resolves.toEqual([
+      { projectionName: 'gap-first', lastGlobalPosition: 2, status: 'idle' },
+      { projectionName: 'gap-second', lastGlobalPosition: 2, status: 'idle' },
+    ])
+  }, 10_000)
+
+  it('takes the global append lock before a deletion key lock so replay cannot deadlock', async () => {
+    const prepareEntered = deferred()
+    const releasePrepare = deferred()
+    const runtime = protectedReplayRuntime({ prepareEntered, releasePrepare })
+    await appendProtectedReplayProject(runtime.store, 'ordered-project', 'ordered-event')
+
+    runtime.protector.pauseNextPrepare()
+    const deletion = deleteProtectedReplayProject(
+      runtime.store,
+      'ordered-project',
+      'ordered-event',
+    )
+    await prepareEntered.promise
+    const replay = new ProjectionReplay(runtime.projections, runtime.store)
+      .replayAll({ batchSize: 1 })
+    const replayWaitedForAppend = await waitForBlockedDatabaseQuery('pg_advisory_xact_lock(')
+
+    releasePrepare.resolve()
+    const [deletionOutcome, replayOutcome] = await Promise.allSettled([deletion, replay])
+
+    expect(replayWaitedForAppend).toBe(true)
+    expect(deletionOutcome.status).toBe('fulfilled')
+    expect(replayOutcome.status).toBe('fulfilled')
+    expect(await readProject('ordered-project')).toBeUndefined()
+  }, 10_000)
 
   it('upcasts stored events before sending them to a replay projector', async () => {
     const events = new EventRegistry()
@@ -432,7 +515,23 @@ async function appendEvents(): Promise<void> {
   await new EventStore().withTransaction(session => session.appendBatch(batch))
 }
 
-function protectedReplayRuntime() {
+interface ProtectedReplayRuntime<TProtector extends ProjectEventingContentProtector> {
+  events: EventRegistry
+  keys: ProjectDataKeyStore
+  protector: TProtector
+  store: EventStore
+  projections: ProjectionRegistry
+}
+
+function protectedReplayRuntime(): ProtectedReplayRuntime<ProjectEventingContentProtector>
+function protectedReplayRuntime(pause: {
+  prepareEntered: Deferred
+  releasePrepare: Deferred
+}): ProtectedReplayRuntime<PausingPrepareContentProtector>
+function protectedReplayRuntime(pause?: {
+  prepareEntered: Deferred
+  releasePrepare: Deferred
+}): ProtectedReplayRuntime<ProjectEventingContentProtector> {
   const events = new EventRegistry()
   events.register({
     eventType: 'KernelReplayRecorded',
@@ -449,14 +548,25 @@ function protectedReplayRuntime() {
     validate: payload => payload as Record<string, unknown>,
   })
   const keys = new ProjectDataKeyStore(Buffer.alloc(32, 37))
-  const protector = new ProjectEventingContentProtector(
-    events,
-    keys,
-    {
-      projectCreatedEventType: 'KernelReplayRecorded',
-      projectDeletedEventType: PROJECT_DELETED,
-    },
-  )
+  const protector = pause
+    ? new PausingPrepareContentProtector(
+        events,
+        keys,
+        {
+          projectCreatedEventType: 'KernelReplayRecorded',
+          projectDeletedEventType: PROJECT_DELETED,
+        },
+        pause.prepareEntered,
+        pause.releasePrepare,
+      )
+    : new ProjectEventingContentProtector(
+        events,
+        keys,
+        {
+          projectCreatedEventType: 'KernelReplayRecorded',
+          projectDeletedEventType: PROJECT_DELETED,
+        },
+      )
   const protectedStore = new EventStore({
     contentProtector: protector,
     projectDeletedEventType: PROJECT_DELETED,
@@ -464,9 +574,84 @@ function protectedReplayRuntime() {
   return {
     events,
     keys,
+    protector,
     store: protectedStore,
     projections: registryWith(replayDefinition(), events),
   }
+}
+
+class PausingAfterInsertContentProtector extends NoopEventingContentProtector {
+  private paused = false
+
+  constructor(
+    private readonly appendInserted: Deferred,
+    private readonly releaseAppend: Deferred,
+  ) {
+    super()
+  }
+
+  override async unprotectEvents(
+    executor: Parameters<NoopEventingContentProtector['unprotectEvents']>[0],
+    events: Parameters<NoopEventingContentProtector['unprotectEvents']>[1],
+  ) {
+    if (!this.paused && events.some(event => event.globalPosition > 0)) {
+      this.paused = true
+      this.appendInserted.resolve()
+      await this.releaseAppend.promise
+    }
+    return super.unprotectEvents(executor, events)
+  }
+}
+
+class PausingPrepareContentProtector extends ProjectEventingContentProtector {
+  private shouldPause = false
+
+  constructor(
+    events: ConstructorParameters<typeof ProjectEventingContentProtector>[0],
+    keys: ConstructorParameters<typeof ProjectEventingContentProtector>[1],
+    lifecycleEvents: ConstructorParameters<typeof ProjectEventingContentProtector>[2],
+    private readonly prepareEntered: Deferred,
+    private readonly releasePrepare: Deferred,
+  ) {
+    super(events, keys, lifecycleEvents)
+  }
+
+  pauseNextPrepare(): void {
+    this.shouldPause = true
+  }
+
+  override async prepareBatch(
+    ...args: Parameters<ProjectEventingContentProtector['prepareBatch']>
+  ): Promise<void> {
+    if (this.shouldPause) {
+      this.shouldPause = false
+      this.prepareEntered.resolve()
+      await this.releasePrepare.promise
+    }
+    await super.prepareBatch(...args)
+  }
+}
+
+async function appendReplayEvent(
+  store: EventStore,
+  projectId: string,
+  eventId: string,
+): Promise<void> {
+  await store.withTransaction(async (session) => {
+    await session.appendBatch({
+      commandId: `command-${eventId}`,
+      correlationId: `correlation-${eventId}`,
+      streams: [{
+        stream: {
+          aggregateType: 'KernelReplayTest',
+          aggregateId: projectId,
+          projectId,
+        },
+        expectedVersion: 0,
+        events: [pending(eventId)],
+      }],
+    })
+  })
 }
 
 async function appendProtectedReplayProject(
@@ -582,7 +767,12 @@ async function waitForBlockedDatabaseQuery(fragment: string): Promise<boolean> {
   return false
 }
 
-function deferred() {
+interface Deferred {
+  promise: Promise<void>
+  resolve: () => void
+}
+
+function deferred(): Deferred {
   let resolve!: () => void
   const promise = new Promise<void>((resolvePromise) => {
     resolve = resolvePromise
@@ -672,4 +862,15 @@ async function readCheckpoint() {
     .where(eq(projectionCheckpoints.projectionName, 'kernel-replay'))
     .limit(1)
   return checkpoint
+}
+
+async function readCheckpoints(projectionNames: string[]) {
+  return db.select({
+    projectionName: projectionCheckpoints.projectionName,
+    lastGlobalPosition: projectionCheckpoints.lastGlobalPosition,
+    status: projectionCheckpoints.status,
+  })
+    .from(projectionCheckpoints)
+    .where(inArray(projectionCheckpoints.projectionName, projectionNames))
+    .orderBy(asc(projectionCheckpoints.projectionName))
 }

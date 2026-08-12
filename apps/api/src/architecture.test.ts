@@ -186,6 +186,25 @@ describe('api architecture boundaries', () => {
     )
   })
 
+  it('routes every production domain event insert through EventStore appendBatch', () => {
+    const eventStorePath = join(sourceRoot, 'eventing/event-store.ts')
+    const directWriters = sourceFiles(sourceRoot)
+      .filter(file => !file.endsWith('.test.ts'))
+      .filter(file => !file.includes('/db/schema/'))
+      .filter(file => file !== eventStorePath)
+      .filter((file) => {
+        const source = readFileSync(file, 'utf8')
+        return /\.insert\(domainEvents\)/.test(source)
+          || /insert\s+into\s+["']?domain_events\b/i.test(source)
+      })
+      .map(file => relative(sourceRoot, file))
+
+    expect(directWriters).toEqual([])
+    const eventStoreSource = readFileSync(eventStorePath, 'utf8')
+    expect(eventStoreSource.match(/\.insert\(domainEvents\)/g)).toHaveLength(1)
+    expect(eventStoreSource).not.toMatch(/insert\s+into\s+["']?domain_events\b/i)
+  })
+
   it('restricts event-sourced projection writes to projectors', () => {
     const projectionTables = [
       'novelProjects',

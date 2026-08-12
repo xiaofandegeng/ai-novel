@@ -20,6 +20,10 @@ import {
 } from '../db/schema'
 import { NoopEventingContentProtector } from './content-protector'
 import { DuplicateEventError, EventConcurrencyError } from './errors'
+import {
+  acquireEventStoreAppendLock,
+  acquireEventStoreReplayLock,
+} from './event-store-advisory-lock'
 
 export type EventingTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -149,6 +153,7 @@ function createSession(
       return contentProtector.unprotectEvents(transaction, rows.map(toStoredEvent))
     },
     async prepareReplay() {
+      await acquireEventStoreReplayLock(transaction)
       const [position] = await transaction.select({ horizon: max(domainEvents.globalPosition) })
         .from(domainEvents)
       const horizon = position?.horizon ?? 0
@@ -201,6 +206,7 @@ function createSession(
       }
     },
     async appendBatch(batch) {
+      await acquireEventStoreAppendLock(transaction)
       const streams = normalizeStreams(batch)
       if (streams.length === 0)
         return []
