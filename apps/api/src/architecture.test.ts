@@ -5,7 +5,10 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { analyzeEventingWrites } from '../test/architecture/domain-event-insert-analysis'
+import {
+  analyzeEventingWrites,
+  productionEventingInspectFiles,
+} from '../test/architecture/domain-event-insert-analysis'
 import { domainEventRegistry } from './eventing-runtime'
 import { EVENT_PAYLOAD_PROTECTION_CATALOG } from './eventing/event-protection-catalog'
 
@@ -68,14 +71,14 @@ let eventingWriteAnalysis: EventingWriteAnalysis | undefined
 function productionEventingWriteAnalysis(): EventingWriteAnalysis {
   if (eventingWriteAnalysis)
     return eventingWriteAnalysis
-  const files = sourceFiles(sourceRoot).filter(file => !file.endsWith('.test.ts'))
+  const files = sourceFiles(sourceRoot)
   const relativeFiles = files.map(file => relative(sourceRoot, file))
   eventingWriteAnalysis = analyzeEventingWrites({
     files: Object.fromEntries(files.map((file, index) => [
       relativeFiles[index]!,
       readFileSync(file, 'utf8'),
     ])),
-    inspectFiles: relativeFiles.filter(file => !file.includes('/db/schema/')),
+    inspectFiles: productionEventingInspectFiles(relativeFiles),
   })
   return eventingWriteAnalysis
 }

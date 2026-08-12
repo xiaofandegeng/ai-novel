@@ -1,4 +1,5 @@
 import { dirname, resolve } from 'node:path'
+import process from 'node:process'
 import ts from 'typescript'
 
 export interface DomainEventInsertSite {
@@ -24,6 +25,18 @@ export interface EventingWriteAnalysisInput {
 
 const virtualRoot = '/__eventing_write_analysis__'
 
+export function productionEventingInspectFiles(files: readonly string[]): string[] {
+  return files.filter((file) => {
+    const normalized = file.replaceAll('\\', '/')
+    return !normalized.includes('/db/schema/')
+      && !normalized.startsWith('db/schema/')
+      && !normalized.includes('/node_modules/')
+      && !normalized.startsWith('node_modules/')
+      && !/(?:^|\/)(?:test|tests|__tests__)\//.test(normalized)
+      && !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(normalized)
+  })
+}
+
 export function analyzeEventingWrites(
   input: EventingWriteAnalysisInput,
 ): EventingWriteAnalysis {
@@ -38,6 +51,7 @@ export function analyzeEventingWrites(
   const checker = program.getTypeChecker()
   const domainEventSymbols = collectDomainEventSymbols(program, checker)
   const appendBatchSymbols = collectAppendBatchSymbols(program, checker)
+  const drizzleSqlSymbols = collectDrizzleSqlSymbols(program, checker)
   const domainEventInserts: DomainEventInsertSite[] = []
   const appendBatchCalls: AppendBatchCallSite[] = []
 
@@ -64,13 +78,14 @@ export function analyzeEventingWrites(
           )) {
           addInsert(node, 'drizzle-insert')
         }
-        if (isRawSqlInsertCall(node))
+        if (isRawSqlInsertCall(node, drizzleSqlSymbols, checker))
           addInsert(node, 'sql-literal-insert')
         if (expressionResolvesTo(node.expression, appendBatchSymbols, checker)) {
           appendBatchCalls.push({ file, line: lineOf(sourceFile, node) })
         }
       }
-      if (ts.isTaggedTemplateExpression(node)) {
+      if (ts.isTaggedTemplateExpression(node)
+        && expressionResolvesTo(node.tag, drizzleSqlSymbols, checker)) {
         const kind = sqlTemplateInsertKind(node.template, domainEventSymbols, checker)
         if (kind)
           addInsert(node, kind)
@@ -130,6 +145,22 @@ function createProgram(files: ReadonlyMap<string, string>): ts.Program {
     },
     readFile: fileName => files.get(fileName) ?? defaultHost.readFile(fileName),
     realpath: fileName => fileName,
+    resolveModuleNames: (moduleNames, containingFile) => moduleNames.map((moduleName) => {
+      const virtualResolution = ts.resolveModuleName(
+        moduleName,
+        containingFile,
+        options,
+        host,
+      ).resolvedModule
+      if (virtualResolution || moduleName !== 'drizzle-orm')
+        return virtualResolution
+      return ts.resolveModuleName(
+        moduleName,
+        resolve(process.cwd(), 'src/__eventing-write-analysis__.ts'),
+        options,
+        defaultHost,
+      ).resolvedModule
+    }),
     writeFile: () => {},
   }
 
@@ -154,6 +185,43 @@ function collectDomainEventSymbols(
       if (symbol)
         symbols.add(resolveAlias(symbol, checker))
     })
+  }
+  return symbols
+}
+
+function collectDrizzleSqlSymbols(
+  program: ts.Program,
+  checker: ts.TypeChecker,
+): ReadonlySet<ts.Symbol> {
+  const symbols = new Set<ts.Symbol>()
+  for (const sourceFile of program.getSourceFiles()) {
+    for (const statement of sourceFile.statements) {
+      if ((!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement))
+        || !statement.moduleSpecifier
+        || !ts.isStringLiteral(statement.moduleSpecifier)
+        || statement.moduleSpecifier.text !== 'drizzle-orm') {
+        continue
+      }
+      const moduleSymbol = checker.getSymbolAtLocation(statement.moduleSpecifier)
+      if (moduleSymbol) {
+        const sqlExport = checker.getExportsOfModule(moduleSymbol)
+          .find(symbol => symbol.name === 'sql')
+        if (sqlExport)
+          symbols.add(resolveAlias(sqlExport, checker))
+      }
+      const bindings = ts.isImportDeclaration(statement)
+        ? statement.importClause?.namedBindings
+        : statement.exportClause
+      if (!bindings || (!ts.isNamedImports(bindings) && !ts.isNamedExports(bindings)))
+        continue
+      for (const binding of bindings.elements) {
+        if ((binding.propertyName ?? binding.name).text !== 'sql')
+          continue
+        const symbol = checker.getSymbolAtLocation(binding.name)
+        if (symbol)
+          symbols.add(resolveAlias(symbol, checker))
+      }
+    }
   }
   return symbols
 }
@@ -274,9 +342,18 @@ function resolveAlias(symbol: ts.Symbol, checker: ts.TypeChecker): ts.Symbol {
   return resolved
 }
 
-function isRawSqlInsertCall(node: ts.CallExpression): boolean {
+function isRawSqlInsertCall(
+  node: ts.CallExpression,
+  drizzleSqlSymbols: ReadonlySet<ts.Symbol>,
+  checker: ts.TypeChecker,
+): boolean {
   if (accessName(node.expression) !== 'unsafe' || !node.arguments[0])
     return false
+  const sqlExpression = accessTarget(node.expression)
+  if (!sqlExpression
+    || !expressionResolvesTo(sqlExpression, drizzleSqlSymbols, checker)) {
+    return false
+  }
   const statement = literalText(node.arguments[0])
   return statement !== undefined && containsDomainEventsInsert(statement)
 }
@@ -299,7 +376,7 @@ function sqlTemplateInsertKind(
 
   let precedingText = template.head.text
   for (const span of template.templateSpans) {
-    if (/\binsert\s+into\s*$/i.test(precedingText)
+    if (/\binsert\s+into\s+(?:only\s+)?$/i.test(precedingText)
       && expressionResolvesTo(span.expression, domainEventSymbols, checker)) {
       return 'sql-template-insert'
     }
@@ -312,7 +389,7 @@ function containsDomainEventsInsert(value: string): boolean {
   const identifier = String.raw`(?:"(?:[^"]|"")*"|[a-z_][\w$]*)`
   const domainEvents = String.raw`(?:"domain_events"|domain_events)`
   return new RegExp(
-    String.raw`\binsert\s+into\s+(?:${identifier}\s*\.\s*)?${domainEvents}(?=\s|\(|$)`,
+    String.raw`\binsert\s+into\s+(?:only\s+)?(?:${identifier}\s*\.\s*)?${domainEvents}(?=\s|\(|$)`,
     'i',
   ).test(value)
 }

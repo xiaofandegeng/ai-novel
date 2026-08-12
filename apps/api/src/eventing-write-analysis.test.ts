@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeEventingWrites } from '../test/architecture/domain-event-insert-analysis'
+import {
+  analyzeEventingWrites,
+  productionEventingInspectFiles,
+} from '../test/architecture/domain-event-insert-analysis'
 
 const semanticRoots = {
+  'node_modules/drizzle-orm/index.d.ts': `
+    export interface SQLTag {
+      (strings: TemplateStringsArray, ...values: unknown[]): unknown
+      unsafe(statement: string): unknown
+    }
+    export declare const sql: SQLTag
+  `,
   'db/schema/eventing.ts': `
     export const domainEvents = { tableName: 'domain_events' }
   `,
@@ -92,10 +102,7 @@ describe('eventing write architecture analysis', () => {
     'sql`insert into public."domain_events" ("event_id") values (1)`',
   ])('detects raw SQL domain event inserts: %s', (statement) => {
     const analysis = analyzeProbe(`
-      declare const sql: {
-        unsafe: (statement: string) => unknown
-        (strings: TemplateStringsArray, ...values: unknown[]): unknown
-      }
+      import { sql } from 'drizzle-orm'
       ${statement}
     `)
 
@@ -106,14 +113,85 @@ describe('eventing write architecture analysis', () => {
 
   it('follows the domain event table through SQL template interpolation', () => {
     const analysis = analyzeProbe(`
+      import { sql } from 'drizzle-orm'
       import { domainEvents as eventTable } from './db/schema'
-      declare const sql: (strings: TemplateStringsArray, ...values: unknown[]) => unknown
       declare const event: unknown
       sql\`insert into \${eventTable} values (\${event})\`
     `)
 
     expect(analysis.domainEventInserts).toMatchObject([
       { file: 'probe.ts', kind: 'sql-template-insert' },
+    ])
+  })
+
+  it('detects ONLY domain event targets through canonical Drizzle SQL APIs', () => {
+    const analysis = analyzeProbe(`
+      import { sql } from 'drizzle-orm'
+      import { domainEvents } from './db/schema'
+      declare const event: unknown
+      sql\`insert into only \${domainEvents} values (\${event})\`
+      sql.unsafe('INSERT INTO ONLY public."domain_events" (event_id) values (1)')
+    `)
+
+    expect(analysis.domainEventInserts).toMatchObject([
+      { file: 'probe.ts', kind: 'sql-template-insert' },
+      { file: 'probe.ts', kind: 'sql-literal-insert' },
+    ])
+  })
+
+  it('follows a re-exported and local alias of the canonical Drizzle SQL API', () => {
+    const analysis = analyzeProbe(`
+      import { drizzleSql } from './sql-barrel'
+      const query = drizzleSql
+      query.unsafe('insert into domain_events (event_id) values (1)')
+    `, {
+      'sql-barrel.ts': `
+        export { sql as drizzleSql } from 'drizzle-orm'
+      `,
+    })
+
+    expect(analysis.domainEventInserts).toMatchObject([
+      { file: 'probe.ts', kind: 'sql-literal-insert' },
+    ])
+  })
+
+  it('does not treat unrelated unsafe methods or tags as Drizzle SQL', () => {
+    const analysis = analyzeProbe(`
+      declare const logger: {
+        unsafe(statement: string): unknown
+        (strings: TemplateStringsArray, ...values: unknown[]): unknown
+      }
+      logger.unsafe('insert into domain_events (event_id) values (1)')
+      logger\`insert into domain_events (event_id) values (1)\`
+    `)
+
+    expect(analysis.domainEventInserts).toEqual([])
+  })
+
+  it('excludes test helpers from inspection while retaining them in the semantic graph', () => {
+    const files = {
+      ...semanticRoots,
+      'test/schema-barrel.ts': `
+        export { domainEvents as eventTable } from '../db/schema/eventing'
+      `,
+      'test/raw-writer.ts': `
+        import { sql } from 'drizzle-orm'
+        sql.unsafe('insert into domain_events (event_id) values (1)')
+      `,
+      'probe.ts': `
+        import { eventTable } from './test/schema-barrel'
+        declare const tx: { insert: (table: unknown) => unknown }
+        tx.insert(eventTable)
+      `,
+    }
+
+    const analysis = analyzeEventingWrites({
+      files,
+      inspectFiles: productionEventingInspectFiles(Object.keys(files)),
+    })
+
+    expect(analysis.domainEventInserts).toMatchObject([
+      { file: 'probe.ts', kind: 'drizzle-insert' },
     ])
   })
 
