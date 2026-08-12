@@ -154,7 +154,7 @@ export class ProjectEventingContentProtector implements EventingContentProtector
     receipt: CommandReceiptRecord,
   ): Promise<JsonObject> {
     const result = receiptResult(receipt)
-    if (!receipt.projectId || !isEncryptedEnvelope(result))
+    if (!receipt.projectId)
       return result
 
     const dataKey = await this.keys.resolve(executor, receipt.projectId)
@@ -179,7 +179,7 @@ export class ProjectEventingContentProtector implements EventingContentProtector
 }
 
 function eventAad(event: StoredEvent, projectId: string): string {
-  return [
+  return canonicalAad('event-payload', [
     event.eventId,
     event.aggregateType,
     event.aggregateId,
@@ -187,18 +187,17 @@ function eventAad(event: StoredEvent, projectId: string): string {
     projectId,
     event.eventType,
     event.schemaVersion,
-  ].join('|')
+  ])
 }
 
 function snapshotAad(snapshot: AggregateSnapshot, projectId: string): string {
-  return [
-    'snapshot',
+  return canonicalAad('aggregate-snapshot', [
     snapshot.aggregateType,
     snapshot.aggregateId,
     snapshot.aggregateVersion,
     projectId,
     snapshot.schemaVersion,
-  ].join('|')
+  ])
 }
 
 function receiptAad(
@@ -208,14 +207,20 @@ function receiptAad(
   >,
   projectId: string,
 ): string {
-  return [
-    'receipt',
+  return canonicalAad('command-receipt-result', [
     receipt.commandId,
     receipt.commandType,
     receipt.aggregateType,
     receipt.aggregateId,
     projectId,
-  ].join('|')
+  ])
+}
+
+function canonicalAad(
+  namespace: 'event-payload' | 'aggregate-snapshot' | 'command-receipt-result',
+  identity: Array<string | number>,
+): string {
+  return JSON.stringify(['eventing-content-v1', namespace, ...identity])
 }
 
 function requiredProjectId(projectId: string | undefined, subject: string): string {
@@ -238,13 +243,4 @@ function receiptResult(receipt: CommandReceiptRecord): JsonObject {
 
 function isJsonObject(value: JsonObject | null): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function isEncryptedEnvelope(value: JsonObject): value is EncryptedJsonEnvelope {
-  return value.encrypted === true
-    && value.algorithm === 'aes-256-gcm'
-    && value.keyVersion === 1
-    && typeof value.iv === 'string'
-    && typeof value.ciphertext === 'string'
-    && typeof value.authTag === 'string'
 }

@@ -64,6 +64,25 @@ describe('project eventing content protector', () => {
     })
   })
 
+  it('uses an injective event AAD encoding when identifiers contain delimiters', async () => {
+    await store.withTransaction(async (session) => {
+      const event = storedEvent({
+        eventId: 'event|Project',
+        aggregateType: 'one',
+        eventType: PROJECT_CREATED,
+        payload: { chapter: '分隔符不能改变身份边界' },
+      })
+      const protectedPayload = await protector.protectEvent(session.transaction, event)
+
+      await expect(protector.unprotectEvent(session.transaction, {
+        ...event,
+        eventId: 'event',
+        aggregateType: 'Project|one',
+        payload: protectedPayload,
+      })).rejects.toThrow()
+    })
+  })
+
   it('does not create a project key for a protected event other than project creation', async () => {
     await store.withTransaction(async (session) => {
       const event = storedEvent({
@@ -123,6 +142,39 @@ describe('project eventing content protector', () => {
     })
   })
 
+  it('authenticates snapshots against every aggregate identity, version, and project header', async () => {
+    await store.withTransaction(async (session) => {
+      await protector.protectEvent(session.transaction, storedEvent({
+        eventType: PROJECT_CREATED,
+        payload: { title: '雾港' },
+      }))
+      await protector.protectEvent(session.transaction, storedEvent({
+        eventId: 'event-project-b',
+        aggregateId: 'project-b',
+        projectId: 'project-b',
+        eventType: PROJECT_CREATED,
+        payload: { title: '山城' },
+      }))
+      const snapshot = aggregateSnapshot({ state: { draft: '快照内容' } })
+      const protectedState = await protector.protectSnapshot(session.transaction, snapshot)
+      const mutations: Array<Partial<AggregateSnapshot>> = [
+        { aggregateType: 'Project|Moved' },
+        { aggregateId: 'project-moved' },
+        { aggregateVersion: 2 },
+        { schemaVersion: 2 },
+        { projectId: 'project-b' },
+      ]
+
+      for (const mutation of mutations) {
+        await expect(protector.unprotectSnapshot(session.transaction, {
+          ...snapshot,
+          ...mutation,
+          state: protectedState,
+        })).rejects.toThrow()
+      }
+    })
+  })
+
   it('leaves non-project snapshots and receipt results unchanged', async () => {
     const snapshot = aggregateSnapshot({ projectId: undefined, state: { status: 'global' } })
     const command = commandEnvelope({ projectId: undefined })
@@ -139,13 +191,15 @@ describe('project eventing content protector', () => {
     })
   })
 
-  it('leaves an explicitly unprotected project receipt result unchanged', async () => {
-    const result = { id: 'project-a', deleted: true }
-
+  it('rejects plaintext substitution for a protected project receipt', async () => {
     await store.withTransaction(async (session) => {
+      await protector.protectEvent(session.transaction, storedEvent({
+        eventType: PROJECT_CREATED,
+        payload: { title: '雾港' },
+      }))
       await expect(protector.unprotectReceiptResult(session.transaction, receiptRecord({
-        result,
-      }))).resolves.toBe(result)
+        result: { title: '被替换的明文回执' },
+      }))).rejects.toThrow()
     })
   })
 
