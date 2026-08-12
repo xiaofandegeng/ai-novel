@@ -260,6 +260,13 @@
       "when": 1786505389760,
       "tag": "0036_light_lila_cheney",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786505800866,
+      "tag": "0037_pale_frog_thor",
+      "breakpoints": true
     }
   ]
 }

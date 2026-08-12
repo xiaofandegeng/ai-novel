@@ -7,6 +7,7 @@ import {
 } from './eventing'
 import { registerProjectSettingsEventing } from './modules/ai/project-settings.eventing'
 import { registerPromptSettingsEventing } from './modules/ai/prompt-settings.eventing'
+import { registerAutonomousRunEventing } from './modules/automation/autonomous-run.eventing'
 import { registerWritingJobEventing } from './modules/automation/writing-job.eventing'
 import { registerCharacterEventing } from './modules/character/character.eventing'
 import { registerRelationshipEventing } from './modules/character/relationship.eventing'
@@ -91,6 +92,12 @@ registerNarrativeKnowledgeEventing({
   projections: projectionRegistry,
 })
 registerWritingJobEventing({
+  aggregates: aggregateRepository,
+  commands: commandBus,
+  events: domainEventRegistry,
+  projections: projectionRegistry,
+})
+registerAutonomousRunEventing({
   aggregates: aggregateRepository,
   commands: commandBus,
   events: domainEventRegistry,

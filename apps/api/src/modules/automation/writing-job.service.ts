@@ -1,10 +1,11 @@
 import type { AutonomousStrategy, CreateWritingJobInput, WritingJob, WritingJobStepType } from '@ai-novel/shared'
 import type { ChapterSnapshot, SceneSnapshot } from '../story/chapter.eventing'
 import type { WritingJobSnapshot } from './writing-job.eventing'
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
-import { autonomousRunExceptions, autonomousRunJobs, autonomousWritingRuns, chapters, chapterScenes, projectHealthReports, writingJobs, writingJobSteps } from '../../db/schema'
+import { autonomousRunJobs, autonomousWritingRuns, chapters, chapterScenes, projectHealthReports, writingJobs, writingJobSteps } from '../../db/schema'
 import { DomainCommandError } from '../../eventing'
+import { commandBus } from '../../eventing-runtime'
 import { assertOptionalChapterBelongsToProject } from '../../shared/ownership'
 import { errorMessage, generateId, now } from '../../shared/utils'
 import { renderAIContext } from '../ai/ai-context-renderer'
@@ -23,6 +24,7 @@ import {
 import { createSnapshot } from '../story/version.service'
 import { decideNextAction } from './auto-decision.service'
 import { attemptAutoRepair, attemptAutoRepairPlan } from './auto-repair.service'
+import { changeAutonomousRun, changeAutonomousRunJob, recordAutonomousException } from './autonomous-writing.service'
 import { applyChangeSet as applyChangeSetSvc, approveChangeSet as approveChangeSetSvc, createChapterChangeSet, rejectChangeSet as rejectChangeSetSvc } from './chapter-change-set.service'
 import { extractChapterChanges, runChapterPostprocess, runScenePostprocess } from './chapter-postprocess.service'
 import { applyAutoSuggestions, getSuggestions } from './postprocess-suggestion.service'
@@ -51,6 +53,21 @@ type WritingJobStatus = NonNullable<typeof writingJobs.$inferInsert['status']>
 type TerminalWritingJobStatus = 'completed' | 'failed' | 'isolated'
 type JobStepUpdate = Partial<typeof writingJobSteps.$inferInsert>
 type SceneBeatType = NonNullable<SceneSnapshot['beatType']>
+
+async function changeRunJobForWritingJob(
+  projectId: string,
+  runId: string,
+  writingJobId: string,
+  fields: Parameters<typeof changeAutonomousRunJob>[3],
+  commandId?: string,
+): Promise<void> {
+  const [runJob] = await db.select({ id: autonomousRunJobs.id })
+    .from(autonomousRunJobs)
+    .where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, writingJobId)))
+    .limit(1)
+  if (runJob)
+    await changeAutonomousRunJob(projectId, runId, runJob.id, fields, commandId)
+}
 
 interface GeneratedScenePlan {
   sceneNumber?: number
@@ -1520,12 +1537,11 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
       if (decision.action === 'isolate' || decision.action === 'skip') {
         await updateJobStatus(jobId, 'isolated', decision.reason)
         if (job.autonomousRunId) {
-          await db.update(autonomousRunJobs).set({
+          await changeRunJobForWritingJob(projectId, job.autonomousRunId, jobId, {
             status: 'isolated',
             isolationReason: decision.reason,
             isolationReport: decision.report,
-            updatedAt: now(),
-          }).where(and(eq(autonomousRunJobs.runId, job.autonomousRunId), eq(autonomousRunJobs.writingJobId, jobId)))
+          })
         }
         return
       }
@@ -1600,12 +1616,11 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
         await updateJobStatus(jobId, 'isolated', decision.reason)
 
         if (job.autonomousRunId) {
-          await db.update(autonomousRunJobs).set({
+          await changeRunJobForWritingJob(projectId, job.autonomousRunId, jobId, {
             status: 'isolated',
             isolationReason: decision.reason,
             isolationReport: decision.report,
-            updatedAt: now(),
-          }).where(and(eq(autonomousRunJobs.runId, job.autonomousRunId), eq(autonomousRunJobs.writingJobId, jobId)))
+          })
         }
         return
       }
@@ -1613,34 +1628,28 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
       if (decision.action === 'stop_run') {
         await updateJobStatus(jobId, 'failed', decision.reason)
         if (job.autonomousRunId) {
-          // Record critical exception
-          await db.insert(autonomousRunExceptions).values({
-            id: generateId(),
-            runId: job.autonomousRunId,
-            projectId,
-            chapterId: job.currentChapterId,
-            writingJobId: jobId,
-            stepId: step.id,
-            exceptionType: 'ai_failed',
-            severity: 'critical',
-            title: 'Critical Error - Run Stopped',
-            description: decision.reason,
-            status: 'open',
-            createdAt: now(),
-            updatedAt: now(),
-          }).catch(err => console.error('Failed to record stop_run exception:', err))
-
-          await db
-            .update(autonomousRunJobs)
-            .set({ status: 'failed', updatedAt: now() })
-            .where(and(eq(autonomousRunJobs.runId, job.autonomousRunId), eq(autonomousRunJobs.writingJobId, jobId)))
-
-          await db.update(autonomousWritingRuns).set({
-            status: 'failed',
-            lastError: decision.reason,
-            failedChapterCount: sql`${autonomousWritingRuns.failedChapterCount} + 1`,
-            updatedAt: now(),
-          }).where(eq(autonomousWritingRuns.id, job.autonomousRunId))
+          const runId = job.autonomousRunId
+          await commandBus.runAtomically(async () => {
+            await recordAutonomousException(projectId, runId, {
+              chapterId: job.currentChapterId,
+              writingJobId: jobId,
+              stepId: step.id,
+              exceptionType: 'ai_failed',
+              severity: 'critical',
+              title: 'Critical Error - Run Stopped',
+              description: decision.reason,
+              status: 'open',
+            }, `StopRun:${runId}:step:${step.id}:exception`)
+            await changeRunJobForWritingJob(projectId, runId, jobId, { status: 'failed' }, `StopRun:${runId}:job:${jobId}`)
+            const [latestRun] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, runId)).limit(1)
+            if (latestRun) {
+              await changeAutonomousRun(projectId, runId, {
+                status: 'failed',
+                lastError: decision.reason,
+                failedChapterCount: latestRun.failedChapterCount + 1,
+              }, `StopRun:${runId}:failed`)
+            }
+          })
         }
         return
       }

@@ -1,6 +1,6 @@
 import { integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
-import { chapters, chapterScenes } from './chapter'
+import { chapters } from './chapter'
 import { novelProjects } from './project'
 
 export const writingJobs = pgTable('writing_jobs', {
@@ -100,9 +100,9 @@ export const autonomousRunJobs = pgTable('autonomous_run_jobs', {
   id: text('id').primaryKey(),
   runId: text('run_id').notNull().references(() => autonomousWritingRuns.id, { onDelete: 'cascade' }),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  writingJobId: text('writing_job_id').notNull().references(() => writingJobs.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
-  sceneId: text('scene_id').references(() => chapterScenes.id, { onDelete: 'set null' }),
+  writingJobId: text('writing_job_id').notNull(),
+  chapterId: text('chapter_id'),
+  sceneId: text('scene_id'),
   status: text('status').$type<'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'isolated'>().notNull().default('pending'),
   orderIndex: integer('order_index').notNull(),
   isolationReason: text('isolation_reason'),

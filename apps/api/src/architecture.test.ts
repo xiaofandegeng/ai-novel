@@ -112,6 +112,9 @@ describe('api architecture boundaries', () => {
       'authoringEvents',
       'writingJobs',
       'writingJobSteps',
+      'autonomousWritingRuns',
+      'autonomousRunJobs',
+      'autonomousRunExceptions',
     ]
     const applicationFiles = sourceFiles(sourceRoot)
       .filter(file => !file.endsWith('.test.ts'))

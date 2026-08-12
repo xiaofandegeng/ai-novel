@@ -1,4 +1,5 @@
 import type { AutonomousScopeType, AutonomousWritingRun, CreateAutonomousRunInput, WritingJobStepType } from '@ai-novel/shared'
+import type { AutonomousExceptionSnapshot, AutonomousRunJobSnapshot, AutonomousRunSnapshot } from './autonomous-run.eventing'
 import { and, asc, desc, eq, inArray, isNull, not, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import {
@@ -16,8 +17,19 @@ import {
   writingJobs,
   writingJobSteps,
 } from '../../db/schema'
+import { commandBus } from '../../eventing-runtime'
 import { errorMessage, generateId, now, timestampMs } from '../../shared/utils'
 import { getProjectHealthMetrics } from '../narrative/health-metrics.service'
+import { compactAutonomousRunPayload, dispatchAutonomousRunCommand } from './autonomous-run.commands'
+import {
+  ADD_AUTONOMOUS_RUN_JOB_COMMAND,
+
+  CHANGE_AUTONOMOUS_EXCEPTION_COMMAND,
+  CHANGE_AUTONOMOUS_RUN_COMMAND,
+  CHANGE_AUTONOMOUS_RUN_JOB_COMMAND,
+  OPEN_AUTONOMOUS_EXCEPTION_COMMAND,
+  PREPARE_AUTONOMOUS_RUN_COMMAND,
+} from './autonomous-run.eventing'
 import { dispatchWritingJobCommand } from './writing-job.commands'
 import {
   CHANGE_WRITING_JOB_COMMAND,
@@ -44,6 +56,55 @@ type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 type RunJobRow = typeof autonomousRunJobs.$inferSelect
 type ChapterRow = typeof chapters.$inferSelect
 type ExceptionType = typeof autonomousRunExceptions.$inferInsert['exceptionType']
+
+export async function changeAutonomousRun(
+  projectId: string,
+  runId: string,
+  fields: Partial<Pick<AutonomousRunSnapshot, 'status' | 'strategy' | 'targetChapterCount' | 'currentChapterId' | 'completedChapterCount' | 'failedChapterCount' | 'pausedReason' | 'lastError' | 'startedAt' | 'finishedAt'>>,
+  commandId?: string,
+) {
+  return dispatchAutonomousRunCommand<AutonomousRunSnapshot>(
+    CHANGE_AUTONOMOUS_RUN_COMMAND,
+    projectId,
+    runId,
+    compactAutonomousRunPayload(fields),
+    commandId ? { commandId, correlationId: runId, causationId: runId } : {},
+  )
+}
+
+const changeRun = changeAutonomousRun
+
+export async function changeAutonomousRunJob(
+  projectId: string,
+  runId: string,
+  runJobId: string,
+  fields: Partial<Pick<AutonomousRunJobSnapshot, 'status' | 'isolationReason' | 'isolationReport'>>,
+  commandId?: string,
+) {
+  return dispatchAutonomousRunCommand<AutonomousRunJobSnapshot>(
+    CHANGE_AUTONOMOUS_RUN_JOB_COMMAND,
+    projectId,
+    runId,
+    compactAutonomousRunPayload({ id: runJobId, ...fields }),
+    commandId ? { commandId, correlationId: runId, causationId: runId } : {},
+  )
+}
+
+async function changeException(
+  projectId: string,
+  runId: string,
+  exceptionId: string,
+  fields: Partial<Pick<AutonomousExceptionSnapshot, 'status' | 'autoResolutionStrategy' | 'resolution' | 'resolutionReport'>>,
+  commandId?: string,
+) {
+  return dispatchAutonomousRunCommand<AutonomousExceptionSnapshot>(
+    CHANGE_AUTONOMOUS_EXCEPTION_COMMAND,
+    projectId,
+    runId,
+    compactAutonomousRunPayload({ id: exceptionId, ...fields }),
+    commandId ? { commandId, correlationId: runId, causationId: exceptionId } : {},
+  )
+}
 
 async function attachStepSummaries(jobs: RunJobRow[]) {
   const writingJobIds = jobs.map(j => j.writingJobId).filter(Boolean) as string[]
@@ -150,7 +211,7 @@ export async function createAutonomousRun(
     targetWordsPerChapter,
   } = input
 
-  return await db.transaction(async (tx) => {
+  return await commandBus.runAtomically(async (tx) => {
     const activeRuns = await tx.select().from(autonomousWritingRuns).where(and(
       eq(autonomousWritingRuns.projectId, projectId),
       or(
@@ -171,11 +232,14 @@ export async function createAutonomousRun(
 
     for (const r of activeRuns) {
       if (r.status === 'idle' && !trulyActive.includes(r)) {
-        await tx.update(autonomousWritingRuns).set({ status: 'abandoned', updatedAt: now() }).where(eq(autonomousWritingRuns.id, r.id))
-        await tx.update(autonomousRunJobs).set({ status: 'skipped', updatedAt: now() }).where(and(
+        await changeRun(projectId, r.id, { status: 'abandoned', finishedAt: now() }, `CleanupStaleRun:${r.id}`)
+        const staleJobs = await tx.select().from(autonomousRunJobs).where(and(
           eq(autonomousRunJobs.runId, r.id),
           not(eq(autonomousRunJobs.status, 'completed')),
         ))
+        for (const staleJob of staleJobs) {
+          await changeAutonomousRunJob(projectId, r.id, staleJob.id, { status: 'skipped' }, `CleanupStaleRun:${r.id}:job:${staleJob.id}`)
+        }
       }
     }
 
@@ -185,23 +249,24 @@ export async function createAutonomousRun(
 
     const id = generateId()
 
-    const [run] = await tx.insert(autonomousWritingRuns).values({
-      id,
+    let run = await dispatchAutonomousRunCommand<AutonomousRunSnapshot>(
+      PREPARE_AUTONOMOUS_RUN_COMMAND,
       projectId,
-      status: 'idle',
-      strategy: strategy || 'balanced',
-      scopeType,
-      volumeId: volumeId || null,
-      startChapterId: startChapterId || null,
-      endChapterId: endChapterId || null,
-      targetChapterCount: targetChapterCount || null,
-      targetWordsPerChapter: targetWordsPerChapter || 3000,
-      createdAt: now(),
-      updatedAt: now(),
-    }).returning()
+      id,
+      compactAutonomousRunPayload({
+        strategy: strategy || 'balanced',
+        scopeType,
+        volumeId: volumeId || null,
+        startChapterId: startChapterId || null,
+        endChapterId: endChapterId || null,
+        targetChapterCount: targetChapterCount || null,
+        targetWordsPerChapter: targetWordsPerChapter || 3000,
+      }),
+      { commandId: `PrepareAutonomousRun:${id}`, correlationId: id },
+    )
 
     // Prepare initial chapter jobs based on scope
-    await prepareRunJobs(tx, projectId, run.id, scopeType, {
+    const preparedJobCount = await prepareRunJobs(tx, projectId, run.id, scopeType, {
       strategy: run.strategy,
       volumeId,
       startChapterId,
@@ -209,6 +274,9 @@ export async function createAutonomousRun(
       targetChapterCount,
       targetWordsPerChapter: run.targetWordsPerChapter,
     })
+    if (run.targetChapterCount !== preparedJobCount) {
+      run = await changeRun(projectId, id, { targetChapterCount: preparedJobCount }, `PrepareAutonomousRun:${id}:realized-count`)
+    }
 
     return run
   })
@@ -367,18 +435,26 @@ async function prepareRunJobs(
     )
 
     // Link to Autonomous Run
-    await tx.insert(autonomousRunJobs).values({
-      id: generateId(),
-      runId,
+    const runJobId = generateId()
+    await dispatchAutonomousRunCommand(
+      ADD_AUTONOMOUS_RUN_JOB_COMMAND,
       projectId,
-      writingJobId,
-      chapterId: ch.id,
-      orderIndex: i,
-      status: 'pending',
-      createdAt: now(),
-      updatedAt: now(),
-    })
+      runId,
+      compactAutonomousRunPayload({
+        id: runJobId,
+        writingJobId,
+        chapterId: ch.id,
+        orderIndex: i,
+        status: 'pending',
+      }),
+      {
+        commandId: `PrepareRun:${runId}:run-job:${runJobId}`,
+        correlationId: runId,
+        causationId: runId,
+      },
+    )
   }
+  return targetChapters.length
 }
 
 export async function getAutonomousRun(projectId: string, runId: string) {
@@ -445,17 +521,16 @@ export async function startAutonomousRun(projectId: string, runId: string): Prom
   })
   for (const r of otherActive) {
     if (r.status === 'idle' && !trulyActiveOther.includes(r)) {
-      await db.update(autonomousWritingRuns).set({ status: 'abandoned', updatedAt: now() }).where(eq(autonomousWritingRuns.id, r.id))
+      await changeRun(projectId, r.id, { status: 'abandoned', finishedAt: now() }, `CleanupStaleRun:${r.id}`)
     }
   }
   if (trulyActiveOther.length > 0)
     throw new Error('该项目已有其他正在进行或待处理的自动驾驶任务')
 
-  await db.update(autonomousWritingRuns).set({
+  await changeRun(projectId, runId, {
     status: 'running',
     startedAt: now(),
-    updatedAt: now(),
-  }).where(eq(autonomousWritingRuns.id, runId))
+  })
 
   // P2: 异步启动，防止 API 超时
   runNextAutonomousStep(projectId, runId).catch((err) => {
@@ -497,11 +572,10 @@ export async function runNextAutonomousStep(projectId: string, runId: string): P
 
     const finalStatus = failedJobs.length > 0 ? 'failed' : 'completed'
 
-    await db.update(autonomousWritingRuns).set({
+    await changeRun(projectId, runId, {
       status: finalStatus,
       finishedAt: now(),
-      updatedAt: now(),
-    }).where(eq(autonomousWritingRuns.id, runId))
+    })
     return
   }
 
@@ -509,17 +583,13 @@ export async function runNextAutonomousStep(projectId: string, runId: string): P
 
   // If already running, we might be resuming or it's a retry
   if (jobToRun.status === 'pending') {
-    await db.update(autonomousRunJobs).set({
-      status: 'running',
-      updatedAt: now(),
-    }).where(eq(autonomousRunJobs.id, jobToRun.id))
+    await changeAutonomousRunJob(projectId, runId, jobToRun.id, { status: 'running' })
   }
 
   // Update current chapter pointer in run
-  await db.update(autonomousWritingRuns).set({
+  await changeRun(projectId, runId, {
     currentChapterId: jobToRun.chapterId,
-    updatedAt: now(),
-  }).where(eq(autonomousWritingRuns.id, runId))
+  })
 
   // Execute the underlying writing job
   // This will run asynchronously or we wait for it?
@@ -539,11 +609,10 @@ export async function pauseAutonomousRun(projectId: string, runId: string, reaso
   if (run.status !== 'running')
     throw new Error('只有正在运行的任务才能暂停')
 
-  await db.update(autonomousWritingRuns).set({
+  await changeRun(projectId, runId, {
     status: 'paused',
     pausedReason: reason || 'Manual pause',
-    updatedAt: now(),
-  }).where(eq(autonomousWritingRuns.id, runId))
+  })
 }
 
 export async function resumeAutonomousRun(projectId: string, runId: string): Promise<void> {
@@ -558,11 +627,10 @@ export async function resumeAutonomousRun(projectId: string, runId: string): Pro
   if (run.status !== 'paused')
     throw new Error('只有暂停状态的任务才能继续推进')
 
-  await db.update(autonomousWritingRuns).set({
+  await changeRun(projectId, runId, {
     status: 'running',
     pausedReason: null,
-    updatedAt: now(),
-  }).where(eq(autonomousWritingRuns.id, runId))
+  })
 
   await runNextAutonomousStep(projectId, runId)
 }
@@ -578,30 +646,26 @@ export async function abandonAutonomousRun(projectId: string, runId: string): Pr
   if (!['idle', 'running', 'paused'].includes(run.status))
     throw new Error('只能放弃进行中或暂停的任务')
 
-  // Mark unfinished run jobs as skipped
-  await db.update(autonomousRunJobs).set({
-    status: 'skipped',
-    updatedAt: now(),
-  }).where(and(
+  const unfinishedJobs = await db.select().from(autonomousRunJobs).where(and(
     eq(autonomousRunJobs.runId, runId),
     sql`${autonomousRunJobs.status} NOT IN ('completed', 'skipped', 'isolated')`,
   ))
+  for (const unfinishedJob of unfinishedJobs)
+    await changeAutonomousRunJob(projectId, runId, unfinishedJob.id, { status: 'skipped' })
 
   // Mark all open exceptions of this run as ignored on abandon
-  await db.update(autonomousRunExceptions).set({
-    status: 'ignored',
-    updatedAt: now(),
-  }).where(and(
+  const openExceptions = await db.select().from(autonomousRunExceptions).where(and(
     eq(autonomousRunExceptions.runId, runId),
     eq(autonomousRunExceptions.status, 'open'),
   ))
+  for (const exception of openExceptions)
+    await changeException(projectId, runId, exception.id, { status: 'ignored' })
 
-  await db.update(autonomousWritingRuns).set({
+  await changeRun(projectId, runId, {
     status: 'abandoned',
     pausedReason: '用户放弃本轮自动驾驶',
     finishedAt: now(),
-    updatedAt: now(),
-  }).where(eq(autonomousWritingRuns.id, runId))
+  })
 }
 
 export async function handleAutonomousJobCompletion(
@@ -620,15 +684,11 @@ export async function handleAutonomousJobCompletion(
     return
 
   if (status === 'completed') {
-    await db.update(autonomousRunJobs).set({
-      status: 'completed',
-      updatedAt: now(),
-    }).where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, jobId)))
+    const [runJob] = await db.select().from(autonomousRunJobs).where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, jobId))).limit(1)
+    if (runJob)
+      await changeAutonomousRunJob(projectId, runId, runJob.id, { status: 'completed' })
 
-    await db.update(autonomousWritingRuns).set({
-      completedChapterCount: sql`${autonomousWritingRuns.completedChapterCount} + 1`,
-      updatedAt: now(),
-    }).where(eq(autonomousWritingRuns.id, runId))
+    await changeRun(projectId, runId, { completedChapterCount: run.completedChapterCount + 1 })
 
     // Re-read run status before continuing — pause may have been requested
     const [latestRun] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, runId))
@@ -640,24 +700,19 @@ export async function handleAutonomousJobCompletion(
   }
   else if (status === 'isolated') {
     // Already updated in writing-job.service.ts or elsewhere, but we can ensure it
-    await db.update(autonomousRunJobs).set({
-      status: 'isolated',
-      updatedAt: now(),
-    }).where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, jobId)))
+    const [runJob] = await db.select().from(autonomousRunJobs).where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, jobId))).limit(1)
+    if (runJob)
+      await changeAutonomousRunJob(projectId, runId, runJob.id, { status: 'isolated' })
 
     // Continue to next immediately
     await runNextAutonomousStep(projectId, runId)
   }
   else if (status === 'failed') {
-    await db.update(autonomousRunJobs).set({
-      status: 'failed',
-      updatedAt: now(),
-    }).where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, jobId)))
+    const [runJob] = await db.select().from(autonomousRunJobs).where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, jobId))).limit(1)
+    if (runJob)
+      await changeAutonomousRunJob(projectId, runId, runJob.id, { status: 'failed' })
 
-    await db.update(autonomousWritingRuns).set({
-      failedChapterCount: sql`${autonomousWritingRuns.failedChapterCount} + 1`,
-      updatedAt: now(),
-    }).where(eq(autonomousWritingRuns.id, runId))
+    await changeRun(projectId, runId, { failedChapterCount: run.failedChapterCount + 1 })
 
     // Find the failed step
     const [failedStep] = await db.select().from(writingJobSteps).where(and(
@@ -700,24 +755,28 @@ export async function recordAutonomousException(
     status?: 'open' | 'resolved' | 'ignored'
     resolution?: string | null
   },
+  commandId?: string,
 ): Promise<void> {
-  await db.insert(autonomousRunExceptions).values({
-    id: generateId(),
-    runId,
+  const exceptionId = generateId()
+  await dispatchAutonomousRunCommand(
+    OPEN_AUTONOMOUS_EXCEPTION_COMMAND,
     projectId,
-    chapterId: input.chapterId || null,
-    changeSetId: input.changeSetId || null,
-    writingJobId: input.writingJobId || null,
-    stepId: input.stepId || null,
-    exceptionType: input.exceptionType,
-    severity: input.severity,
-    title: input.title,
-    description: input.description || null,
-    status: input.status || 'open',
-    resolution: input.resolution || null,
-    createdAt: now(),
-    updatedAt: now(),
-  })
+    runId,
+    compactAutonomousRunPayload({
+      id: exceptionId,
+      chapterId: input.chapterId || null,
+      changeSetId: input.changeSetId || null,
+      writingJobId: input.writingJobId || null,
+      stepId: input.stepId || null,
+      exceptionType: input.exceptionType,
+      severity: input.severity,
+      title: input.title,
+      description: input.description || null,
+      status: input.status || 'open',
+      resolution: input.resolution || null,
+    }),
+    commandId ? { commandId, correlationId: runId, causationId: input.stepId ?? runId } : {},
+  )
 }
 
 export async function getAutonomousExceptions(projectId: string, runId: string) {
@@ -739,12 +798,10 @@ export async function resolveAutonomousException(projectId: string, runId: strin
   if (ex.status !== 'open')
     throw new Error('该异常已被处理')
 
-  // Mark exception as resolved
-  await db.update(autonomousRunExceptions).set({
+  await changeException(projectId, runId, exceptionId, {
     status: 'resolved',
     resolution,
-    updatedAt: now(),
-  }).where(eq(autonomousRunExceptions.id, exceptionId))
+  }, `ResolveException:${exceptionId}`)
 
   try {
     // Reset the failed/isolated job so it can be re-run
@@ -779,43 +836,42 @@ export async function resolveAutonomousException(projectId: string, runId: strin
       )
 
       // Reset run job status
-      await db.update(autonomousRunJobs).set({
-        status: 'pending',
-        isolationReason: null,
-        isolationReport: null,
-        updatedAt: now(),
-      }).where(and(
+      const [runJob] = await db.select().from(autonomousRunJobs).where(and(
         eq(autonomousRunJobs.runId, runId),
         eq(autonomousRunJobs.writingJobId, ex.writingJobId),
-      ))
+      )).limit(1)
+      if (runJob) {
+        await changeAutonomousRunJob(projectId, runId, runJob.id, {
+          status: 'pending',
+          isolationReason: null,
+          isolationReport: null,
+        }, `ResolveException:${exceptionId}:reset-run-job`)
+      }
     }
     else if (ex.chapterId) {
       // Legacy: mark chapter job as completed and continue
-      await db.update(autonomousRunJobs).set({
-        status: 'completed',
-        updatedAt: now(),
-      }).where(and(
+      const [runJob] = await db.select().from(autonomousRunJobs).where(and(
         eq(autonomousRunJobs.runId, runId),
         eq(autonomousRunJobs.chapterId, ex.chapterId),
         or(eq(autonomousRunJobs.status, 'failed'), eq(autonomousRunJobs.status, 'isolated')),
-      ))
+      )).limit(1)
+      if (runJob)
+        await changeAutonomousRunJob(projectId, runId, runJob.id, { status: 'completed' }, `ResolveException:${exceptionId}:complete-legacy-job`)
     }
 
     // Set run to running and continue
-    await db.update(autonomousWritingRuns).set({
+    await changeRun(projectId, runId, {
       status: 'running',
-      updatedAt: now(),
-    }).where(eq(autonomousWritingRuns.id, runId))
+    }, `ResolveException:${exceptionId}:resume-run`)
 
     await runNextAutonomousStep(projectId, runId)
   }
   catch (error: unknown) {
     // Revert run to failed on error
-    await db.update(autonomousWritingRuns).set({
+    await changeRun(projectId, runId, {
       status: 'failed',
       lastError: errorMessage(error, '异常恢复失败'),
-      updatedAt: now(),
-    }).where(eq(autonomousWritingRuns.id, runId))
+    })
     throw error
   }
 }
@@ -832,24 +888,20 @@ export async function ignoreAutonomousException(projectId: string, runId: string
   if (ex.severity === 'critical')
     throw new Error('致命级异常无法直接忽略，请进行处理。')
 
-  await db.update(autonomousRunExceptions).set({
-    status: 'ignored',
-    updatedAt: now(),
-  }).where(eq(autonomousRunExceptions.id, exceptionId))
+  await changeException(projectId, runId, exceptionId, { status: 'ignored' }, `IgnoreException:${exceptionId}`)
 
   // 将对应章节任务标记为跳过
   if (ex.chapterId) {
-    await db.update(autonomousRunJobs).set({
-      status: 'skipped',
-      updatedAt: now(),
-    }).where(and(
+    const [runJob] = await db.select().from(autonomousRunJobs).where(and(
       eq(autonomousRunJobs.runId, runId),
       eq(autonomousRunJobs.chapterId, ex.chapterId),
       or(
         eq(autonomousRunJobs.status, 'failed'),
         eq(autonomousRunJobs.status, 'isolated'),
       ),
-    ))
+    )).limit(1)
+    if (runJob)
+      await changeAutonomousRunJob(projectId, runId, runJob.id, { status: 'skipped' }, `IgnoreException:${exceptionId}:skip-job`)
   }
 
   // Check if there are still open exceptions before continuing
@@ -860,10 +912,9 @@ export async function ignoreAutonomousException(projectId: string, runId: string
 
   if (remainingOpen.length === 0) {
     // No more open exceptions — transition to running and continue
-    await db.update(autonomousWritingRuns).set({
+    await changeRun(projectId, runId, {
       status: 'running',
-      updatedAt: now(),
-    }).where(eq(autonomousWritingRuns.id, runId))
+    }, `IgnoreException:${exceptionId}:resume-run`)
 
     await runNextAutonomousStep(projectId, runId)
   }

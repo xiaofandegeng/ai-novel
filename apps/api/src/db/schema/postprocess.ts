@@ -147,10 +147,10 @@ export const autonomousRunExceptions = pgTable('autonomous_run_exceptions', {
   id: text('id').primaryKey(),
   runId: text('run_id').notNull().references(() => autonomousWritingRuns.id, { onDelete: 'cascade' }),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
-  changeSetId: text('change_set_id').references(() => chapterChangeSets.id, { onDelete: 'set null' }),
-  writingJobId: text('writing_job_id').references(() => writingJobs.id, { onDelete: 'set null' }),
-  stepId: text('step_id').references(() => writingJobSteps.id, { onDelete: 'set null' }),
+  chapterId: text('chapter_id'),
+  changeSetId: text('change_set_id'),
+  writingJobId: text('writing_job_id'),
+  stepId: text('step_id'),
   exceptionType: text('exception_type').$type<
     'consistency_blocked'
     | 'high_risk_change_set'
