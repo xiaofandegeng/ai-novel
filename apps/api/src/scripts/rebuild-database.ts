@@ -12,6 +12,7 @@ async function rebuildDatabase() {
   const client = postgres(target.url.toString(), { max: 1 })
   try {
     await client`drop schema if exists public cascade`
+    await client`drop schema if exists drizzle cascade`
     await client`create schema public`
     await client`create extension if not exists vector`
     await migrate(drizzle(client), { migrationsFolder: './drizzle' })
