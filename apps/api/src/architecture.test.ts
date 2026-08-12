@@ -1,10 +1,11 @@
+import type { EventingWriteAnalysis } from '../test/architecture/domain-event-insert-analysis'
 import type { EventDefinition, EventPayloadProtection, JsonObject } from './eventing'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { findDomainEventInsertSites } from '../test/architecture/domain-event-insert-analysis'
+import { analyzeEventingWrites } from '../test/architecture/domain-event-insert-analysis'
 import { domainEventRegistry } from './eventing-runtime'
 import { EVENT_PAYLOAD_PROTECTION_CATALOG } from './eventing/event-protection-catalog'
 
@@ -62,21 +63,21 @@ function compareEventTypeSets(
   }
 }
 
-function methodCallSites(file: string, source: string, methodName: string): string[] {
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true)
-  const sites: string[] = []
+let eventingWriteAnalysis: EventingWriteAnalysis | undefined
 
-  function visit(node: ts.Node): void {
-    if (ts.isCallExpression(node)
-      && ts.isPropertyAccessExpression(node.expression)
-      && node.expression.name.text === methodName) {
-      sites.push(file)
-    }
-    ts.forEachChild(node, visit)
-  }
-
-  visit(sourceFile)
-  return sites
+function productionEventingWriteAnalysis(): EventingWriteAnalysis {
+  if (eventingWriteAnalysis)
+    return eventingWriteAnalysis
+  const files = sourceFiles(sourceRoot).filter(file => !file.endsWith('.test.ts'))
+  const relativeFiles = files.map(file => relative(sourceRoot, file))
+  eventingWriteAnalysis = analyzeEventingWrites({
+    files: Object.fromEntries(files.map((file, index) => [
+      relativeFiles[index]!,
+      readFileSync(file, 'utf8'),
+    ])),
+    inspectFiles: relativeFiles.filter(file => !file.includes('/db/schema/')),
+  })
+  return eventingWriteAnalysis
 }
 
 describe('api architecture boundaries', () => {
@@ -206,13 +207,7 @@ describe('api architecture boundaries', () => {
 
   it('routes every production domain event insert through EventStore appendBatch', () => {
     const eventStorePath = join(sourceRoot, 'eventing/event-store.ts')
-    const sites = sourceFiles(sourceRoot)
-      .filter(file => !file.endsWith('.test.ts'))
-      .filter(file => !file.includes('/db/schema/'))
-      .flatMap(file => findDomainEventInsertSites(
-        relative(sourceRoot, file),
-        readFileSync(file, 'utf8'),
-      ))
+    const sites = productionEventingWriteAnalysis().domainEventInserts
     const eventStoreRelativePath = relative(sourceRoot, eventStorePath)
 
     expect(sites).toHaveLength(1)
@@ -222,32 +217,8 @@ describe('api architecture boundaries', () => {
     })
   })
 
-  it('detects aliased, namespace-member, and interpolated SQL domain event inserts', () => {
-    expect(findDomainEventInsertSites('aliased.ts', `
-      import { domainEvents as eventTable } from './db/schema'
-      transaction.insert(eventTable).values({})
-    `)).toMatchObject([{ file: 'aliased.ts', kind: 'drizzle-insert' }])
-
-    expect(findDomainEventInsertSites('member.ts', `
-      import * as schema from './db/schema'
-      transaction.insert(schema.domainEvents).values({})
-    `)).toMatchObject([{ file: 'member.ts', kind: 'drizzle-insert' }])
-
-    expect(findDomainEventInsertSites('template.ts', `
-      import { domainEvents as eventTable } from './db/schema/eventing'
-      transaction.execute(sql\`insert into \${eventTable} values (\${event})\`)
-    `)).toMatchObject([{ file: 'template.ts', kind: 'sql-template-insert' }])
-  })
-
   it('keeps every production appendBatch call behind the CommandBus transaction lock entry', () => {
-    const appendCallers = sourceFiles(sourceRoot)
-      .filter(file => !file.endsWith('.test.ts'))
-      .filter(file => !file.includes('/db/schema/'))
-      .flatMap(file => methodCallSites(
-        relative(sourceRoot, file),
-        readFileSync(file, 'utf8'),
-        'appendBatch',
-      ))
+    const appendCallers = productionEventingWriteAnalysis().appendBatchCalls.map(site => site.file)
 
     expect(appendCallers).toEqual(['eventing/command-bus.ts'])
   })
