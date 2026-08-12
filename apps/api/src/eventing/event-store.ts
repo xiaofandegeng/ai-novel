@@ -85,23 +85,6 @@ export class EventStore {
     return this.contentProtector.unprotectEvents(db, rows.map(toStoredEvent))
   }
 
-  async unprotectReceiptResult(receipt: CommandReceiptRecord): Promise<JsonObject> {
-    return this.contentProtector.unprotectReceiptResult(db, receipt)
-  }
-
-  async isProjectDeleted(projectId: string): Promise<boolean> {
-    if (!this.projectDeletedEventType)
-      return false
-    const [row] = await db.select({ eventId: domainEvents.eventId })
-      .from(domainEvents)
-      .where(and(
-        eq(domainEvents.projectId, projectId),
-        eq(domainEvents.eventType, this.projectDeletedEventType),
-      ))
-      .limit(1)
-    return Boolean(row)
-  }
-
   async readHeadersForDeletedProjects(): Promise<Set<string>> {
     if (!this.projectDeletedEventType)
       throw new Error('Project deleted event type is not configured')

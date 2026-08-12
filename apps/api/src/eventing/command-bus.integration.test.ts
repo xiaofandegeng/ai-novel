@@ -1,6 +1,7 @@
 import type { EventingExecutor } from './content-protector'
 import type {
   CommandEnvelope,
+  CommandReceiptRecord,
   JsonObject,
   PendingEvent,
   StoredEvent,
@@ -10,7 +11,7 @@ import { Buffer } from 'node:buffer'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../db'
-import { commandReceipts, eventOutbox } from '../db/schema'
+import { commandReceipts, domainEvents, eventOutbox } from '../db/schema'
 import { ProjectDataKeyStore } from '../security/project-data-key.store'
 import { resetTestDatabase } from '../test/database'
 import { CommandBus } from './command-bus'
@@ -132,6 +133,56 @@ describe('commandBus', () => {
     expect(JSON.stringify(receipt?.result)).not.toContain(first.title)
   })
 
+  it('rejects completed receipt reuse across every command identity field without replaying foreign content', async () => {
+    const { bus } = createProtectedRuntime()
+    let originalHandlerCalls = 0
+    bus.register('CreateKernelThing', async (incoming) => {
+      originalHandlerCalls += 1
+      return {
+        streams: [{
+          stream,
+          expectedVersion: 0,
+          events: [{
+            ...pending('event-command-identity', 'KernelThingCreated'),
+            payload: { title: incoming.payload.title },
+          }],
+        }],
+        result: { id: incoming.aggregateId, title: incoming.payload.title },
+      }
+    })
+    await bus.dispatch(command())
+
+    const collisions: CommandEnvelope[] = [
+      {
+        ...command(),
+        projectId: 'project-2',
+        payload: { title: '项目二' },
+      },
+      { ...command(), projectId: undefined },
+      { ...command(), aggregateId: 'thing-2' },
+      { ...command(), aggregateType: 'OtherAggregate' },
+      { ...command(), commandType: 'ChangeKernelThing' },
+    ]
+
+    for (const collision of collisions) {
+      await expect(bus.dispatch(collision)).rejects.toMatchObject({
+        code: 'COMMAND_ID_CONFLICT',
+        message: 'Command id conflicts with an existing receipt',
+        details: {},
+      })
+    }
+
+    expect(originalHandlerCalls).toBe(1)
+    const storedEvents = await db.select().from(domainEvents)
+    expect(storedEvents).toHaveLength(1)
+    expect(storedEvents[0]).toMatchObject({
+      aggregateType: stream.aggregateType,
+      aggregateId: stream.aggregateId,
+      projectId: stream.projectId,
+    })
+    expect(JSON.stringify(storedEvents)).not.toContain('项目二')
+  })
+
   it('rejects an unmarked plaintext result for a project-scoped completed receipt', async () => {
     const { bus } = createProtectedRuntime()
     bus.register('CreateKernelThing', async () => {
@@ -149,6 +200,59 @@ describe('commandBus', () => {
     })
 
     await expect(bus.dispatch(command())).rejects.toThrow('receipt result format')
+  })
+
+  it('returns stable project-not-found when deletion destroys the key during protected receipt replay', async () => {
+    const { bus, contentProtector } = createRacingProtectedRuntime()
+    let handlerCalls = 0
+    bus.register('CreateKernelThing', async (incoming) => {
+      handlerCalls += 1
+      return {
+        streams: [{
+          stream,
+          expectedVersion: 0,
+          events: [{
+            ...pending('event-race-created', 'KernelThingCreated'),
+            payload: { title: incoming.payload.title },
+          }],
+        }],
+        result: { id: incoming.aggregateId, title: incoming.payload.title },
+      }
+    })
+    bus.register('DeleteKernelThing', async () => ({
+      streams: [{
+        stream,
+        expectedVersion: 1,
+        events: [pending('event-race-deleted', 'KernelThingDeleted')],
+      }],
+      result: {
+        id: stream.aggregateId,
+        deleted: true,
+        deletedAt: '2026-08-11T00:00:00.000Z',
+      },
+      receiptProtection: 'none',
+    }))
+    const protectedCommand = command()
+    await bus.dispatch(protectedCommand)
+
+    const pause = contentProtector.pauseNextReceiptUnprotection()
+    const replay = bus.dispatch(protectedCommand)
+    const replayExpectation = expect(replay).rejects.toMatchObject({
+      code: 'PROJECT_NOT_FOUND',
+      message: 'Project not found',
+      details: {},
+    })
+    await pause.reached
+    await bus.dispatch({
+      ...command(),
+      commandId: 'command-delete-during-replay',
+      commandType: 'DeleteKernelThing',
+      payload: {},
+    })
+    pause.resume()
+
+    await replayExpectation
+    expect(handlerCalls).toBe(1)
   })
 
   it('rolls back events, outbox, and receipt when a synchronous projector fails', async () => {
@@ -246,6 +350,27 @@ describe('commandBus', () => {
       errorCode: 'TITLE_REQUIRED',
       errorMessage: 'Command was rejected',
     })
+  })
+
+  it('validates command identity before replaying a failed receipt', async () => {
+    let handlerCalls = 0
+    const bus = new CommandBus(store, new ProjectionRegistry())
+    bus.register('CreateKernelThing', async () => {
+      handlerCalls += 1
+      throw new DomainCommandError('TITLE_REQUIRED', '不应泄露的领域错误')
+    })
+    await expect(bus.dispatch(command())).rejects.toMatchObject({ code: 'TITLE_REQUIRED' })
+
+    await expect(bus.dispatch({
+      ...command(),
+      aggregateId: 'thing-2',
+    })).rejects.toMatchObject({
+      code: 'COMMAND_ID_CONFLICT',
+      message: 'Command id conflicts with an existing receipt',
+      details: {},
+    })
+
+    expect(handlerCalls).toBe(1)
   })
 
   it('does not persist a transient failure and allows the same command to retry', async () => {
@@ -418,6 +543,40 @@ function createProtectedRuntime() {
   }
 }
 
+function createRacingProtectedRuntime() {
+  const events = new EventRegistry()
+  events.register({
+    eventType: 'KernelThingCreated',
+    currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
+    upcasters: {},
+    validate: payload => payload as JsonObject,
+  })
+  events.register({
+    eventType: 'KernelThingDeleted',
+    currentSchemaVersion: 1,
+    payloadProtection: 'none',
+    upcasters: {},
+    validate: payload => payload as JsonObject,
+  })
+  const contentProtector = new PausingReceiptContentProtector(
+    events,
+    new ProjectDataKeyStore(Buffer.alloc(32, 31)),
+    {
+      projectCreatedEventType: 'KernelThingCreated',
+      projectDeletedEventType: 'KernelThingDeleted',
+    },
+  )
+  const store = new EventStore({
+    contentProtector,
+    projectDeletedEventType: 'KernelThingDeleted',
+  })
+  return {
+    bus: new CommandBus(store, new ProjectionRegistry(events), events),
+    contentProtector,
+  }
+}
+
 class ReceiptOrderingContentProtector extends NoopEventingContentProtector {
   receiptObserved = false
 
@@ -435,4 +594,48 @@ class ReceiptOrderingContentProtector extends NoopEventingContentProtector {
     }
     throw new Error('security finalization failed')
   }
+}
+
+class PausingReceiptContentProtector extends ProjectEventingContentProtector {
+  private nextPause: {
+    reached: () => void
+    resume: Promise<void>
+  } | null = null
+
+  pauseNextReceiptUnprotection(): {
+    reached: Promise<void>
+    resume: () => void
+  } {
+    const reached = deferred()
+    const resume = deferred()
+    this.nextPause = {
+      reached: reached.resolve,
+      resume: resume.promise,
+    }
+    return {
+      reached: reached.promise,
+      resume: resume.resolve,
+    }
+  }
+
+  override async unprotectReceiptResult(
+    executor: EventingExecutor,
+    receipt: CommandReceiptRecord,
+  ): Promise<JsonObject> {
+    const pause = this.nextPause
+    this.nextPause = null
+    if (pause) {
+      pause.reached()
+      await pause.resume
+    }
+    return super.unprotectReceiptResult(executor, receipt)
+  }
+}
+
+function deferred(): { promise: Promise<void>, resolve: () => void } {
+  let resolve = (): void => {}
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
 }

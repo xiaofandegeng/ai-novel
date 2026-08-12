@@ -19,6 +19,7 @@ type CreateProjectPayload = CreateProjectInput & Pick<UpdateProjectInput, 'statu
 export interface ProjectCommandOptions {
   commandId?: string
   correlationId?: string
+  projectId?: string
 }
 
 export function listProjects(limit: number, offset: number) {
@@ -34,7 +35,7 @@ export async function createProject(
   input: CreateProjectPayload,
   options: ProjectCommandOptions = {},
 ) {
-  const projectId = generateId()
+  const projectId = options.projectId ?? generateId()
   const result = await commandBus.dispatch<ProjectSnapshot>(projectCommand(
     CREATE_PROJECT_COMMAND,
     projectId,

@@ -187,6 +187,47 @@ describe('project eventing', () => {
       .toMatchObject({ code: 'PROJECT_NOT_FOUND', message: 'Command was rejected' })
   })
 
+  it('rejects a delete receipt command-id collision without deleting the incoming project', async () => {
+    await runtime.commands.dispatch(command(
+      CREATE_PROJECT_COMMAND,
+      { title: '项目甲' },
+      'command-create-a',
+      'project-1',
+    ))
+    await runtime.commands.dispatch(command(
+      CREATE_PROJECT_COMMAND,
+      { title: '项目乙' },
+      'command-create-b',
+      'project-2',
+    ))
+    await runtime.commands.dispatch<DeleteProjectResult>(command(
+      DELETE_PROJECT_COMMAND,
+      {},
+      'shared-delete-command',
+      'project-1',
+    ))
+
+    await expect(runtime.commands.dispatch(command(
+      DELETE_PROJECT_COMMAND,
+      {},
+      'shared-delete-command',
+      'project-2',
+    ))).rejects.toMatchObject({
+      code: 'COMMAND_ID_CONFLICT',
+      message: 'Command id conflicts with an existing receipt',
+      details: {},
+    })
+
+    await expect(readProjectById(projectReadModels, 'project-2')).resolves.toMatchObject({
+      id: 'project-2',
+      title: '项目乙',
+    })
+    const projectTwoDeletionEvents = await db.select()
+      .from(domainEvents)
+      .where(eq(domainEvents.projectId, 'project-2'))
+    expect(projectTwoDeletionEvents.map(event => event.eventType)).toEqual(['ProjectCreated'])
+  })
+
   it('rebuilds the primary project read model without resetting the legacy FK projection', async () => {
     await runtime.commands.dispatch(command(CREATE_PROJECT_COMMAND, { title: '可回放项目' }))
     await runtime.commands.dispatch(command(
@@ -280,7 +321,14 @@ function settingsPayload(): JsonObject {
 }
 
 async function readProject(table: typeof novelProjects | typeof projectReadModels) {
-  const [row] = await db.select().from(table).where(eq(table.id, 'project-1')).limit(1)
+  return readProjectById(table, 'project-1')
+}
+
+async function readProjectById(
+  table: typeof novelProjects | typeof projectReadModels,
+  projectId: string,
+) {
+  const [row] = await db.select().from(table).where(eq(table.id, projectId)).limit(1)
   return row
 }
 

@@ -1,5 +1,6 @@
 import type { CreateProjectInput, UpdateProjectInput } from '@ai-novel/shared'
 import type { Context, Hono } from 'hono'
+import { createHash } from 'node:crypto'
 import { DomainCommandError } from '../../eventing'
 import { fail, success } from '../../shared/http/responses'
 import { generateId } from '../../shared/utils'
@@ -31,7 +32,7 @@ export function registerProjectRoutes(app: Hono) {
     try {
       const row = await createProject(
         { ...body, title },
-        commandOptions(c, CREATE_PROJECT_COMMAND),
+        commandOptions(c, CREATE_PROJECT_COMMAND, true),
       )
       return c.json(success(row), 201)
     }
@@ -75,13 +76,20 @@ export function registerProjectRoutes(app: Hono) {
   })
 }
 
-function commandOptions(c: Context, commandType: string) {
+function commandOptions(c: Context, commandType: string, createsProject = false) {
   const idempotencyKey = c.req.header('Idempotency-Key')?.trim()
   const commandId = idempotencyKey ? `${commandType}:${idempotencyKey}` : generateId()
   return {
     commandId,
     correlationId: c.req.header('X-Correlation-ID')?.trim() || commandId,
+    ...(idempotencyKey && createsProject
+      ? { projectId: stableProjectId(commandId) }
+      : {}),
   }
+}
+
+function stableProjectId(commandId: string): string {
+  return `project-${createHash('sha256').update(commandId).digest('hex').slice(0, 32)}`
 }
 
 function projectCommandFailure(c: Context, error: unknown): Response {

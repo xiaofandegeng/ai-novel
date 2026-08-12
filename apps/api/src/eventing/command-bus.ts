@@ -12,6 +12,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { eq } from 'drizzle-orm'
 import { db } from '../db'
 import { commandReceipts } from '../db/schema'
+import { ProjectDataKeyDestroyedError } from '../security/project-data-key.store'
 import { DomainCommandError, UnknownCommandTypeError } from './errors'
 
 export interface CommandHandlerContext {
@@ -31,6 +32,7 @@ type CommandReceipt = typeof commandReceipts.$inferSelect
 
 const RECEIPT_RESULT_FORMAT = 'command-receipt-result-v1' as const
 const GENERIC_REJECTION_MESSAGE = 'Command was rejected'
+const COMMAND_ID_CONFLICT_MESSAGE = 'Command id conflicts with an existing receipt'
 
 export class CommandBus {
   private readonly handlers = new Map<string, RegisteredCommandHandler>()
@@ -55,28 +57,15 @@ export class CommandBus {
   }
 
   async dispatch<TResult extends JsonObject = JsonObject>(command: CommandEnvelope): Promise<TResult> {
-    const handler = this.handlers.get(command.commandType)
-    if (!handler)
-      throw new UnknownCommandTypeError(command.commandType)
-
     const activeSession = this.sessionStorage.getStore()
     if (activeSession)
-      return this.dispatchInSession<TResult>(command, handler, activeSession)
-
-    const existing = await this.readReceipt(command.commandId)
-    if (existing) {
-      return receiptResult<TResult>(
-        existing,
-        receipt => this.store.unprotectReceiptResult(receipt),
-        projectId => this.store.isProjectDeleted(projectId),
-      )
-    }
+      return this.dispatchInSession<TResult>(command, activeSession)
 
     try {
       return await this.store.withTransaction(async (session) => {
         return this.sessionStorage.run(
           session,
-          () => this.dispatchInSession<TResult>(command, handler, session),
+          () => this.dispatchInSession<TResult>(command, session),
         )
       })
     }
@@ -101,7 +90,6 @@ export class CommandBus {
 
   private async dispatchInSession<TResult extends JsonObject>(
     command: CommandEnvelope,
-    handler: RegisteredCommandHandler,
     session: EventStoreSession,
   ): Promise<TResult> {
     const [receipt] = await session.transaction.select()
@@ -110,11 +98,16 @@ export class CommandBus {
       .limit(1)
     if (receipt) {
       return receiptResult<TResult>(
+        command,
         receipt,
         stored => session.unprotectReceiptResult(stored),
         projectId => session.isProjectDeleted(projectId),
       )
     }
+
+    const handler = this.handlers.get(command.commandType)
+    if (!handler)
+      throw new UnknownCommandTypeError(command.commandType)
 
     if (command.projectId && await session.isProjectDeleted(command.projectId)) {
       throw new DomainCommandError(
@@ -162,14 +155,6 @@ export class CommandBus {
     return decision.result as TResult
   }
 
-  private async readReceipt(commandId: string): Promise<CommandReceipt | undefined> {
-    const [receipt] = await db.select()
-      .from(commandReceipts)
-      .where(eq(commandReceipts.commandId, commandId))
-      .limit(1)
-    return receipt
-  }
-
   private async storeFailure(command: CommandEnvelope, error: DomainCommandError): Promise<void> {
     await db.insert(commandReceipts).values({
       commandId: command.commandId,
@@ -186,10 +171,13 @@ export class CommandBus {
 }
 
 async function receiptResult<TResult extends JsonObject>(
+  command: CommandEnvelope,
   receipt: CommandReceipt,
   unprotect: (receipt: CommandReceiptRecord) => Promise<JsonObject>,
   isProjectDeleted: (projectId: string) => Promise<boolean>,
 ): Promise<TResult> {
+  assertReceiptIdentity(command, receipt)
+
   if (receipt.status !== 'completed') {
     throw new DomainCommandError(
       receipt.errorCode ?? 'COMMAND_REJECTED',
@@ -210,10 +198,41 @@ async function receiptResult<TResult extends JsonObject>(
     )
   }
 
-  return await unprotect({
-    ...receipt,
-    result: stored.protected,
-  }) as TResult
+  try {
+    return await unprotect({
+      ...receipt,
+      result: stored.protected,
+    }) as TResult
+  }
+  catch (error: unknown) {
+    if (error instanceof ProjectDataKeyDestroyedError) {
+      throw new DomainCommandError(
+        'PROJECT_NOT_FOUND',
+        'Project not found',
+      )
+    }
+    throw error
+  }
+}
+
+function assertReceiptIdentity(
+  command: CommandEnvelope,
+  receipt: CommandReceipt,
+): void {
+  const projectId = command.projectId ?? null
+  if (
+    receipt.commandType === command.commandType
+    && receipt.aggregateType === command.aggregateType
+    && receipt.aggregateId === command.aggregateId
+    && receipt.projectId === projectId
+  ) {
+    return
+  }
+
+  throw new DomainCommandError(
+    'COMMAND_ID_CONFLICT',
+    COMMAND_ID_CONFLICT_MESSAGE,
+  )
 }
 
 function assertProjectScope(command: CommandEnvelope, decision: CommandDecision<JsonObject>): void {
