@@ -14,12 +14,15 @@ import {
   characters,
   conflicts,
   foreshadowingItems,
+  novelProjects,
   writingJobs,
   writingJobSteps,
 } from '../../db/schema'
 import { commandBus } from '../../eventing-runtime'
 import { errorMessage, generateId, now, timestampMs } from '../../shared/utils'
 import { getProjectHealthMetrics } from '../narrative/health-metrics.service'
+import { dispatchChapterCommand } from '../story/chapter.commands'
+import { CREATE_CHAPTER_COMMAND } from '../story/chapter.eventing'
 import { compactAutonomousRunPayload, dispatchAutonomousRunCommand } from './autonomous-run.commands'
 import {
   ADD_AUTONOMOUS_RUN_JOB_COMMAND,
@@ -211,7 +214,14 @@ export async function createAutonomousRun(
     targetWordsPerChapter,
   } = input
 
+  if (scopeType === 'next_n_chapters' && (!Number.isInteger(targetChapterCount) || targetChapterCount! < 1 || targetChapterCount! > 20))
+    throw new Error('目标章节数必须是 1 到 20 之间的整数')
+
   return await commandBus.runAtomically(async (tx) => {
+    const projectLock = await tx.select({ id: novelProjects.id }).from(novelProjects).where(eq(novelProjects.id, projectId)).for('update')
+    if (!projectLock[0])
+      throw new Error('项目不存在')
+
     const activeRuns = await tx.select().from(autonomousWritingRuns).where(and(
       eq(autonomousWritingRuns.projectId, projectId),
       or(
@@ -375,6 +385,38 @@ async function prepareRunJobs(
         sql`char_length(coalesce(${chapters.draft}, '')) < ${minWords}`,
       ),
     )).orderBy(asc(chapters.chapterNumber)).limit(params.targetChapterCount)
+
+    const missingChapterCount = params.targetChapterCount - targetChapters.length
+    if (missingChapterCount > 0) {
+      const [lastChapter] = await tx.select({
+        chapterNumber: sql<number>`coalesce(max(${chapters.chapterNumber}), 0)`,
+      }).from(chapters).where(eq(chapters.projectId, projectId))
+      const firstChapterNumber = Number(lastChapter?.chapterNumber ?? 0) + 1
+
+      for (let offset = 0; offset < missingChapterCount; offset++) {
+        const chapterNumber = firstChapterNumber + offset
+        const chapterId = generateId()
+        await dispatchChapterCommand(
+          CREATE_CHAPTER_COMMAND,
+          projectId,
+          chapterId,
+          { title: `第 ${chapterNumber} 章`, chapterNumber },
+          {
+            commandId: `PrepareRun:${runId}:placeholder:${chapterNumber}`,
+            correlationId: runId,
+            causationId: runId,
+          },
+        )
+      }
+
+      targetChapters = await tx.select().from(chapters).where(and(
+        eq(chapters.projectId, projectId),
+        or(
+          isNull(chapters.draft),
+          sql`char_length(coalesce(${chapters.draft}, '')) < ${minWords}`,
+        ),
+      )).orderBy(asc(chapters.chapterNumber)).limit(params.targetChapterCount)
+    }
   }
   else if (scopeType === 'project') {
     const minWords = 100
