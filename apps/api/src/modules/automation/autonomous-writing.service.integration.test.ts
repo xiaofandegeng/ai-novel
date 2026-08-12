@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../../db'
 import { autonomousRunExceptions, autonomousRunJobs, autonomousWritingRuns, chapters, domainEvents, writingJobs } from '../../db/schema'
-import { commandBus, wakeEventOutbox } from '../../eventing-runtime'
+import { commandBus, eventStore, wakeEventOutbox } from '../../eventing-runtime'
 import { resetTestDatabase } from '../../test/database'
 import { CREATE_PROJECT_COMMAND } from '../project/project.eventing'
 import {
@@ -98,11 +98,12 @@ describe('autonomous writing service', () => {
     await expect(db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.id, runJob.id))).resolves.toMatchObject([
       { status: 'running' },
     ])
-    const pauseEvents = await db.select({ payload: domainEvents.payload }).from(domainEvents).where(and(
-      eq(domainEvents.aggregateId, run.id),
-      eq(domainEvents.eventType, 'AutonomousRunChanged'),
-    )).orderBy(domainEvents.globalPosition)
-    expect(pauseEvents.slice(-2).map(row => (row.payload as { run: { status: string } }).run.status)).toEqual(['pausing', 'paused'])
+    const pauseEvents = (await eventStore.loadStream({
+      aggregateType: 'AutonomousRun',
+      aggregateId: run.id,
+      projectId,
+    })).filter(event => event.eventType === 'AutonomousRunChanged')
+    expect(pauseEvents.slice(-2).map(event => (event.payload as { run: { status: string } }).run.status)).toEqual(['pausing', 'paused'])
   })
 
   it('abandons the run, unfinished jobs, and open exceptions atomically', async () => {
@@ -128,11 +129,12 @@ describe('autonomous writing service', () => {
 
     const correlationIds = await db.select({ correlationId: domainEvents.correlationId }).from(domainEvents).where(eq(domainEvents.aggregateId, run.id)).orderBy(domainEvents.globalPosition)
     expect(correlationIds.slice(-4).map(row => row.correlationId)).toEqual([run.id, run.id, run.id, run.id])
-    const abandonEvents = await db.select({ payload: domainEvents.payload }).from(domainEvents).where(and(
-      eq(domainEvents.aggregateId, run.id),
-      eq(domainEvents.eventType, 'AutonomousRunChanged'),
-    )).orderBy(domainEvents.globalPosition)
-    expect(abandonEvents.slice(-2).map(row => (row.payload as { run: { status: string } }).run.status)).toEqual(['abandoning', 'abandoned'])
+    const abandonEvents = (await eventStore.loadStream({
+      aggregateType: 'AutonomousRun',
+      aggregateId: run.id,
+      projectId,
+    })).filter(event => event.eventType === 'AutonomousRunChanged')
+    expect(abandonEvents.slice(-2).map(event => (event.payload as { run: { status: string } }).run.status)).toEqual(['abandoning', 'abandoned'])
   })
 
   it('pauses safe and balanced runs while fast mode advances to its terminal result', async () => {

@@ -33,6 +33,7 @@ describe('aggregateRepository', () => {
     registry.register({
       eventType: 'KernelTitleSet',
       currentSchemaVersion: 2,
+      payloadProtection: 'none',
       upcasters: {
         1: payload => ({ title: readString(payload, 'legacyTitle') }),
       },
@@ -238,6 +239,7 @@ function countRegistry(): EventRegistry {
   registry.register({
     eventType: 'KernelCounted',
     currentSchemaVersion: 1,
+    payloadProtection: 'none',
     upcasters: {},
     validate: payload => ({ delta: readNumber(payload, 'delta') }),
   })

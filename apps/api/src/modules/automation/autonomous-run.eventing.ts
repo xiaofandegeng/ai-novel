@@ -129,14 +129,15 @@ export const autonomousRunAggregate: AggregateDefinition<AutonomousRunState> = {
 
 export function registerAutonomousRunEventing(runtime: AutonomousRunEventingRuntime): void {
   for (const eventType of [AUTONOMOUS_RUN_PREPARED, AUTONOMOUS_RUN_CHANGED])
-    runtime.events.register({ eventType, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ run: readRun(codec.object(payload)) }) })
+    runtime.events.register({ eventType, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ run: readRun(codec.object(payload)) }) })
   for (const eventType of [AUTONOMOUS_RUN_JOB_ADDED, AUTONOMOUS_RUN_JOB_CHANGED])
-    runtime.events.register({ eventType, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ job: readJob(codec.object(payload)) }) })
+    runtime.events.register({ eventType, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ job: readJob(codec.object(payload)) }) })
   for (const eventType of [AUTONOMOUS_EXCEPTION_OPENED, AUTONOMOUS_EXCEPTION_CHANGED])
-    runtime.events.register({ eventType, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ exception: readException(codec.object(payload)) }) })
+    runtime.events.register({ eventType, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ exception: readException(codec.object(payload)) }) })
   runtime.events.register({
     eventType: AUTONOMOUS_EXCEPTION_ACTION_RESOLVED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: (payload) => {
       const value = codec.object(payload)
@@ -149,6 +150,7 @@ export function registerAutonomousRunEventing(runtime: AutonomousRunEventingRunt
   runtime.events.register({
     eventType: AUTONOMOUS_RUN_EXECUTION_REQUESTED,
     currentSchemaVersion: 1,
+    payloadProtection: 'none',
     upcasters: {},
     validate: payload => ({ requestId: codec.string(codec.object(payload), 'requestId') }),
   })

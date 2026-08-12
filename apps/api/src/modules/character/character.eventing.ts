@@ -153,6 +153,7 @@ function registerEvents(events: EventRegistry): void {
     events.register({
       eventType,
       currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
       upcasters: {},
       validate: payload => ({ character: readCharacterEvent(payloadCodec.object(payload)) }),
     })
@@ -160,6 +161,7 @@ function registerEvents(events: EventRegistry): void {
   events.register({
     eventType: CHARACTER_DELETED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: validateCharacterDeleted,
   })
@@ -167,6 +169,7 @@ function registerEvents(events: EventRegistry): void {
     events.register({
       eventType,
       currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
       upcasters: {},
       validate: payload => ({ arcEvent: readArcEvent(payloadCodec.object(payload)) }),
     })
@@ -174,6 +177,7 @@ function registerEvents(events: EventRegistry): void {
   events.register({
     eventType: CHARACTER_ARC_EVENT_REMOVED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: validateRemovedArcEvent,
   })

@@ -82,12 +82,14 @@ function registerEvents(events: EventRegistry): void {
   events.register({
     eventType: PROMPT_TEMPLATE_SELECTED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: validateTemplateSelected,
   })
   events.register({
     eventType: PROJECT_PROMPT_OVERRIDE_CHANGED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: payload => ({ override: readOverrideEvent(readObject(payload)) }),
   })

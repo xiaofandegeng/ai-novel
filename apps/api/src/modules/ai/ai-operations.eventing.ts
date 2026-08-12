@@ -50,7 +50,7 @@ export const aiOperationAggregate: AggregateDefinition<OperationState> = {
 
 export function registerAIOperationsEventing(runtime: AIOperationsEventingRuntime): void {
   for (const eventType of [AI_OPERATION_RECORDED, AI_OPERATION_CHANGED])
-    runtime.events.register({ eventType, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ operation: readOperation(codec.object(payload)) }) })
+    runtime.events.register({ eventType, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ operation: readOperation(codec.object(payload)) }) })
   runtime.commands.register(RECORD_AI_OPERATION_COMMAND, async (command, context) => {
     await assertActiveProject(runtime, command, context.session)
     const loaded = await runtime.aggregates.loadInSession(context.session, aiOperationAggregate, stream(command))

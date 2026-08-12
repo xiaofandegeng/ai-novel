@@ -103,9 +103,9 @@ export const chapterChangeSetAggregate: AggregateDefinition<ChapterChangeSetStat
 }
 
 export function registerChapterChangeSetEventing(runtime: ChapterChangeSetEventingRuntime): void {
-  runtime.events.register({ eventType: CHANGE_SET_DRAFTED, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ changeSet: readChangeSet(codec.object(payload)), items: readItems(codec.object(payload)) }) })
-  runtime.events.register({ eventType: CHANGE_SET_CHANGED, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ changeSet: readChangeSet(codec.object(payload)) }) })
-  runtime.events.register({ eventType: CHANGE_SET_ITEM_CHANGED, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ item: readItem(codec.object(payload)) }) })
+  runtime.events.register({ eventType: CHANGE_SET_DRAFTED, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ changeSet: readChangeSet(codec.object(payload)), items: readItems(codec.object(payload)) }) })
+  runtime.events.register({ eventType: CHANGE_SET_CHANGED, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ changeSet: readChangeSet(codec.object(payload)) }) })
+  runtime.events.register({ eventType: CHANGE_SET_ITEM_CHANGED, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ item: readItem(codec.object(payload)) }) })
   registerCommands(runtime)
   registerProjection(runtime.projections)
 }

@@ -163,6 +163,7 @@ function registerEvents(events: EventRegistry): void {
   events.register({
     eventType: STORY_BIBLE_CHANGED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: payload => ({ storyBible: readStoryBibleEvent(readObject(payload)) }),
   })
@@ -170,6 +171,7 @@ function registerEvents(events: EventRegistry): void {
     events.register({
       eventType,
       currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
       upcasters: {},
       validate: payload => ({ volume: readVolumeEvent(readObject(payload)) }),
     })
@@ -178,6 +180,7 @@ function registerEvents(events: EventRegistry): void {
     events.register({
       eventType,
       currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
       upcasters: {},
       validate: payload => ({ act: readActEvent(readObject(payload)) }),
     })
@@ -186,6 +189,7 @@ function registerEvents(events: EventRegistry): void {
     events.register({
       eventType,
       currentSchemaVersion: 1,
+      payloadProtection: 'none',
       upcasters: {},
       validate: validateDeletedEvent,
     })
@@ -193,6 +197,7 @@ function registerEvents(events: EventRegistry): void {
   events.register({
     eventType: STRUCTURE_TEMPLATE_APPLIED,
     currentSchemaVersion: 1,
+    payloadProtection: 'none',
     upcasters: {},
     validate: validateTemplateAppliedEvent,
   })

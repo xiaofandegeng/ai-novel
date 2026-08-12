@@ -15,7 +15,7 @@ import {
 export interface EventDefinition<TPayload extends JsonObject> {
   eventType: string
   currentSchemaVersion: number
-  payloadProtection?: EventPayloadProtection
+  payloadProtection: EventPayloadProtection
   validate: (payload: unknown) => TPayload
   upcasters: Record<number, (payload: unknown) => unknown>
 }
@@ -44,7 +44,6 @@ export class EventRegistry {
 
     this.definitions.set(definition.eventType, {
       ...definition,
-      payloadProtection: definition.payloadProtection ?? 'none',
       validate: payload => definition.validate(payload),
     })
   }

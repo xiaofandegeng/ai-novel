@@ -119,6 +119,7 @@ describe('projectionReplay', () => {
     events.register({
       eventType: 'KernelReplayRecorded',
       currentSchemaVersion: 2,
+      payloadProtection: 'none',
       upcasters: {
         1: payload => ({
           ...(payload as Record<string, unknown>),

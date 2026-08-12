@@ -52,6 +52,7 @@ describe('projectionRegistry', () => {
     events.register({
       eventType: 'KernelCreated',
       currentSchemaVersion: 2,
+      payloadProtection: 'none',
       upcasters: {
         1: payload => ({ ...(payload as Record<string, unknown>), current: true }),
       },
@@ -189,6 +190,7 @@ describe('projectionRunner', () => {
     events.register({
       eventType: 'KernelProjectionRecorded',
       currentSchemaVersion: 2,
+      payloadProtection: 'none',
       upcasters: {
         1: payload => ({ ...(payload as Record<string, unknown>), current: true }),
       },

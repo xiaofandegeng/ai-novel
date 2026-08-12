@@ -95,10 +95,10 @@ export const styleFingerprintAggregate: AggregateDefinition<FingerprintState> = 
 
 export function registerPostprocessEventing(runtime: PostprocessEventingRuntime): void {
   for (const eventType of [POSTPROCESS_RUN_REQUESTED, POSTPROCESS_RUN_CHANGED])
-    runtime.events.register({ eventType, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ run: readRun(runCodec.object(payload)) }) })
+    runtime.events.register({ eventType, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ run: readRun(runCodec.object(payload)) }) })
   for (const eventType of [POSTPROCESS_SUGGESTION_GENERATED, POSTPROCESS_SUGGESTION_CHANGED])
-    runtime.events.register({ eventType, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ suggestion: readSuggestion(suggestionCodec.object(payload)) }) })
-  runtime.events.register({ eventType: STYLE_FINGERPRINT_RECORDED, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ fingerprint: readFingerprint(fingerprintCodec.object(payload)) }) })
+    runtime.events.register({ eventType, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ suggestion: readSuggestion(suggestionCodec.object(payload)) }) })
+  runtime.events.register({ eventType: STYLE_FINGERPRINT_RECORDED, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ fingerprint: readFingerprint(fingerprintCodec.object(payload)) }) })
   registerCommands(runtime)
   registerProjection(runtime.projections)
 }

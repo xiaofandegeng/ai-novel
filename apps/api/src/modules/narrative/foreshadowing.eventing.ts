@@ -122,6 +122,7 @@ export function registerForeshadowingEventing(runtime: ForeshadowingEventingRunt
     runtime.events.register({
       eventType,
       currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
       upcasters: {},
       validate: payload => ({ foreshadowing: readForeshadowing(payloadCodec.object(payload)) }),
     })
@@ -129,12 +130,14 @@ export function registerForeshadowingEventing(runtime: ForeshadowingEventingRunt
   runtime.events.register({
     eventType: FORESHADOWING_DELETED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: validateDeleted,
   })
   runtime.events.register({
     eventType: FORESHADOWING_CHARACTERS_REPLACED,
     currentSchemaVersion: 1,
+    payloadProtection: 'none',
     upcasters: {},
     validate: payload => ({ characters: readCharacterLinks(payloadCodec.object(payload)) }),
   })

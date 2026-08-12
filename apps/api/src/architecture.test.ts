@@ -1,7 +1,10 @@
+import type { EventDefinition, EventPayloadProtection, JsonObject } from './eventing'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import ts from 'typescript'
+import { describe, expect, expectTypeOf, it } from 'vitest'
+import { domainEventRegistry } from './eventing-runtime'
 
 const sourceRoot = fileURLToPath(new URL('.', import.meta.url))
 
@@ -14,7 +17,153 @@ function sourceFiles(directory: string): string[] {
   })
 }
 
+function eventRegistrationsWithoutPayloadProtection(file: string): string[] {
+  const source = readFileSync(file, 'utf8')
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true)
+  const missing: string[] = []
+
+  function visit(node: ts.Node): void {
+    if (
+      ts.isCallExpression(node)
+      && ts.isPropertyAccessExpression(node.expression)
+      && node.expression.name.text === 'register'
+      && node.arguments.length > 0
+      && ts.isObjectLiteralExpression(node.arguments[0])
+    ) {
+      const definition = node.arguments[0]
+      const propertyNames = new Set(definition.properties.map(property => property.name?.getText(sourceFile)))
+      if (
+        propertyNames.has('eventType')
+        && propertyNames.has('currentSchemaVersion')
+        && !propertyNames.has('payloadProtection')
+      ) {
+        const { line } = sourceFile.getLineAndCharacterOfPosition(definition.getStart(sourceFile))
+        missing.push(`${relative(sourceRoot, file)}:${line + 1}`)
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+  return missing
+}
+
+const PROJECT_CONTENT_EVENTS = [
+  'ProjectCreated',
+  'ProjectDetailsChanged',
+  'AIOperationRecorded',
+  'AIOperationChanged',
+  'AIProviderSelected',
+  'CredentialReferenceChanged',
+  'ProjectSettingsChanged',
+  'PromptTemplateSelected',
+  'ProjectPromptOverrideChanged',
+  'StoryBibleChanged',
+  'VolumeCreated',
+  'VolumeChanged',
+  'ActCreated',
+  'ActChanged',
+  'ChapterCreated',
+  'ChapterRenamed',
+  'OutlineChanged',
+  'ChapterDetailsChanged',
+  'ChapterContentApplied',
+  'ChapterCompleted',
+  'ChapterDeleted',
+  'ChapterVersionRecorded',
+  'ScenePlanned',
+  'SceneChanged',
+  'SceneReordered',
+  'SceneContentApplied',
+  'SceneDeleted',
+  'ChapterElementAdded',
+  'ChapterElementChanged',
+  'ChapterElementRemoved',
+  'ChapterElementsReplaced',
+  'ChapterMemoryRecorded',
+  'CharacterCreated',
+  'CharacterChanged',
+  'CharacterDeleted',
+  'CharacterArcEventRecorded',
+  'CharacterArcEventCorrected',
+  'CharacterArcEventRemoved',
+  'RelationshipCreated',
+  'RelationshipChanged',
+  'RelationshipDeleted',
+  'ConflictCreated',
+  'ConflictChanged',
+  'ConflictDeleted',
+  'ConflictParticipantsReplaced',
+  'ConflictTimelineRecorded',
+  'ConflictTimelineRemoved',
+  'ForeshadowingCreated',
+  'ForeshadowingChanged',
+  'ForeshadowingDeleted',
+  'StoryFactRecorded',
+  'StoryFactChanged',
+  'StoryFactRemoved',
+  'KnowledgeSourceAdded',
+  'KnowledgeSourceRemoved',
+  'KnowledgeChunkAdded',
+  'KnowledgeNoteAdded',
+  'AuthoringActivityRecorded',
+  'WritingJobCreated',
+  'WritingJobChanged',
+  'WritingJobDeleted',
+  'WritingJobStepsReplaced',
+  'WritingJobStepChanged',
+  'AutonomousRunPrepared',
+  'AutonomousRunChanged',
+  'AutonomousRunJobAdded',
+  'AutonomousRunJobChanged',
+  'AutonomousExceptionOpened',
+  'AutonomousExceptionChanged',
+  'AutonomousExceptionActionResolved',
+  'ChapterChangeSetDrafted',
+  'ChapterChangeSetChanged',
+  'ChapterChangeSetItemChanged',
+  'PostprocessRunRequested',
+  'PostprocessRunChanged',
+  'PostprocessSuggestionGenerated',
+  'PostprocessSuggestionChanged',
+  'StyleFingerprintRecorded',
+] as const
+
+const UNPROTECTED_EVENTS = [
+  'ProjectDeletionRequested',
+  'ProjectDeleted',
+  'VolumeDeleted',
+  'ActDeleted',
+  'StructureTemplateApplied',
+  'ForeshadowingCharactersReplaced',
+  'WritingJobExecutionRequested',
+  'AutonomousRunExecutionRequested',
+] as const
+
 describe('api architecture boundaries', () => {
+  it('requires every domain event registration to declare payload protection', () => {
+    const missing = sourceFiles(join(sourceRoot, 'modules'))
+      .filter(file => file.endsWith('.eventing.ts'))
+      .flatMap(eventRegistrationsWithoutPayloadProtection)
+
+    expect(missing).toEqual([])
+    expectTypeOf<EventDefinition<JsonObject>['payloadProtection']>()
+      .toEqualTypeOf<EventPayloadProtection>()
+  })
+
+  it('classifies every registered domain event by its payload sensitivity', () => {
+    const expected = new Map<string, EventPayloadProtection>([
+      ...PROJECT_CONTENT_EVENTS.map(eventType => [eventType, 'project-content'] as const),
+      ...UNPROTECTED_EVENTS.map(eventType => [eventType, 'none'] as const),
+    ])
+
+    expect(expected.size).toBe(PROJECT_CONTENT_EVENTS.length + UNPROTECTED_EVENTS.length)
+    for (const [eventType, payloadProtection] of expected) {
+      expect(domainEventRegistry.has(eventType), eventType).toBe(true)
+      expect(domainEventRegistry.protectionFor(eventType), eventType).toBe(payloadProtection)
+    }
+  })
+
   it('starts autonomous writing only through the durable outbox', () => {
     const source = readFileSync(join(sourceRoot, 'modules/automation/autonomous-writing.service.ts'), 'utf8')
     expect(source).not.toMatch(/runNextAutonomousStep\(projectId, runId\)\.catch/)

@@ -15,6 +15,7 @@ describe('eventRegistry', () => {
     registry.register({
       eventType: 'KernelTestCreated',
       currentSchemaVersion: 1,
+      payloadProtection: 'none',
       validate: (payload) => {
         if (!isRecord(payload) || typeof payload.value !== 'string')
           throw new Error('value must be a string')
@@ -39,11 +40,12 @@ describe('eventRegistry', () => {
     expect(registry.protectionFor('SecretChanged')).toBe('project-content')
   })
 
-  it('defaults legacy registrations to unprotected payloads', () => {
+  it('reports an explicitly unprotected payload classification', () => {
     const registry = new EventRegistry()
     registry.register({
       eventType: 'PublicLifecycleAdvanced',
       currentSchemaVersion: 1,
+      payloadProtection: 'none',
       upcasters: {},
       validate: payload => payload as JsonObject,
     })
@@ -56,6 +58,7 @@ describe('eventRegistry', () => {
     registry.register({
       eventType: 'KernelTestRenamed',
       currentSchemaVersion: 3,
+      payloadProtection: 'none',
       validate: (payload) => {
         if (!isRecord(payload) || typeof payload.title !== 'string')
           throw new Error('title must be a string')
@@ -87,6 +90,7 @@ describe('eventRegistry', () => {
     const definition = {
       eventType: 'KernelTestCreated',
       currentSchemaVersion: 1,
+      payloadProtection: 'none' as const,
       validate: () => ({}),
       upcasters: {},
     }
@@ -100,6 +104,7 @@ describe('eventRegistry', () => {
     registry.register({
       eventType: 'KernelTestRenamed',
       currentSchemaVersion: 3,
+      payloadProtection: 'none',
       validate: () => ({}),
       upcasters: { 1: payload => payload },
     })
@@ -112,6 +117,7 @@ describe('eventRegistry', () => {
     registry.register({
       eventType: 'KernelTestCreated',
       currentSchemaVersion: 1,
+      payloadProtection: 'none',
       validate: () => ({}),
       upcasters: {},
     })
@@ -124,6 +130,7 @@ describe('eventRegistry', () => {
     registry.register({
       eventType: 'KernelTestCreated',
       currentSchemaVersion: 1,
+      payloadProtection: 'none',
       validate: () => {
         throw new Error('invalid value')
       },

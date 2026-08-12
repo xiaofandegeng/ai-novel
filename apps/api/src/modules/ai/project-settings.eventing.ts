@@ -96,18 +96,21 @@ function registerEvents(events: EventRegistry): void {
   events.register({
     eventType: AI_PROVIDER_SELECTED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: validateProviderEvent,
   })
   events.register({
     eventType: CREDENTIAL_REFERENCE_CHANGED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: validateCredentialEvent,
   })
   events.register({
     eventType: PROJECT_SETTINGS_CHANGED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: payload => ({ settings: readSettingsEvent(readObject(payload)) }),
   })

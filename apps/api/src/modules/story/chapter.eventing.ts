@@ -251,6 +251,7 @@ function registerEvents(events: EventRegistry): void {
     events.register({
       eventType,
       currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
       upcasters: {},
       validate: eventType === CHAPTER_CONTENT_APPLIED
         ? validateContentAppliedEvent
@@ -260,12 +261,14 @@ function registerEvents(events: EventRegistry): void {
   events.register({
     eventType: CHAPTER_DELETED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: validateDeletedEvent,
   })
   events.register({
     eventType: CHAPTER_VERSION_RECORDED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: validateVersionRecordedEvent,
   })
@@ -273,6 +276,7 @@ function registerEvents(events: EventRegistry): void {
     events.register({
       eventType,
       currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
       upcasters: {},
       validate: payload => ({ scene: readSceneEvent(readObject(payload)) }),
     })
@@ -280,6 +284,7 @@ function registerEvents(events: EventRegistry): void {
   events.register({
     eventType: SCENE_DELETED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: validateDeletedSceneEvent,
   })

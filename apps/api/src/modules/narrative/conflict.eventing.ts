@@ -148,6 +148,7 @@ export function registerConflictEventing(runtime: ConflictEventingRuntime): void
     runtime.events.register({
       eventType,
       currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
       upcasters: {},
       validate: payload => ({ conflict: readConflict(payloadCodec.object(payload)) }),
     })
@@ -155,24 +156,28 @@ export function registerConflictEventing(runtime: ConflictEventingRuntime): void
   runtime.events.register({
     eventType: CONFLICT_DELETED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: validateConflictDeleted,
   })
   runtime.events.register({
     eventType: CONFLICT_PARTICIPANTS_REPLACED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: payload => ({ participants: readParticipants(payloadCodec.object(payload)) }),
   })
   runtime.events.register({
     eventType: CONFLICT_TIMELINE_RECORDED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: payload => ({ timelineEvent: readTimeline(payloadCodec.object(payload)) }),
   })
   runtime.events.register({
     eventType: CONFLICT_TIMELINE_REMOVED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: validateTimelineRemoved,
   })

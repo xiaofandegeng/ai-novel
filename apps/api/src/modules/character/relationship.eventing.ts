@@ -97,6 +97,7 @@ export function registerRelationshipEventing(runtime: RelationshipEventingRuntim
     runtime.events.register({
       eventType,
       currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
       upcasters: {},
       validate: payload => ({ relationship: readRelationshipEvent(payloadCodec.object(payload)) }),
     })
@@ -104,6 +105,7 @@ export function registerRelationshipEventing(runtime: RelationshipEventingRuntim
   runtime.events.register({
     eventType: RELATIONSHIP_DELETED,
     currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
     upcasters: {},
     validate: validateRelationshipDeleted,
   })

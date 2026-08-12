@@ -151,16 +151,18 @@ export function registerWritingJobEventing(runtime: WritingJobEventingRuntime): 
     runtime.events.register({
       eventType,
       currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
       upcasters: {},
       validate: payload => ({ job: readJob(payloadCodec.object(payload)) }),
     })
   }
-  runtime.events.register({ eventType: WRITING_JOB_DELETED, currentSchemaVersion: 1, upcasters: {}, validate: validateDeleted })
-  runtime.events.register({ eventType: WRITING_JOB_STEPS_REPLACED, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ steps: readSteps(payloadCodec.object(payload)) }) })
-  runtime.events.register({ eventType: WRITING_JOB_STEP_CHANGED, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ step: readStep(payloadCodec.object(payload)) }) })
+  runtime.events.register({ eventType: WRITING_JOB_DELETED, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: validateDeleted })
+  runtime.events.register({ eventType: WRITING_JOB_STEPS_REPLACED, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ steps: readSteps(payloadCodec.object(payload)) }) })
+  runtime.events.register({ eventType: WRITING_JOB_STEP_CHANGED, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ step: readStep(payloadCodec.object(payload)) }) })
   runtime.events.register({
     eventType: WRITING_JOB_EXECUTION_REQUESTED,
     currentSchemaVersion: 1,
+    payloadProtection: 'none',
     upcasters: {},
     validate: payload => ({ requestId: payloadCodec.string(payloadCodec.object(payload), 'requestId') }),
   })

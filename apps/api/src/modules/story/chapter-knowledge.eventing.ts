@@ -137,11 +137,11 @@ export const chapterKnowledgeAggregate: AggregateDefinition<ChapterKnowledgeStat
 
 export function registerChapterKnowledgeEventing(runtime: ChapterKnowledgeEventingRuntime): void {
   for (const eventType of [CHAPTER_ELEMENT_ADDED, CHAPTER_ELEMENT_CHANGED]) {
-    runtime.events.register({ eventType, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ element: readElement(payloadCodec.object(payload)) }) })
+    runtime.events.register({ eventType, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ element: readElement(payloadCodec.object(payload)) }) })
   }
-  runtime.events.register({ eventType: CHAPTER_ELEMENT_REMOVED, currentSchemaVersion: 1, upcasters: {}, validate: validateElementRemoved })
-  runtime.events.register({ eventType: CHAPTER_ELEMENTS_REPLACED, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ elements: readElements(payloadCodec.object(payload)) }) })
-  runtime.events.register({ eventType: CHAPTER_MEMORY_RECORDED, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ memory: readMemory(payloadCodec.object(payload)) }) })
+  runtime.events.register({ eventType: CHAPTER_ELEMENT_REMOVED, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: validateElementRemoved })
+  runtime.events.register({ eventType: CHAPTER_ELEMENTS_REPLACED, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ elements: readElements(payloadCodec.object(payload)) }) })
+  runtime.events.register({ eventType: CHAPTER_MEMORY_RECORDED, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => ({ memory: readMemory(payloadCodec.object(payload)) }) })
   registerCommands(runtime)
   registerProjection(runtime.projections)
 }

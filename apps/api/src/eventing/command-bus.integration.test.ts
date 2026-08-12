@@ -416,6 +416,7 @@ describe('commandBus', () => {
     events.register({
       eventType: 'KernelThingCreated',
       currentSchemaVersion: 1,
+      payloadProtection: 'none',
       upcasters: {},
       validate: (payload) => {
         const value = payload as { id?: unknown }

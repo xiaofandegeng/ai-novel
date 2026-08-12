@@ -173,7 +173,7 @@ export function registerNarrativeKnowledgeEventing(runtime: NarrativeKnowledgeEv
     [AUTHORING_ACTIVITY_RECORDED, payload => ({ activity: readActivity(payload) })],
   ]
   for (const [eventType, validate] of registrations)
-    runtime.events.register({ eventType, currentSchemaVersion: 1, upcasters: {}, validate: payload => validate(payloadCodec.object(payload)) })
+    runtime.events.register({ eventType, currentSchemaVersion: 1, payloadProtection: 'project-content', upcasters: {}, validate: payload => validate(payloadCodec.object(payload)) })
   registerCommands(runtime)
   registerProjection(runtime.projections)
 }
