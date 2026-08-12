@@ -132,8 +132,8 @@ outboxHandlerRegistry.register(AUTONOMOUS_RUN_OUTBOX_HANDLER, async (message) =>
   const { projectId, runId } = message.payload
   if (typeof projectId !== 'string' || typeof runId !== 'string')
     throw new Error('Autonomous execution outbox payload is invalid')
-  const { runNextAutonomousStep } = await import('./modules/automation/autonomous-writing.service')
-  await runNextAutonomousStep(projectId, runId)
+  const { advanceAutonomousWritingRun } = await import('./modules/automation/autonomous-writing.process-manager')
+  await advanceAutonomousWritingRun(projectId, runId)
 })
 outboxHandlerRegistry.register(WRITING_JOB_OUTBOX_HANDLER, async (message) => {
   const { jobId, projectId } = message.payload
@@ -150,12 +150,13 @@ export const outboxWorker = new OutboxWorker({
 
 let drainPromise: Promise<void> | null = null
 
-export function wakeEventOutbox(): void {
-  if (drainPromise)
-    return
-  drainPromise = drainEventOutbox().finally(() => {
-    drainPromise = null
-  })
+export function wakeEventOutbox(): Promise<void> {
+  if (!drainPromise) {
+    drainPromise = drainEventOutbox().finally(() => {
+      drainPromise = null
+    })
+  }
+  return drainPromise
 }
 
 export function startEventOutboxPolling(intervalMs = 500): () => void {

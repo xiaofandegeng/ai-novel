@@ -34,11 +34,17 @@ export default defineConfig({
         'src/eventing/**/*.test.ts',
       ],
       thresholds: {
-        'statements': 30,
-        'branches': 50,
-        'functions': 45,
-        'lines': 30,
+        'statements': 80,
+        'branches': 70,
+        'functions': 85,
+        'lines': 80,
         'src/eventing/**/*.ts': {
+          statements: 90,
+          branches: 90,
+          functions: 90,
+          lines: 90,
+        },
+        'src/modules/automation/**/*.process-manager.ts': {
           statements: 90,
           branches: 90,
           functions: 90,

@@ -602,68 +602,6 @@ export async function startAutonomousRun(projectId: string, runId: string): Prom
   await requestAutonomousExecution(projectId, runId, `StartRun:${runId}:execute`)
 }
 
-export async function runNextAutonomousStep(projectId: string, runId: string): Promise<void> {
-  // Guard: only proceed if run is still running
-  const [currentRun] = await db.select().from(autonomousWritingRuns).where(
-    eq(autonomousWritingRuns.id, runId),
-  )
-  if (!currentRun || currentRun.status !== 'running')
-    return
-
-  // Find the first pending job
-  const nextJob = await db.select().from(autonomousRunJobs).where(and(
-    eq(autonomousRunJobs.runId, runId),
-    eq(autonomousRunJobs.status, 'pending'),
-  )).orderBy(asc(autonomousRunJobs.orderIndex)).limit(1)
-
-  if (nextJob.length === 0) {
-    // A paused writing job keeps its RunJob in running state; resume it through
-    // the same durable execution handler instead of bypassing the outbox.
-    const activeJobs = await db.select().from(autonomousRunJobs).where(and(
-      eq(autonomousRunJobs.runId, runId),
-      eq(autonomousRunJobs.status, 'running'),
-    )).orderBy(asc(autonomousRunJobs.orderIndex)).limit(1)
-
-    if (activeJobs.length > 0) {
-      const { startJob } = await import('./writing-job.service')
-      await startJob(projectId, activeJobs[0].writingJobId)
-      return
-    }
-
-    // All jobs finished. Check if there are any failures to decide final status
-    const failedJobs = await db.select({ id: autonomousRunJobs.id }).from(autonomousRunJobs).where(and(
-      eq(autonomousRunJobs.runId, runId),
-      eq(autonomousRunJobs.status, 'failed'),
-    )).limit(1)
-
-    const finalStatus = failedJobs.length > 0 ? 'failed' : 'completed'
-
-    await changeRun(projectId, runId, {
-      status: finalStatus,
-      finishedAt: now(),
-    })
-    return
-  }
-
-  const jobToRun = nextJob[0]
-
-  // If already running, we might be resuming or it's a retry
-  if (jobToRun.status === 'pending') {
-    await changeAutonomousRunJob(projectId, runId, jobToRun.id, { status: 'running' })
-  }
-
-  // Update current chapter pointer in run
-  await changeRun(projectId, runId, {
-    currentChapterId: jobToRun.chapterId,
-  })
-
-  // Execute the underlying writing job
-  // This will run asynchronously or we wait for it?
-  // In our engine, runNextSteps (called by startJob) is async but the call itself returns
-  const { startJob } = await import('./writing-job.service')
-  await startJob(projectId, jobToRun.writingJobId)
-}
-
 export async function pauseAutonomousRun(projectId: string, runId: string, reason?: string): Promise<void> {
   const [run] = await db.select().from(autonomousWritingRuns).where(and(
     eq(autonomousWritingRuns.id, runId),

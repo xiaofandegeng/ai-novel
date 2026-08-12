@@ -17,10 +17,10 @@ export default defineConfig({
       include: ['src/**/*.{ts,vue}'],
       exclude: ['src/main.ts', 'src/router/**', 'src/**/*.d.ts'],
       thresholds: {
-        statements: 45,
-        branches: 55,
+        statements: 75,
+        branches: 65,
         functions: 60,
-        lines: 45,
+        lines: 75,
       },
     },
   },

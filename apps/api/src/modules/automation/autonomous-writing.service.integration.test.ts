@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../../db'
 import { autonomousRunExceptions, autonomousRunJobs, autonomousWritingRuns, chapters, domainEvents, writingJobs } from '../../db/schema'
-import { commandBus } from '../../eventing-runtime'
+import { commandBus, wakeEventOutbox } from '../../eventing-runtime'
 import { resetTestDatabase } from '../../test/database'
 import { CREATE_PROJECT_COMMAND } from '../project/project.eventing'
 import {
@@ -25,7 +25,8 @@ afterAll(() => sql.end())
 
 describe('autonomous writing service', () => {
   beforeEach(resetTestDatabase)
-  afterEach(() => {
+  afterEach(async () => {
+    await wakeEventOutbox()
     process.env.AI_FAKE_MODE = originalFakeMode
   })
 

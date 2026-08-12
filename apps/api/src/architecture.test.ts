@@ -23,6 +23,18 @@ describe('api architecture boundaries', () => {
     expect(publicStart).not.toContain('runNextSteps(')
   })
 
+  it('keeps process managers command-only and free of direct projection writes', () => {
+    const processManagers = sourceFiles(join(sourceRoot, 'modules'))
+      .filter(file => file.endsWith('.process-manager.ts'))
+
+    expect(processManagers.length).toBeGreaterThan(0)
+    for (const file of processManagers) {
+      const source = readFileSync(file, 'utf8')
+      expect(source, relative(sourceRoot, file)).not.toMatch(/\bdb\.(?:insert|update|delete)\(/)
+      expect(source, relative(sourceRoot, file)).not.toMatch(/transaction\.(?:insert|update|delete)\(/)
+    }
+  })
+
   it('does not restore the legacy flat route, service, or utility directories', () => {
     for (const directory of ['routes', 'services', 'utils'])
       expect(existsSync(join(sourceRoot, directory)), directory).toBe(false)
