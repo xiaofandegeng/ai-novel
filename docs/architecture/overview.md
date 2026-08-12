@@ -1,6 +1,6 @@
 # 架构总览
 
-更新日期：2026-08-11  
+更新日期：2026-08-12  
 状态：当前有效
 
 ## 1. 系统边界
@@ -71,9 +71,9 @@ apps/api/src/
 ```text
 app/index
   → modules
-    → eventing（已迁移领域的写命令）
+    → eventing（全部产品领域写命令）
       → config + db + shared
-    → config + db + shared（尚未迁移领域的查询与写入）
+    → config + db + shared（只读查询和凭据存储）
     → other domain modules (explicit imports only)
 db
   → config
@@ -92,7 +92,7 @@ eventing
 
 ### 事件溯源内核
 
-事件内核已完成，Project、项目 AI 设置、项目 Prompt 覆盖、故事结构与 Chapter 已切换为事件事实来源；人物、叙事知识和自动化运行领域仍在后续批次迁移。已迁移领域的写链统一为：
+事件内核和全产品数据层迁移已完成。Project、项目 AI 设置、项目 Prompt 覆盖、故事结构、Chapter、人物、关系、冲突、伏笔、叙事知识、WritingJob、AutonomousRun、ChangeSet、Postprocess 和 AI 操作均以事件作为事实来源。所有领域写链统一为：
 
 ```text
 route → command handler → aggregate repository
@@ -103,14 +103,15 @@ route → command handler → aggregate repository
     → outbox enqueue
 ```
 
-- `domain_events` 是迁移后领域的唯一事实来源，数据库触发器禁止任何 `UPDATE` 和 `DELETE`。
+- `domain_events` 是产品领域的唯一事实来源，数据库触发器禁止任何 `UPDATE` 和 `DELETE`。
 - `aggregate_snapshots` 只加速聚合恢复，可以删除重建。
 - 同一 `command_id` 返回首次完成或拒绝的回执，避免重复追加事件和副作用。
 - 事件读取、快照读取和命令写入都校验 `projectId`；相同聚合 ID 不能通过另一个项目作用域加载。
 - 同步投影与事件追加同事务；异步投影按全局位置维护 checkpoint。
 - 外部副作用只能通过 Outbox worker 租约领取，失败按退避策略重试，超过上限进入终态失败。
+- 自动写作 Process Manager 只根据 Run/Job 投影发出后续 Command；Outbox 唤醒它，领域服务不能通过递归调用继续主链。
 - 投影重放先重置目标读模型，再按 `global_position` 顺序重建；失败时重建事务回滚，并留下诊断 checkpoint。
-- `project_read_models`、`project_ai_settings`、`project_prompt_overrides`、`story_bibles`、`volumes`、`acts`、`chapters`、`chapter_scenes` 与 `chapter_versions` 都是可重放投影；`novel_projects` 暂时作为未迁移外键的兼容投影。
+- 全部业务读模型都可由 `domain_events` 重放；`novel_projects` 仅作为兼容外键投影，不是独立事实源。
 - 每个项目只有一个 `StoryStructure` 聚合；每个章节是独立 `Chapter` 聚合，场景是 Chapter 内部实体。批量场景替换在同一章节流中原子提交。
 - 章节版本由 `ChapterContentApplied` 或显式 `ChapterVersionRecorded` 事件派生，版本表不接受更新或删除。删除卷只解除章节的卷关联，不级联删除章节。
 - 自动规划、写作任务、变更集和后处理不得直接修改章节投影，接受的结果必须先通过 Chapter 命令。
@@ -161,15 +162,17 @@ Vue component
   → feature API
   → shared HTTP client
   → Hono route
-  → domain service
-  → Drizzle/PostgreSQL
+  → query service 或 command handler
+  → projection / Event Store
 ```
 
 自动写作主链：
 
 ```text
-autonomous run
-  → writing job
+autonomous run command
+  → Outbox
+  → Process Manager
+  → writing job command
   → AI context + narrative control
   → outline/draft generation
   → consistency guard
@@ -196,8 +199,9 @@ autonomous run
 - schema 放在 `apps/api/src/db/schema`；迁移历史放在 `apps/api/drizzle`，不得作为旧文件清理。
 - 事件内核 migration 是增量基础设施变更；产品领域切换与已确认的数据清空必须在独立迁移阶段执行，不能混入普通结构整理。
 - 单元测试与被测模块相邻；架构边界由各应用的 `src/architecture.test.ts` 自动验证；跨 feature 测试放在 `features` 根；API HTTP 集成测试保留在 `src/app.integration.test.ts`。
-- 事件内核单独维持语句、分支、函数和行至少 90% 的覆盖率门禁。
-- 全仓验收执行 `pnpm check`，覆盖率门禁执行 `pnpm test:coverage`。
+- Eventing 与 Process Manager 单独维持语句、分支、函数和行至少 90% 的覆盖率门禁。
+- API 全局语句/行至少 80%、分支至少 70%、函数至少 85%；Web 全局语句/行至少 75%、分支至少 65%、函数至少 60%。
+- 全仓验收执行 `pnpm check`，覆盖率门禁执行 `pnpm test:coverage`；数据库切换还必须执行 rebuild、seed 和 projection replay。
 
 ## 8. 架构非目标
 

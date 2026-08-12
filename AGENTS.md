@@ -8,12 +8,13 @@ Before writing code, read these files in order:
 
 1. `AGENTS.md`
 2. `docs/README.md`
-3. `docs/architecture/overview.md`
-4. `docs/standards/engineering.md`
-5. `docs/standards/ui.md`
-6. `docs/standards/ai-collaboration.md`
-7. `docs/product/product-design.md`
-8. `docs/design/ui-design-spec.md`
+3. `docs/status/current-state.md`
+4. `docs/architecture/overview.md`
+5. `docs/standards/engineering.md`
+6. `docs/standards/ui.md`
+7. `docs/standards/ai-collaboration.md`
+8. `docs/product/product-design.md`
+9. `docs/design/ui-design-spec.md`
 
 ## Project Summary
 

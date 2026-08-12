@@ -1,6 +1,6 @@
 # 本地开发与配置
 
-更新日期：2026-08-11
+更新日期：2026-08-12
 
 ## 1. 环境要求
 
@@ -16,7 +16,7 @@ cp .env.example .env
 pnpm install
 pnpm db:init-vector
 pnpm db:migrate
-pnpm --filter @ai-novel/api db:seed
+pnpm db:seed
 ```
 
 Seed 会重建演示数据，只能用于明确的本地开发数据库。
@@ -56,13 +56,21 @@ TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/ai_novel_test
 
 ### 事件溯源内核
 
-当前 migration 会增量创建 Event Store、stream、快照、命令回执、投影 checkpoint 和 Outbox 表，并安装 `domain_events` 的 append-only 触发器：
+当前 migration 会完整创建 Event Store、stream、快照、命令回执、投影 checkpoint、Outbox 和全部产品投影，并安装 `domain_events` 的 append-only 触发器：
 
 ```bash
 pnpm db:migrate
 ```
 
-这一步会创建事件内核以及当前已落地的读模型。Project、项目 AI 设置、项目 Prompt 覆盖、故事圣经、卷、幕、章节、场景和章节版本已使用事件作为事实来源；人物、叙事知识与自动化运行仍在后续批次迁移。`0030` 会把章节到卷的删除行为改为 `SET NULL`，确保结构投影重放不会级联删除章节。迁移命令本身不会清空数据，已确认的全量清空只在所有领域完成后执行一次。
+这一步会创建事件内核和当前全部读模型。Project、设置、Prompt、故事结构、章节、人物、关系、冲突、伏笔、叙事知识和自动化运行均使用事件作为事实来源。迁移命令不会主动清空已有数据库；本项目已选择不保留旧业务数据的直接切换方式，本地首次切换使用：
+
+```bash
+pnpm db:rebuild
+pnpm db:seed
+pnpm db:replay
+```
+
+`db:rebuild` 会删除本地开发库的 `public` 与 Drizzle migration schema，数据不可恢复；脚本拒绝非本地目标。`db:replay` 会清空可重建投影并按事件全局位置恢复。
 
 事件内核集成测试始终连接 `_test` 数据库：
 
@@ -71,7 +79,7 @@ pnpm --filter @ai-novel/api exec vitest run src/eventing
 pnpm --filter @ai-novel/api test:coverage
 ```
 
-Outbox worker 和投影重放由 API 事件内核提供；Project、设置、Prompt、StoryStructure 和 Chapter 的 handler/projector 已在 `eventing-runtime.ts` 注册。不得在 route 内直接操作 Event Store、Outbox 或 checkpoint，也不得从自动化服务直接写这些领域的投影表。重放规则是先调用投影的 project-aware `reset`，再以受限 `batchSize` 按全局位置扫描；失败会回滚读模型并记录诊断状态。章节版本是不可变投影，删除接口固定返回冲突响应。
+Outbox worker、Process Manager 和投影重放由 API 事件内核提供；全部 handler/projector 在 `eventing-runtime.ts` 注册。不得在 route 内直接操作 Event Store、Outbox 或 checkpoint，也不得从自动化服务直接写业务投影表。重放规则是先调用投影的 project-aware `reset`，再以受限 `batchSize` 按全局位置扫描；失败会回滚读模型并记录诊断状态。章节版本是不可变投影，删除接口固定返回冲突响应。
 
 ### AI 与 Embedding
 
@@ -111,6 +119,7 @@ pnpm dev
 ```bash
 pnpm check
 pnpm test:coverage
+pnpm db:replay
 ```
 
 若本机环境限制进程访问 PostgreSQL，API 集成测试需要在允许连接本机 5432 端口的终端中执行。
