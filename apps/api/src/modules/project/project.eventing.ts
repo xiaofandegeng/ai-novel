@@ -14,18 +14,29 @@ import { eq } from 'drizzle-orm'
 import { novelProjects, projectReadModels } from '../../db/schema'
 import { createPayloadCodec, DomainCommandError } from '../../eventing'
 import { generateId, now } from '../../shared/utils'
+import {
+  CREATE_PROJECT_COMMAND,
+  DELETE_PROJECT_COMMAND,
+  PROJECT_AGGREGATE_TYPE,
+  PROJECT_CREATED,
+  PROJECT_DELETED,
+  PROJECT_DELETION_REQUESTED,
+  PROJECT_DETAILS_CHANGED,
+  PROJECT_PROJECTION,
+  UPDATE_PROJECT_COMMAND,
+} from './project-event-types'
 
-export const PROJECT_AGGREGATE_TYPE = 'Project'
-export const PROJECT_PROJECTION = 'project-read-model'
-
-export const CREATE_PROJECT_COMMAND = 'CreateProject'
-export const UPDATE_PROJECT_COMMAND = 'UpdateProject'
-export const DELETE_PROJECT_COMMAND = 'DeleteProject'
-
-export const PROJECT_CREATED = 'ProjectCreated'
-export const PROJECT_DETAILS_CHANGED = 'ProjectDetailsChanged'
-export const PROJECT_DELETION_REQUESTED = 'ProjectDeletionRequested'
-export const PROJECT_DELETED = 'ProjectDeleted'
+export {
+  CREATE_PROJECT_COMMAND,
+  DELETE_PROJECT_COMMAND,
+  PROJECT_AGGREGATE_TYPE,
+  PROJECT_CREATED,
+  PROJECT_DELETED,
+  PROJECT_DELETION_REQUESTED,
+  PROJECT_DETAILS_CHANGED,
+  PROJECT_PROJECTION,
+  UPDATE_PROJECT_COMMAND,
+} from './project-event-types'
 
 const PROJECT_STATUSES: readonly ProjectStatus[] = [
   'planning',

@@ -9,13 +9,14 @@ import type {
   StoredEvent,
   StreamRef,
 } from './event-types'
-import { and, asc, eq, gt, isNull } from 'drizzle-orm'
+import { and, asc, eq, gt, isNull, lte, max, sql } from 'drizzle-orm'
 import { db } from '../db'
 import {
   aggregateSnapshots,
   aggregateStreams,
   domainEvents,
   eventOutbox,
+  projectDataKeys,
 } from '../db/schema'
 import { NoopEventingContentProtector } from './content-protector'
 import { DuplicateEventError, EventConcurrencyError } from './errors'
@@ -28,14 +29,20 @@ export interface ReplayEventBatch {
   reachedEnd: boolean
 }
 
+export interface ReplayBoundary {
+  horizon: number
+  deletedProjectIds: ReadonlySet<string>
+}
+
 export interface EventStoreSession {
   transaction: EventingTransaction
   loadStream: (stream: StreamRef, fromVersion?: number) => Promise<StoredEvent[]>
   readAll: (afterPosition: number, limit: number) => Promise<StoredEvent[]>
+  prepareReplay: () => Promise<ReplayBoundary>
   readAllForReplay: (
     afterPosition: number,
     limit: number,
-    deletedProjectIds: ReadonlySet<string>,
+    boundary: ReplayBoundary,
     projectId?: string,
   ) => Promise<ReplayEventBatch>
   appendBatch: (batch: AppendBatch) => Promise<StoredEvent[]>
@@ -141,15 +148,48 @@ function createSession(
         .limit(limit)
       return contentProtector.unprotectEvents(transaction, rows.map(toStoredEvent))
     },
-    async readAllForReplay(afterPosition, limit, deletedProjectIds, projectId) {
+    async prepareReplay() {
+      const [position] = await transaction.select({ horizon: max(domainEvents.globalPosition) })
+        .from(domainEvents)
+      const horizon = position?.horizon ?? 0
+
+      await transaction.select({ projectId: projectDataKeys.projectId })
+        .from(projectDataKeys)
+        .where(sql`exists (
+          select 1
+          from ${domainEvents}
+          where ${domainEvents.projectId} = ${projectDataKeys.projectId}
+            and ${domainEvents.globalPosition} <= ${horizon}
+        )`)
+        .orderBy(asc(projectDataKeys.projectId))
+        .for('share')
+
+      if (!projectDeletedEventType) {
+        if (contentProtector instanceof NoopEventingContentProtector)
+          return { horizon, deletedProjectIds: new Set() }
+        throw new Error('Project deleted event type is not configured')
+      }
+
+      const rows = await transaction.select({ projectId: domainEvents.projectId })
+        .from(domainEvents)
+        .where(eq(domainEvents.eventType, projectDeletedEventType))
+      return {
+        horizon,
+        deletedProjectIds: new Set(rows.flatMap(row => row.projectId ? [row.projectId] : [])),
+      }
+    },
+    async readAllForReplay(afterPosition, limit, boundary, projectId) {
       const rows = await transaction.select()
         .from(domainEvents)
-        .where(gt(domainEvents.globalPosition, afterPosition))
+        .where(and(
+          gt(domainEvents.globalPosition, afterPosition),
+          lte(domainEvents.globalPosition, boundary.horizon),
+        ))
         .orderBy(asc(domainEvents.globalPosition))
         .limit(limit)
       const lastGlobalPosition = rows.at(-1)?.globalPosition ?? afterPosition
       const activeRows = rows.filter(row => (
-        !row.projectId || !deletedProjectIds.has(row.projectId)
+        !row.projectId || !boundary.deletedProjectIds.has(row.projectId)
       ) && (!projectId || row.projectId === projectId))
       return {
         events: await contentProtector.unprotectEvents(
@@ -164,6 +204,13 @@ function createSession(
       const streams = normalizeStreams(batch)
       if (streams.length === 0)
         return []
+      await contentProtector.prepareBatch(
+        transaction,
+        streams.flatMap(append => append.events.map(event => ({
+          eventType: event.eventType,
+          ...(append.stream.projectId ? { projectId: append.stream.projectId } : {}),
+        }))),
+      )
       const versions = new Map<string, number>()
 
       for (const append of [...streams].sort(compareStreams)) {

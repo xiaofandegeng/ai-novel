@@ -24,7 +24,16 @@ interface ProtectedEventingJsonEnvelope extends EncryptedJsonEnvelope {
 
 export type EventingExecutor = Pick<typeof db, 'select'> | EventingTransaction
 
+export interface ContentProtectionEventHeader {
+  eventType: string
+  projectId?: string
+}
+
 export interface EventingContentProtector {
+  prepareBatch: (
+    executor: EventingTransaction,
+    events: ContentProtectionEventHeader[],
+  ) => Promise<void>
   protectEvent: (executor: EventingExecutor, event: StoredEvent) => Promise<JsonObject>
   unprotectEvent: (executor: EventingExecutor, event: StoredEvent) => Promise<JsonObject>
   unprotectEvents: (executor: EventingExecutor, events: StoredEvent[]) => Promise<StoredEvent[]>
@@ -48,6 +57,11 @@ export interface ProjectLifecycleEventTypes {
 }
 
 export class NoopEventingContentProtector implements EventingContentProtector {
+  async prepareBatch(
+    _executor: EventingTransaction,
+    _events: ContentProtectionEventHeader[],
+  ): Promise<void> {}
+
   async protectEvent(_executor: EventingExecutor, event: StoredEvent): Promise<JsonObject> {
     return event.payload
   }
@@ -92,6 +106,19 @@ export class ProjectEventingContentProtector implements EventingContentProtector
     private readonly keys: ProjectDataKeyStore,
     private readonly lifecycleEvents: ProjectLifecycleEventTypes,
   ) {}
+
+  async prepareBatch(
+    executor: EventingTransaction,
+    events: ContentProtectionEventHeader[],
+  ): Promise<void> {
+    const projectIds = [...new Set(events.flatMap(event => (
+      event.eventType === this.lifecycleEvents.projectDeletedEventType
+        ? [requiredProjectId(event.projectId, 'project deletion event')]
+        : []
+    )))].sort()
+    for (const projectId of projectIds)
+      await this.keys.lockForDestruction(executor, projectId)
+  }
 
   async protectEvent(executor: EventingExecutor, event: StoredEvent): Promise<JsonObject> {
     if (this.registry.protectionFor(event.eventType) === 'none')

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { domainEventRegistry } from './eventing-runtime'
+import { EVENT_PAYLOAD_PROTECTION_CATALOG } from './eventing/event-protection-catalog'
 
 const sourceRoot = fileURLToPath(new URL('.', import.meta.url))
 
@@ -60,98 +61,6 @@ function compareEventTypeSets(
   }
 }
 
-const PROJECT_CONTENT_EVENTS = [
-  'ProjectCreated',
-  'ProjectDetailsChanged',
-  'AIOperationRecorded',
-  'AIOperationChanged',
-  'AIProviderSelected',
-  'CredentialReferenceChanged',
-  'ProjectSettingsChanged',
-  'PromptTemplateSelected',
-  'ProjectPromptOverrideChanged',
-  'StoryBibleChanged',
-  'VolumeCreated',
-  'VolumeChanged',
-  'ActCreated',
-  'ActChanged',
-  'ChapterCreated',
-  'ChapterRenamed',
-  'OutlineChanged',
-  'ChapterDetailsChanged',
-  'ChapterContentApplied',
-  'ChapterCompleted',
-  'ChapterDeleted',
-  'ChapterVersionRecorded',
-  'ScenePlanned',
-  'SceneChanged',
-  'SceneReordered',
-  'SceneContentApplied',
-  'SceneDeleted',
-  'ChapterElementAdded',
-  'ChapterElementChanged',
-  'ChapterElementRemoved',
-  'ChapterElementsReplaced',
-  'ChapterMemoryRecorded',
-  'CharacterCreated',
-  'CharacterChanged',
-  'CharacterDeleted',
-  'CharacterArcEventRecorded',
-  'CharacterArcEventCorrected',
-  'CharacterArcEventRemoved',
-  'RelationshipCreated',
-  'RelationshipChanged',
-  'RelationshipDeleted',
-  'ConflictCreated',
-  'ConflictChanged',
-  'ConflictDeleted',
-  'ConflictParticipantsReplaced',
-  'ConflictTimelineRecorded',
-  'ConflictTimelineRemoved',
-  'ForeshadowingCreated',
-  'ForeshadowingChanged',
-  'ForeshadowingDeleted',
-  'StoryFactRecorded',
-  'StoryFactChanged',
-  'StoryFactRemoved',
-  'KnowledgeSourceAdded',
-  'KnowledgeSourceRemoved',
-  'KnowledgeChunkAdded',
-  'KnowledgeNoteAdded',
-  'AuthoringActivityRecorded',
-  'WritingJobCreated',
-  'WritingJobChanged',
-  'WritingJobDeleted',
-  'WritingJobStepsReplaced',
-  'WritingJobStepChanged',
-  'AutonomousRunPrepared',
-  'AutonomousRunChanged',
-  'AutonomousRunJobAdded',
-  'AutonomousRunJobChanged',
-  'AutonomousExceptionOpened',
-  'AutonomousExceptionChanged',
-  'AutonomousExceptionActionResolved',
-  'ChapterChangeSetDrafted',
-  'ChapterChangeSetChanged',
-  'ChapterChangeSetItemChanged',
-  'PostprocessRunRequested',
-  'PostprocessRunChanged',
-  'PostprocessSuggestionGenerated',
-  'PostprocessSuggestionChanged',
-  'StyleFingerprintRecorded',
-] as const
-
-const UNPROTECTED_EVENTS = [
-  'ProjectDeletionRequested',
-  'ProjectDeleted',
-  'VolumeDeleted',
-  'ActDeleted',
-  'StructureTemplateApplied',
-  'ForeshadowingCharactersReplaced',
-  'WritingJobExecutionRequested',
-  'AutonomousRunExecutionRequested',
-] as const
-
 describe('api architecture boundaries', () => {
   it('reports registered domain event types missing from the reviewed classification', () => {
     expect(compareEventTypeSets(
@@ -174,12 +83,11 @@ describe('api architecture boundaries', () => {
   })
 
   it('classifies every registered domain event by its payload sensitivity', () => {
-    const expected = new Map<string, EventPayloadProtection>([
-      ...PROJECT_CONTENT_EVENTS.map(eventType => [eventType, 'project-content'] as const),
-      ...UNPROTECTED_EVENTS.map(eventType => [eventType, 'none'] as const),
-    ])
+    const expected = new Map<string, EventPayloadProtection>(
+      Object.entries(EVENT_PAYLOAD_PROTECTION_CATALOG),
+    )
 
-    expect(expected.size).toBe(PROJECT_CONTENT_EVENTS.length + UNPROTECTED_EVENTS.length)
+    expect(expected.size).toBe(86)
     const differences = compareEventTypeSets(expected.keys(), domainEventRegistry.eventTypes())
     expect(
       differences,

@@ -171,6 +171,117 @@ describe('projectionReplay', () => {
     ])
   })
 
+  it('waits for an in-flight deletion before discovering tombstones and resetting projections', async () => {
+    const runtime = protectedReplayRuntime()
+    await appendProtectedReplayProject(runtime.store, 'racing-project', 'racing-event')
+    await sql`
+      insert into eventing_replay_test_projection (project_id, event_ids)
+      values ('racing-project', '["stale"]'::jsonb)
+    `
+    const deletionReady = deferred()
+    const releaseDeletion = deferred()
+    const deletion = deleteProtectedReplayProject(
+      runtime.store,
+      'racing-project',
+      'racing-event',
+      async () => {
+        deletionReady.resolve()
+        await releaseDeletion.promise
+      },
+    )
+    await deletionReady.promise
+
+    const replay = new ProjectionReplay(runtime.projections, runtime.store)
+      .replayAll({ batchSize: 1 })
+    const replayWaitedForKey = await waitForBlockedDatabaseQuery('for share')
+    releaseDeletion.resolve()
+    const [deletionOutcome, replayOutcome] = await Promise.allSettled([deletion, replay])
+
+    expect(replayWaitedForKey).toBe(true)
+    expect(deletionOutcome.status).toBe('fulfilled')
+    expect(replayOutcome).toEqual({
+      status: 'fulfilled',
+      value: [{
+        projectionName: 'kernel-replay',
+        processedEvents: 0,
+        lastGlobalPosition: 1,
+      }],
+    })
+    expect(await readProject('racing-project')).toBeUndefined()
+  })
+
+  it('holds key locks until replay commits so a later deletion cannot resurrect its projection', async () => {
+    const runtime = protectedReplayRuntime()
+    await appendProtectedReplayProject(runtime.store, 'racing-project', 'racing-event')
+    const replayReachedReset = deferred()
+    const releaseReplay = deferred()
+    const definition = replayDefinition()
+    const reset = definition.reset!
+    definition.reset = async (transaction, projectId) => {
+      replayReachedReset.resolve()
+      await releaseReplay.promise
+      await reset(transaction, projectId)
+    }
+    const projections = registryWith(definition, runtime.events)
+
+    const replay = new ProjectionReplay(projections, runtime.store)
+      .replayAll({ batchSize: 1 })
+    await replayReachedReset.promise
+    const deletion = deleteProtectedReplayProject(
+      runtime.store,
+      'racing-project',
+      'racing-event',
+    )
+    const deletionWaitedForKey = await Promise.race([
+      waitForBlockedDatabaseQuery('for update'),
+      deletion.then(() => false),
+    ])
+    releaseReplay.resolve()
+    const [replayOutcome, deletionOutcome] = await Promise.allSettled([replay, deletion])
+
+    expect(deletionWaitedForKey).toBe(true)
+    expect(replayOutcome.status).toBe('fulfilled')
+    expect(deletionOutcome.status).toBe('fulfilled')
+    expect(await readProject('racing-project')).toBeUndefined()
+  })
+
+  it('reuses one replay horizon for every registered projection and excludes later events', async () => {
+    const runtime = protectedReplayRuntime()
+    await appendProtectedReplayProject(runtime.store, 'horizon-project', 'before-horizon')
+    const firstProjectionEntered = deferred()
+    const releaseFirstProjection = deferred()
+    const firstSeen: string[] = []
+    const secondSeen: string[] = []
+    const projections = new ProjectionRegistry(runtime.events)
+    projections.register(memoryProjection(
+      'horizon-first',
+      firstSeen,
+      async () => {
+        firstProjectionEntered.resolve()
+        await releaseFirstProjection.promise
+      },
+    ))
+    projections.register(memoryProjection('horizon-second', secondSeen))
+
+    const replay = new ProjectionReplay(projections, runtime.store)
+      .replayAll({ batchSize: 1 })
+    await firstProjectionEntered.promise
+    await appendProtectedReplayEvent(
+      runtime.store,
+      'horizon-project',
+      'after-horizon',
+      1,
+    )
+    releaseFirstProjection.resolve()
+
+    await expect(replay).resolves.toEqual([
+      { projectionName: 'horizon-first', processedEvents: 1, lastGlobalPosition: 1 },
+      { projectionName: 'horizon-second', processedEvents: 1, lastGlobalPosition: 1 },
+    ])
+    expect(firstSeen).toEqual(['before-horizon'])
+    expect(secondSeen).toEqual(['before-horizon'])
+  })
+
   it('upcasts stored events before sending them to a replay projector', async () => {
     const events = new EventRegistry()
     events.register({
@@ -351,10 +462,132 @@ function protectedReplayRuntime() {
     projectDeletedEventType: PROJECT_DELETED,
   })
   return {
+    events,
     keys,
     store: protectedStore,
     projections: registryWith(replayDefinition(), events),
   }
+}
+
+async function appendProtectedReplayProject(
+  store: EventStore,
+  projectId: string,
+  eventId: string,
+): Promise<void> {
+  await store.withTransaction(session => session.appendBatch({
+    commandId: `command-${eventId}`,
+    correlationId: `correlation-${eventId}`,
+    streams: [{
+      stream: {
+        aggregateType: 'KernelReplayTest',
+        aggregateId: projectId,
+        projectId,
+      },
+      expectedVersion: 0,
+      events: [pending(eventId)],
+    }],
+  }))
+}
+
+async function appendProtectedReplayEvent(
+  store: EventStore,
+  projectId: string,
+  eventId: string,
+  expectedVersion: number,
+): Promise<void> {
+  await store.withTransaction(session => session.appendBatch({
+    commandId: `command-${eventId}`,
+    correlationId: `correlation-${eventId}`,
+    streams: [{
+      stream: {
+        aggregateType: 'KernelReplayTest',
+        aggregateId: projectId,
+        projectId,
+      },
+      expectedVersion,
+      events: [pending(eventId)],
+    }],
+  }))
+}
+
+async function deleteProtectedReplayProject(
+  store: EventStore,
+  projectId: string,
+  precedingEventId: string,
+  beforeCommit: () => Promise<void> = async () => {},
+): Promise<void> {
+  await store.withTransaction(async (session) => {
+    const deletedEvents = await session.appendBatch({
+      commandId: `command-delete-${projectId}`,
+      correlationId: `correlation-delete-${projectId}`,
+      streams: [{
+        stream: {
+          aggregateType: 'KernelReplayTest',
+          aggregateId: projectId,
+          projectId,
+        },
+        expectedVersion: 1,
+        events: [{
+          ...pending(`deleted-${precedingEventId}`),
+          eventType: PROJECT_DELETED,
+          payload: { deletedAt: '2026-08-12T00:03:00.000Z' },
+        }],
+      }],
+    })
+    await session.transaction.execute(drizzleSql`
+      delete from eventing_replay_test_projection where project_id = ${projectId}
+    `)
+    await session.finalizeContentProtection(deletedEvents)
+    await beforeCommit()
+  })
+}
+
+function memoryProjection(
+  name: string,
+  seen: string[],
+  beforeFirstEvent: () => Promise<void> = async () => {},
+): ProjectionDefinition {
+  let first = true
+  return {
+    name,
+    mode: 'async',
+    handles: ['KernelReplayRecorded'],
+    reset: async () => {},
+    project: async (_transaction, event) => {
+      if (first) {
+        first = false
+        await beforeFirstEvent()
+      }
+      seen.push(String(event.payload.eventId))
+    },
+  }
+}
+
+async function waitForBlockedDatabaseQuery(fragment: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 500; attempt += 1) {
+    const [row] = await sql<{ blocked: boolean }[]>`
+      select exists (
+        select 1
+        from pg_stat_activity
+        where pid <> pg_backend_pid()
+          and datname = current_database()
+          and wait_event_type = 'Lock'
+          and cardinality(pg_blocking_pids(pid)) > 0
+          and query ilike ${`%${fragment}%`}
+      ) as blocked
+    `
+    if (row?.blocked)
+      return true
+  }
+  return false
+}
+
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
 }
 
 async function appendProtectedReplayProjects(store: EventStore): Promise<void> {

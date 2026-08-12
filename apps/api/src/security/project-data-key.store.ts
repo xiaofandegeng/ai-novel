@@ -65,6 +65,19 @@ export class ProjectDataKeyStore {
     return unwrapRow(this.masterKey, row)
   }
 
+  async lockForDestruction(
+    transaction: EventingTransaction,
+    projectId: string,
+  ): Promise<void> {
+    const [row] = await transaction.select({ projectId: projectDataKeys.projectId })
+      .from(projectDataKeys)
+      .where(eq(projectDataKeys.projectId, projectId))
+      .for('update')
+      .limit(1)
+    if (!row)
+      throw new Error('Project data key does not exist')
+  }
+
   async destroy(
     transaction: EventingTransaction,
     projectId: string,

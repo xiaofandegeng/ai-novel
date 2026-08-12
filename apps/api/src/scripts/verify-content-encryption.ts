@@ -4,12 +4,12 @@ import { Buffer } from 'node:buffer'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { db, sql } from '../db'
-import { domainEventRegistry } from '../eventing-runtime'
 import { readContentEncryptionRecords } from '../eventing/content-encryption-records'
+import { catalogProtectionFor } from '../eventing/event-protection-catalog'
 import {
   DELETE_PROJECT_COMMAND,
   PROJECT_DELETED,
-} from '../modules/project/project.eventing'
+} from '../modules/project/project-event-types'
 
 const CONTENT_AAD_FORMAT = 'eventing-content-aad-v1'
 const RECEIPT_RESULT_FORMAT = 'command-receipt-result-v1'
@@ -114,11 +114,12 @@ export async function verifyContentEncryption(
     if (containsKnownPlaintext(event.payload, probes)) {
       addFinding(findings, 'event', event.eventId, 'known-plaintext-found')
     }
-    if (!domainEventRegistry.has(event.eventType)) {
+    const payloadProtection = catalogProtectionFor(event.eventType)
+    if (!payloadProtection) {
       addFinding(findings, 'event', event.eventId, 'event-classification-missing')
       continue
     }
-    if (domainEventRegistry.protectionFor(event.eventType) !== 'project-content')
+    if (payloadProtection !== 'project-content')
       continue
 
     protectedEvents += 1
@@ -236,8 +237,23 @@ function isMinimalDeleteReceipt(value: unknown, projectId: string): boolean {
 function containsKnownPlaintext(value: unknown, knownPlaintexts: readonly string[]): boolean {
   if (knownPlaintexts.length === 0)
     return false
-  const serialized = JSON.stringify(value)
-  return knownPlaintexts.some(plaintext => serialized.includes(plaintext))
+
+  const pending: unknown[] = [value]
+  while (pending.length > 0) {
+    const current = pending.pop()
+    if (typeof current === 'string') {
+      if (knownPlaintexts.some(plaintext => current.includes(plaintext)))
+        return true
+      continue
+    }
+    if (Array.isArray(current)) {
+      pending.push(...current)
+      continue
+    }
+    if (typeof current === 'object' && current !== null)
+      pending.push(...Object.values(current))
+  }
+  return false
 }
 
 function addFinding(

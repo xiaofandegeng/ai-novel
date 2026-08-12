@@ -18,6 +18,7 @@ describe('verifyContentEncryption', () => {
 
   it('reports plaintext protected rows by category and record id without returning content', async () => {
     const knownPlaintext = 'scanner plaintext must never be returned'
+    const escapedPlaintext = 'line one\n"quoted" \\ path\tend'
 
     await expect(db.transaction(async (transaction) => {
       await transaction.insert(domainEvents).values({
@@ -33,6 +34,36 @@ describe('verifyContentEncryption', () => {
         commandId: 'plaintext-event-command',
         eventIndex: 0,
         correlationId: 'plaintext-event-command',
+        occurredAt: '2026-08-12T00:00:00.000Z',
+      })
+      await transaction.insert(domainEvents).values({
+        eventId: 'escaped-plaintext-event',
+        aggregateType: 'Project',
+        aggregateId: 'scanner-escaped-project',
+        aggregateVersion: 1,
+        projectId: 'scanner-project',
+        eventType: 'ProjectCreated',
+        schemaVersion: 1,
+        payload: { nested: { values: ['safe-prefix', escapedPlaintext] } },
+        metadata: { actorType: 'test' },
+        commandId: 'escaped-plaintext-command',
+        eventIndex: 0,
+        correlationId: 'escaped-plaintext-command',
+        occurredAt: '2026-08-12T00:00:00.000Z',
+      })
+      await transaction.insert(domainEvents).values({
+        eventId: 'unclassified-event',
+        aggregateType: 'Project',
+        aggregateId: 'scanner-unclassified-project',
+        aggregateVersion: 1,
+        projectId: 'scanner-project',
+        eventType: 'UnreviewedFixtureEvent',
+        schemaVersion: 1,
+        payload: {},
+        metadata: { actorType: 'test' },
+        commandId: 'unclassified-event-command',
+        eventIndex: 0,
+        correlationId: 'unclassified-event-command',
         occurredAt: '2026-08-12T00:00:00.000Z',
       })
       await transaction.insert(aggregateSnapshots).values({
@@ -67,7 +98,7 @@ describe('verifyContentEncryption', () => {
 
       const report = await verifyContentEncryption(
         'scanner-project',
-        [knownPlaintext],
+        [knownPlaintext, escapedPlaintext],
         transaction,
       )
 
@@ -98,8 +129,19 @@ describe('verifyContentEncryption', () => {
           recordId: 'plaintext-event',
           recordType: 'event',
         },
+        {
+          category: 'known-plaintext-found',
+          recordId: 'escaped-plaintext-event',
+          recordType: 'event',
+        },
+        {
+          category: 'event-classification-missing',
+          recordId: 'unclassified-event',
+          recordType: 'event',
+        },
       ]))
       expect(JSON.stringify(report)).not.toContain(knownPlaintext)
+      expect(JSON.stringify(report)).not.toContain(escapedPlaintext)
 
       throw new Error('ROLLBACK_ENCRYPTION_SCANNER_FIXTURES')
     })).rejects.toThrow('ROLLBACK_ENCRYPTION_SCANNER_FIXTURES')
