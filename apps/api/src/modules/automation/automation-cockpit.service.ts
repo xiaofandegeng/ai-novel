@@ -18,6 +18,7 @@ import type {
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import {
+  autonomousRunExceptions,
   autonomousRunJobs,
   autonomousWritingRuns,
   chapterChangeSetItems,
@@ -484,6 +485,12 @@ export class AutomationCockpitService {
 
     // 11. 结构化回写事件流 (Events)
     const events = await this.getCockpitEvents(projectId, 100)
+    const exceptions = activeRunId
+      ? await db.select().from(autonomousRunExceptions).where(and(
+          eq(autonomousRunExceptions.projectId, projectId),
+          eq(autonomousRunExceptions.runId, activeRunId),
+        )).orderBy(desc(autonomousRunExceptions.createdAt))
+      : []
 
     return {
       project: projectSummary,
@@ -496,6 +503,7 @@ export class AutomationCockpitService {
       plotDirection,
       health: healthSummary,
       events,
+      exceptions,
     }
   }
 

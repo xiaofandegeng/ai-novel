@@ -1,5 +1,6 @@
+import process from 'node:process'
 import { and, eq } from 'drizzle-orm'
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../../db'
 import { autonomousRunExceptions, autonomousRunJobs, autonomousWritingRuns, chapters, domainEvents, writingJobs } from '../../db/schema'
 import { commandBus } from '../../eventing-runtime'
@@ -13,12 +14,20 @@ import {
   handleAutonomousJobCompletion,
   pauseAutonomousRun,
   recordAutonomousException,
+  resolveAutonomousExceptionAction,
 } from './autonomous-writing.service'
+import { dispatchWritingJobCommand } from './writing-job.commands'
+import { CHANGE_WRITING_JOB_COMMAND } from './writing-job.eventing'
+
+const originalFakeMode = process.env.AI_FAKE_MODE
 
 afterAll(() => sql.end())
 
 describe('autonomous writing service', () => {
   beforeEach(resetTestDatabase)
+  afterEach(() => {
+    process.env.AI_FAKE_MODE = originalFakeMode
+  })
 
   it('creates missing placeholder chapters and jobs atomically for a new project', async () => {
     const projectId = 'empty-project'
@@ -124,7 +133,83 @@ describe('autonomous writing service', () => {
     )).orderBy(domainEvents.globalPosition)
     expect(abandonEvents.slice(-2).map(row => (row.payload as { run: { status: string } }).run.status)).toEqual(['abandoning', 'abandoned'])
   })
+
+  it('pauses safe and balanced runs after a chapter failure while fast mode continues', async () => {
+    for (const strategy of ['safe', 'balanced', 'fast'] as const) {
+      const projectId = `failure-policy-${strategy}`
+      await createProject(projectId, `失败策略 ${strategy}`)
+      const run = await createAutonomousRun(projectId, {
+        scopeType: 'next_n_chapters',
+        strategy,
+        targetChapterCount: 1,
+      })
+      const [runJob] = await db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.runId, run.id))
+      await changeAutonomousRun(projectId, run.id, { status: 'running' }, `start-policy-${strategy}`)
+
+      await handleAutonomousJobCompletion(projectId, runJob.writingJobId, 'failed', '模型不可用')
+
+      const [updated] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, run.id))
+      expect(updated.status).toBe(strategy === 'fast' ? 'running' : 'paused')
+      await expect(db.select().from(autonomousRunExceptions).where(eq(autonomousRunExceptions.runId, run.id))).resolves.toMatchObject([{
+        status: strategy === 'fast' ? 'ignored' : 'open',
+      }])
+    }
+  })
+
+  it.each([
+    ['retry_step', 'completed', 'completed', 'resolved_by_user', 'retry'],
+    ['skip_chapter', 'completed', 'skipped', 'resolved_by_user', 'skip_chapter'],
+    ['isolate_chapter', 'completed', 'isolated', 'isolated', 'isolate_chapter'],
+    ['stop_run', 'abandoned', 'skipped', 'resolved_by_user', 'stop_run'],
+  ] as const)('resolves an exception with the %s action through events', async (action, runStatus, runJobStatus, exceptionStatus, strategy) => {
+    process.env.AI_FAKE_MODE = 'true'
+    const projectId = `exception-${action}`
+    await createProject(projectId, `异常动作 ${action}`)
+    const run = await createAutonomousRun(projectId, {
+      scopeType: 'next_n_chapters',
+      strategy: 'balanced',
+      targetChapterCount: 1,
+    })
+    const [runJob] = await db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.runId, run.id))
+    await changeAutonomousRun(projectId, run.id, { status: 'running' }, `start-${action}`)
+    await changeAutonomousRunJob(projectId, run.id, runJob.id, { status: 'failed' }, `fail-run-job-${action}`)
+    await dispatchWritingJobCommand(CHANGE_WRITING_JOB_COMMAND, projectId, runJob.writingJobId, { status: 'failed', lastError: '模拟失败' })
+    await recordAutonomousException(projectId, run.id, {
+      exceptionType: 'ai_failed',
+      severity: 'high',
+      title: '生成失败',
+      chapterId: runJob.chapterId,
+      writingJobId: runJob.writingJobId,
+    }, `open-${action}`)
+    await pauseAutonomousRun(projectId, run.id, '等待作者处理')
+    const [exception] = await db.select().from(autonomousRunExceptions).where(eq(autonomousRunExceptions.runId, run.id))
+
+    await resolveAutonomousExceptionAction(projectId, run.id, exception.id, action)
+    await waitForRunStatus(run.id, runStatus)
+
+    await expect(db.select().from(autonomousRunExceptions).where(eq(autonomousRunExceptions.id, exception.id))).resolves.toMatchObject([{
+      status: exceptionStatus,
+      autoResolutionStrategy: strategy,
+    }])
+    await expect(db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.id, runJob.id))).resolves.toMatchObject([{ status: runJobStatus }])
+    const actionEvents = await db.select().from(domainEvents).where(and(
+      eq(domainEvents.aggregateId, run.id),
+      eq(domainEvents.eventType, 'AutonomousExceptionActionResolved'),
+    ))
+    expect(actionEvents).toHaveLength(1)
+  }, 20_000)
 })
+
+async function waitForRunStatus(runId: string, status: string): Promise<void> {
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    const [run] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, runId))
+    if (run?.status === status)
+      return
+    await new Promise(resolve => setTimeout(resolve, 25))
+  }
+  throw new Error(`Run ${runId} did not reach ${status}`)
+}
 
 function createProject(projectId: string, title: string) {
   return commandBus.dispatch({

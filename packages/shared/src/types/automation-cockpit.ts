@@ -1,3 +1,5 @@
+import type { AutonomousRunException } from './autonomous-writing'
+
 export interface CockpitProjectSummary {
   id: string
   title: string
@@ -163,6 +165,7 @@ export interface AutomationCockpitPayload {
   plotDirection: CockpitPlotDirection
   health: CockpitHealthSummary
   events: CockpitNarrativeEvent[]
+  exceptions: AutonomousRunException[]
 }
 
 export interface CockpitChapterDetail {

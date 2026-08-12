@@ -10,6 +10,12 @@ import {
   promptTemplates,
   storyStructureTemplates,
 } from './db/schema'
+import {
+  changeAutonomousRun,
+  createAutonomousRun,
+  pauseAutonomousRun,
+  recordAutonomousException,
+} from './modules/automation/autonomous-writing.service'
 import { resetTestDatabase } from './test/database'
 
 async function createProject(app: ReturnType<typeof createApp>, title = '测试长篇') {
@@ -397,6 +403,46 @@ describe('http application boundary', () => {
     const abandonResponse = await app.request(`/api/projects/${projectId}/autonomous-runs/${created.data.id}/abandon`, { method: 'POST' })
     expect(abandonResponse.status).toBe(200)
     await expect((await app.request(`/api/projects/${projectId}/autonomous-runs/active`)).json()).resolves.toEqual({ success: true, data: null })
+  })
+
+  it('submits explicit exception actions and rejects invalid action payloads', async () => {
+    const projectId = await createProject(app, '异常中心项目')
+    const run = await createAutonomousRun(projectId, {
+      strategy: 'balanced',
+      scopeType: 'next_n_chapters',
+      targetChapterCount: 1,
+    })
+    await changeAutonomousRun(projectId, run.id, { status: 'running' }, 'http-exception-start')
+    await recordAutonomousException(projectId, run.id, {
+      exceptionType: 'operator_override_required',
+      severity: 'high',
+      title: '等待作者选择',
+    }, 'http-exception-open')
+    await pauseAutonomousRun(projectId, run.id, '等待异常中心处置')
+    const exceptionResponse = await requestJson<Array<{ id: string, status: string }>>(
+      app,
+      `/api/projects/${projectId}/autonomous-runs/${run.id}/exceptions`,
+    )
+    expect(exceptionResponse.body.data).toMatchObject([{ status: 'open' }])
+    const exceptionId = exceptionResponse.body.data[0].id
+
+    const invalid = await requestJson(
+      app,
+      `/api/projects/${projectId}/autonomous-runs/${run.id}/exceptions/${exceptionId}/actions`,
+      'POST',
+      { action: 'ignore_everything' },
+    )
+    expect(invalid.response.status).toBe(400)
+
+    const stopped = await requestJson(
+      app,
+      `/api/projects/${projectId}/autonomous-runs/${run.id}/exceptions/${exceptionId}/actions`,
+      'POST',
+      { action: 'stop_run' },
+    )
+    expect(stopped.response.status).toBe(200)
+    const current = await requestJson<{ status: string }>(app, `/api/projects/${projectId}/autonomous-runs/${run.id}`)
+    expect(current.body.data.status).toBe('abandoned')
   })
 
   it('aggregates an empty project into a usable cockpit payload', async () => {

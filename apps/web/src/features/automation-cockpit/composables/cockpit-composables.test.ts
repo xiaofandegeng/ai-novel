@@ -24,6 +24,7 @@ const payload: AutomationCockpitPayload = {
   plotDirection: {},
   health: { overallScore: 100, riskCount: 0 },
   events: [],
+  exceptions: [],
 }
 
 function response(data: unknown) {

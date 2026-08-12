@@ -72,6 +72,7 @@ export type AutonomousExceptionType
 
 export type AutonomousExceptionStatus = 'open' | 'resolved' | 'ignored' | 'auto_resolved' | 'isolated' | 'resolved_by_user'
 export type AutoResolutionStrategy = 'repair' | 'skip_chapter' | 'isolate_chapter' | 'retry' | 'stop_run'
+export type AutonomousExceptionAction = 'retry_step' | 'skip_chapter' | 'isolate_chapter' | 'stop_run'
 
 export interface AutonomousRunException {
   id: string
@@ -88,7 +89,7 @@ export interface AutonomousRunException {
   status: AutonomousExceptionStatus
   autoResolutionStrategy?: AutoResolutionStrategy | null
   resolution: string | null
-  resolutionReport?: Record<string, unknown> | null
+  resolutionReport?: unknown
   createdAt: string
   updatedAt: string
 }

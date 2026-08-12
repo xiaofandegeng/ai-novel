@@ -1,4 +1,4 @@
-import type { AutonomousScopeType, AutonomousWritingRun, CreateAutonomousRunInput, WritingJobStepType } from '@ai-novel/shared'
+import type { AutonomousExceptionAction, AutonomousScopeType, AutonomousWritingRun, CreateAutonomousRunInput, WritingJobStepType } from '@ai-novel/shared'
 import type { AutonomousExceptionSnapshot, AutonomousRunJobSnapshot, AutonomousRunSnapshot } from './autonomous-run.eventing'
 import { and, asc, desc, eq, inArray, isNull, not, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
@@ -19,7 +19,7 @@ import {
   writingJobSteps,
 } from '../../db/schema'
 import { commandBus, wakeEventOutbox } from '../../eventing-runtime'
-import { errorMessage, generateId, now, timestampMs } from '../../shared/utils'
+import { generateId, now, timestampMs } from '../../shared/utils'
 import { getProjectHealthMetrics } from '../narrative/health-metrics.service'
 import { dispatchChapterCommand } from '../story/chapter.commands'
 import { CREATE_CHAPTER_COMMAND } from '../story/chapter.eventing'
@@ -33,6 +33,7 @@ import {
   OPEN_AUTONOMOUS_EXCEPTION_COMMAND,
   PREPARE_AUTONOMOUS_RUN_COMMAND,
   REQUEST_AUTONOMOUS_RUN_EXECUTION_COMMAND,
+  RESOLVE_AUTONOMOUS_EXCEPTION_ACTION_COMMAND,
 } from './autonomous-run.eventing'
 import { dispatchWritingJobCommand } from './writing-job.commands'
 import {
@@ -848,10 +849,23 @@ export async function handleAutonomousJobCompletion(
       resolution: run.strategy === 'fast' ? '快速策略自动跳过该章节' : null,
     })
 
-    // Single chapter failure never stops the run — continue to next chapter
+    // Fast mode skips forward automatically. Safer strategies revoke write
+    // authorization and wait for one of the explicit exception actions.
     const [latestRun] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, runId))
     if (latestRun && latestRun.status === 'running') {
-      await requestAutonomousExecution(projectId, runId, `ContinueRun:${runId}:failed-job:${jobId}`)
+      if (run.strategy === 'fast') {
+        await requestAutonomousExecution(projectId, runId, `ContinueRun:${runId}:failed-job:${jobId}`)
+      }
+      else {
+        await changeRun(projectId, runId, {
+          status: 'pausing',
+          pausedReason: '章节生成失败，等待作者在异常中心处置',
+        }, `PauseForException:${runId}:job:${jobId}:request`)
+        await changeRun(projectId, runId, {
+          status: 'paused',
+          pausedReason: '章节生成失败，等待作者在异常中心处置',
+        }, `PauseForException:${runId}:job:${jobId}:complete`)
+      }
     }
   }
 }
@@ -902,7 +916,12 @@ export async function getAutonomousExceptions(projectId: string, runId: string) 
   )).orderBy(desc(autonomousRunExceptions.createdAt))
 }
 
-export async function resolveAutonomousException(projectId: string, runId: string, exceptionId: string, resolution: string) {
+export async function resolveAutonomousExceptionAction(
+  projectId: string,
+  runId: string,
+  exceptionId: string,
+  action: AutonomousExceptionAction,
+): Promise<void> {
   const [ex] = await db.select().from(autonomousRunExceptions).where(and(
     eq(autonomousRunExceptions.id, exceptionId),
     eq(autonomousRunExceptions.runId, runId),
@@ -913,127 +932,91 @@ export async function resolveAutonomousException(projectId: string, runId: strin
     throw new Error('未找到该异常记录')
   if (ex.status !== 'open')
     throw new Error('该异常已被处理')
+  const [run] = await db.select().from(autonomousWritingRuns).where(and(
+    eq(autonomousWritingRuns.id, runId),
+    eq(autonomousWritingRuns.projectId, projectId),
+  )).limit(1)
+  if (!run || !['running', 'paused'].includes(run.status))
+    throw new Error('只有运行中或已暂停的任务可以处理异常')
 
-  await changeException(projectId, runId, exceptionId, {
-    status: 'resolved',
-    resolution,
-  }, `ResolveException:${exceptionId}`)
+  let shouldContinue = false
+  await commandBus.runAtomically(async () => {
+    await dispatchAutonomousRunCommand(
+      RESOLVE_AUTONOMOUS_EXCEPTION_ACTION_COMMAND,
+      projectId,
+      runId,
+      { id: exceptionId, action, resolution: exceptionResolution(action) },
+      { commandId: `ResolveExceptionAction:${exceptionId}:${action}`, correlationId: runId, causationId: exceptionId },
+    )
 
-  try {
-    // Reset the failed/isolated job so it can be re-run
-    if (ex.writingJobId) {
-      // Reset job steps to pending so startJob re-initializes them
-      const jobSteps = await db.select({ id: writingJobSteps.id, stepType: writingJobSteps.stepType })
+    if (action === 'stop_run') {
+      await abandonAutonomousRun(projectId, runId)
+      return
+    }
+
+    const [runJob] = ex.writingJobId
+      ? await db.select().from(autonomousRunJobs).where(and(
+          eq(autonomousRunJobs.runId, runId),
+          eq(autonomousRunJobs.writingJobId, ex.writingJobId),
+        )).limit(1)
+      : ex.chapterId
+        ? await db.select().from(autonomousRunJobs).where(and(
+            eq(autonomousRunJobs.runId, runId),
+            eq(autonomousRunJobs.chapterId, ex.chapterId),
+          )).limit(1)
+        : []
+
+    if (action === 'retry_step') {
+      if (!ex.writingJobId || !runJob)
+        throw new Error('该异常缺少可重试的写作任务')
+      const steps = await db.select({ id: writingJobSteps.id, stepType: writingJobSteps.stepType })
         .from(writingJobSteps)
         .where(eq(writingJobSteps.jobId, ex.writingJobId))
-      await dispatchWritingJobCommand(
-        REPLACE_WRITING_JOB_STEPS_COMMAND,
-        projectId,
-        ex.writingJobId,
-        { steps: jobSteps.map(step => ({ id: step.id, stepType: step.stepType })) },
-        {
-          commandId: `ResolveException:${exceptionId}:reset-steps`,
-          correlationId: runId,
-          causationId: exceptionId,
-        },
-      )
-
-      // Reset job status
-      await dispatchWritingJobCommand(
-        CHANGE_WRITING_JOB_COMMAND,
-        projectId,
-        ex.writingJobId,
-        { status: 'idle', lastError: null },
-        {
-          commandId: `ResolveException:${exceptionId}:reset-job`,
-          correlationId: runId,
-          causationId: exceptionId,
-        },
-      )
-
-      // Reset run job status
-      const [runJob] = await db.select().from(autonomousRunJobs).where(and(
-        eq(autonomousRunJobs.runId, runId),
-        eq(autonomousRunJobs.writingJobId, ex.writingJobId),
-      )).limit(1)
-      if (runJob) {
-        await changeAutonomousRunJob(projectId, runId, runJob.id, {
-          status: 'pending',
-          isolationReason: null,
-          isolationReport: null,
-        }, `ResolveException:${exceptionId}:reset-run-job`)
+      await dispatchWritingJobCommand(REPLACE_WRITING_JOB_STEPS_COMMAND, projectId, ex.writingJobId, {
+        steps: steps.map(step => ({ id: step.id, stepType: step.stepType })),
+      }, { commandId: `ResolveExceptionAction:${exceptionId}:reset-steps`, correlationId: runId, causationId: exceptionId })
+      await dispatchWritingJobCommand(CHANGE_WRITING_JOB_COMMAND, projectId, ex.writingJobId, {
+        status: 'idle',
+        lastError: null,
+      }, { commandId: `ResolveExceptionAction:${exceptionId}:reset-job`, correlationId: runId, causationId: exceptionId })
+      await changeAutonomousRunJob(projectId, runId, runJob.id, {
+        status: 'pending',
+        isolationReason: null,
+        isolationReport: null,
+      }, `ResolveExceptionAction:${exceptionId}:retry-run-job`)
+    }
+    else if (runJob) {
+      const status = action === 'isolate_chapter' ? 'isolated' : 'skipped'
+      await changeAutonomousRunJob(projectId, runId, runJob.id, {
+        status,
+        isolationReason: action === 'isolate_chapter' ? ex.description || ex.title : null,
+        isolationReport: action === 'isolate_chapter' ? { exceptionId, action } : null,
+      }, `ResolveExceptionAction:${exceptionId}:${action}:run-job`)
+      if (ex.writingJobId) {
+        await dispatchWritingJobCommand(CHANGE_WRITING_JOB_COMMAND, projectId, ex.writingJobId, {
+          status: 'isolated',
+          autoStopReason: exceptionResolution(action),
+        }, { commandId: `ResolveExceptionAction:${exceptionId}:${action}:job`, correlationId: runId, causationId: exceptionId })
       }
     }
-    else if (ex.chapterId) {
-      // Legacy: mark chapter job as completed and continue
-      const [runJob] = await db.select().from(autonomousRunJobs).where(and(
-        eq(autonomousRunJobs.runId, runId),
-        eq(autonomousRunJobs.chapterId, ex.chapterId),
-        or(eq(autonomousRunJobs.status, 'failed'), eq(autonomousRunJobs.status, 'isolated')),
-      )).limit(1)
-      if (runJob)
-        await changeAutonomousRunJob(projectId, runId, runJob.id, { status: 'completed' }, `ResolveException:${exceptionId}:complete-legacy-job`)
-    }
 
-    // Set run to running and continue
-    await changeRun(projectId, runId, {
-      status: 'running',
-    }, `ResolveException:${exceptionId}:resume-run`)
+    if (run.status === 'paused')
+      await changeRun(projectId, runId, { status: 'running', pausedReason: null }, `ResolveExceptionAction:${exceptionId}:resume-run`)
+    shouldContinue = true
+  })
 
-    await requestAutonomousExecution(projectId, runId, `ResolveException:${exceptionId}:execute`)
-  }
-  catch (error: unknown) {
-    // Revert run to failed on error
-    await changeRun(projectId, runId, {
-      status: 'failed',
-      lastError: errorMessage(error, '异常恢复失败'),
-    })
-    throw error
-  }
+  if (shouldContinue)
+    await requestAutonomousExecution(projectId, runId, `ResolveExceptionAction:${exceptionId}:${action}:execute`)
 }
 
-export async function ignoreAutonomousException(projectId: string, runId: string, exceptionId: string) {
-  const [ex] = await db.select().from(autonomousRunExceptions).where(and(
-    eq(autonomousRunExceptions.id, exceptionId),
-    eq(autonomousRunExceptions.runId, runId),
-    eq(autonomousRunExceptions.projectId, projectId),
-  )).limit(1)
-
-  if (!ex)
-    throw new Error('未找到该异常记录')
-  if (ex.severity === 'critical')
-    throw new Error('致命级异常无法直接忽略，请进行处理。')
-
-  await changeException(projectId, runId, exceptionId, { status: 'ignored' }, `IgnoreException:${exceptionId}`)
-
-  // 将对应章节任务标记为跳过
-  if (ex.chapterId) {
-    const [runJob] = await db.select().from(autonomousRunJobs).where(and(
-      eq(autonomousRunJobs.runId, runId),
-      eq(autonomousRunJobs.chapterId, ex.chapterId),
-      or(
-        eq(autonomousRunJobs.status, 'failed'),
-        eq(autonomousRunJobs.status, 'isolated'),
-      ),
-    )).limit(1)
-    if (runJob)
-      await changeAutonomousRunJob(projectId, runId, runJob.id, { status: 'skipped' }, `IgnoreException:${exceptionId}:skip-job`)
+function exceptionResolution(action: AutonomousExceptionAction): string {
+  const labels: Record<AutonomousExceptionAction, string> = {
+    retry_step: '作者要求重试当前步骤',
+    skip_chapter: '作者决定跳过本章节',
+    isolate_chapter: '作者决定隔离本章节及其未应用内容',
+    stop_run: '作者决定终止本轮自动写作',
   }
-
-  // Check if there are still open exceptions before continuing
-  const remainingOpen = await db.select({ id: autonomousRunExceptions.id }).from(autonomousRunExceptions).where(and(
-    eq(autonomousRunExceptions.runId, runId),
-    eq(autonomousRunExceptions.status, 'open'),
-  )).limit(1)
-
-  if (remainingOpen.length === 0) {
-    // No more open exceptions — transition to running and continue
-    await changeRun(projectId, runId, {
-      status: 'running',
-    }, `IgnoreException:${exceptionId}:resume-run`)
-
-    await requestAutonomousExecution(projectId, runId, `IgnoreException:${exceptionId}:execute`)
-  }
+  return labels[action]
 }
 
 export async function getLatestRun(projectId: string) {

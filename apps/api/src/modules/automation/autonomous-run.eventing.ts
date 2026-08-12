@@ -15,6 +15,7 @@ export const CHANGE_AUTONOMOUS_RUN_JOB_COMMAND = 'ChangeAutonomousRunJob'
 export const OPEN_AUTONOMOUS_EXCEPTION_COMMAND = 'OpenAutonomousException'
 export const CHANGE_AUTONOMOUS_EXCEPTION_COMMAND = 'ChangeAutonomousException'
 export const REQUEST_AUTONOMOUS_RUN_EXECUTION_COMMAND = 'RequestAutonomousRunExecution'
+export const RESOLVE_AUTONOMOUS_EXCEPTION_ACTION_COMMAND = 'ResolveAutonomousExceptionAction'
 
 export const AUTONOMOUS_RUN_PREPARED = 'AutonomousRunPrepared'
 export const AUTONOMOUS_RUN_CHANGED = 'AutonomousRunChanged'
@@ -23,6 +24,7 @@ export const AUTONOMOUS_RUN_JOB_CHANGED = 'AutonomousRunJobChanged'
 export const AUTONOMOUS_EXCEPTION_OPENED = 'AutonomousExceptionOpened'
 export const AUTONOMOUS_EXCEPTION_CHANGED = 'AutonomousExceptionChanged'
 export const AUTONOMOUS_RUN_EXECUTION_REQUESTED = 'AutonomousRunExecutionRequested'
+export const AUTONOMOUS_EXCEPTION_ACTION_RESOLVED = 'AutonomousExceptionActionResolved'
 export const AUTONOMOUS_RUN_OUTBOX_HANDLER = 'autonomous-run.execute'
 
 const RUN_STATUSES = ['idle', 'running', 'pausing', 'paused', 'abandoning', 'completed', 'failed', 'abandoned'] as const
@@ -117,7 +119,7 @@ export const autonomousRunAggregate: AggregateDefinition<AutonomousRunState> = {
       const job = readJob(event.payload)
       return { ...state, jobs: { ...state.jobs, [job.id]: job } }
     }
-    if (event.eventType === AUTONOMOUS_EXCEPTION_OPENED || event.eventType === AUTONOMOUS_EXCEPTION_CHANGED) {
+    if (event.eventType === AUTONOMOUS_EXCEPTION_OPENED || event.eventType === AUTONOMOUS_EXCEPTION_CHANGED || event.eventType === AUTONOMOUS_EXCEPTION_ACTION_RESOLVED) {
       const exception = readException(event.payload)
       return { ...state, exceptions: { ...state.exceptions, [exception.id]: exception } }
     }
@@ -132,6 +134,18 @@ export function registerAutonomousRunEventing(runtime: AutonomousRunEventingRunt
     runtime.events.register({ eventType, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ job: readJob(codec.object(payload)) }) })
   for (const eventType of [AUTONOMOUS_EXCEPTION_OPENED, AUTONOMOUS_EXCEPTION_CHANGED])
     runtime.events.register({ eventType, currentSchemaVersion: 1, upcasters: {}, validate: payload => ({ exception: readException(codec.object(payload)) }) })
+  runtime.events.register({
+    eventType: AUTONOMOUS_EXCEPTION_ACTION_RESOLVED,
+    currentSchemaVersion: 1,
+    upcasters: {},
+    validate: (payload) => {
+      const value = codec.object(payload)
+      return {
+        exception: readException(codec.object(value.exception)),
+        action: codec.enum(value, 'action', ['retry_step', 'skip_chapter', 'isolate_chapter', 'stop_run'] as const),
+      }
+    },
+  })
   runtime.events.register({
     eventType: AUTONOMOUS_RUN_EXECUTION_REQUESTED,
     currentSchemaVersion: 1,
@@ -218,13 +232,30 @@ function registerCommands(runtime: AutonomousRunEventingRuntime): void {
     const exception = changeException(current, command.payload, timestamp)
     return decision(loaded.version, command, AUTONOMOUS_EXCEPTION_CHANGED, { exception }, exception, timestamp)
   })
+  runtime.commands.register(RESOLVE_AUTONOMOUS_EXCEPTION_ACTION_COMMAND, async (command, context) => {
+    const loaded = await loadActive(runtime, command, context.session)
+    const id = codec.string(command.payload, 'id')
+    const current = loaded.state.exceptions[id]
+    if (!current)
+      throw new DomainCommandError('AUTONOMOUS_EXCEPTION_NOT_FOUND', 'Autonomous exception not found')
+    if (current.status !== 'open')
+      throw new DomainCommandError('AUTONOMOUS_EXCEPTION_ALREADY_RESOLVED', 'Autonomous exception is already resolved')
+    const action = codec.enum(command.payload, 'action', ['retry_step', 'skip_chapter', 'isolate_chapter', 'stop_run'] as const)
+    const timestamp = now()
+    const exception = changeException(current, {
+      status: action === 'isolate_chapter' ? 'isolated' : 'resolved_by_user',
+      autoResolutionStrategy: action === 'retry_step' ? 'retry' : action,
+      resolution: codec.string(command.payload, 'resolution'),
+    }, timestamp)
+    return decision(loaded.version, command, AUTONOMOUS_EXCEPTION_ACTION_RESOLVED, { exception, action }, exception, timestamp)
+  })
 }
 
 function registerProjection(projections: ProjectionRegistry): void {
   projections.register({
     name: AUTONOMOUS_RUN_PROJECTION,
     mode: 'sync',
-    handles: [AUTONOMOUS_RUN_PREPARED, AUTONOMOUS_RUN_CHANGED, AUTONOMOUS_RUN_JOB_ADDED, AUTONOMOUS_RUN_JOB_CHANGED, AUTONOMOUS_EXCEPTION_OPENED, AUTONOMOUS_EXCEPTION_CHANGED, PROJECT_DELETED],
+    handles: [AUTONOMOUS_RUN_PREPARED, AUTONOMOUS_RUN_CHANGED, AUTONOMOUS_RUN_JOB_ADDED, AUTONOMOUS_RUN_JOB_CHANGED, AUTONOMOUS_EXCEPTION_OPENED, AUTONOMOUS_EXCEPTION_CHANGED, AUTONOMOUS_EXCEPTION_ACTION_RESOLVED, PROJECT_DELETED],
     project: async (transaction, event) => {
       if (event.eventType === PROJECT_DELETED) {
         await resetProjection(transaction, event.aggregateId)

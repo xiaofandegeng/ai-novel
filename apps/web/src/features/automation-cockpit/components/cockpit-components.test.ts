@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import AutomationControlPanel from './automation-control-panel.vue'
 import ChapterDetailDrawer from './chapter-detail-drawer.vue'
 import CharacterEmotionPanel from './character-emotion-panel.vue'
+import ExceptionCenterPanel from './exception-center-panel.vue'
 import NarrativeEventStream from './narrative-event-stream.vue'
 
 afterEach(() => {
@@ -110,5 +111,46 @@ describe('cockpit component contracts', () => {
     const eventWrapper = mount(NarrativeEventStream, { props: { events: [event] } })
     expect(eventWrapper.text()).toContain('第 3 章')
     expect(eventWrapper.text()).not.toContain('chapter-uuid')
+  })
+
+  it('exposes all four exception actions and confirms stopping the run', async () => {
+    const wrapper = mount(ExceptionCenterPanel, {
+      attachTo: document.body,
+      props: {
+        exceptions: [{
+          id: 'exception-1',
+          runId: 'run-1',
+          projectId: 'project-1',
+          chapterId: 'chapter-1',
+          changeSetId: 'change-set-1',
+          writingJobId: 'job-1',
+          stepId: 'step-1',
+          exceptionType: 'ai_failed',
+          severity: 'high',
+          title: '生成失败',
+          description: '模型请求失败',
+          status: 'open',
+          resolution: null,
+          createdAt: '2026-08-12T00:00:00.000Z',
+          updatedAt: '2026-08-12T00:00:00.000Z',
+        }],
+      },
+    })
+
+    for (const [label, action] of [
+      ['重试当前步骤', 'retry_step'],
+      ['跳过章节', 'skip_chapter'],
+      ['隔离章节', 'isolate_chapter'],
+    ] as const) {
+      await wrapper.findAll('button').find(button => button.text() === label)!.trigger('click')
+      expect(wrapper.emitted('action')?.at(-1)).toEqual(['exception-1', action])
+    }
+    await wrapper.findAll('button').find(button => button.text() === '终止本轮')!.trigger('click')
+    document.body.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
+      if (button.textContent?.includes('确认终止'))
+        button.click()
+    })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('action')?.at(-1)).toEqual(['exception-1', 'stop_run'])
   })
 })

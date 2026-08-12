@@ -1,3 +1,4 @@
+import type { AutonomousExceptionAction } from '@ai-novel/shared'
 import type { Hono } from 'hono'
 import { fail, success } from '../../shared/http/responses'
 import { errorMessage } from '../../shared/utils'
@@ -9,9 +10,8 @@ import {
   getAutonomousRunInsight,
   getLatestActiveRun,
   getLatestRun,
-  ignoreAutonomousException,
   pauseAutonomousRun,
-  resolveAutonomousException,
+  resolveAutonomousExceptionAction,
   resumeAutonomousRun,
   startAutonomousRun,
 } from './autonomous-writing.service'
@@ -121,20 +121,17 @@ export function registerAutonomousRunRoutes(app: Hono) {
     return c.json(success(exceptions))
   })
 
-  app.post('/api/projects/:projectId/autonomous-runs/:runId/exceptions/:exceptionId/resolve', async (c) => {
+  app.post('/api/projects/:projectId/autonomous-runs/:runId/exceptions/:exceptionId/actions', async (c) => {
     const projectId = c.req.param('projectId')
     const runId = c.req.param('runId')
     const exceptionId = c.req.param('exceptionId')
-    const { resolution } = await c.req.json()
-    await resolveAutonomousException(projectId, runId, exceptionId, resolution)
-    return c.json(success(true))
-  })
-
-  app.post('/api/projects/:projectId/autonomous-runs/:runId/exceptions/:exceptionId/ignore', async (c) => {
-    const projectId = c.req.param('projectId')
-    const runId = c.req.param('runId')
-    const exceptionId = c.req.param('exceptionId')
-    await ignoreAutonomousException(projectId, runId, exceptionId)
-    return c.json(success(true))
+    try {
+      const { action } = await c.req.json<{ action: AutonomousExceptionAction }>()
+      await resolveAutonomousExceptionAction(projectId, runId, exceptionId, action)
+      return c.json(success(true))
+    }
+    catch (error: unknown) {
+      return c.json(fail(errorMessage(error)), 400)
+    }
   })
 }

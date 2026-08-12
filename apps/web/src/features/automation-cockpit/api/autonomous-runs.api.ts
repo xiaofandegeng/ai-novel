@@ -1,4 +1,4 @@
-import type { AutonomousWritingRun, CreateAutonomousRunInput } from '@ai-novel/shared'
+import type { AutonomousExceptionAction, AutonomousWritingRun, CreateAutonomousRunInput } from '@ai-novel/shared'
 import { apiPost } from '../../../shared/api/client'
 
 export async function createAutonomousRun(projectId: string, input: CreateAutonomousRunInput): Promise<AutonomousWritingRun> {
@@ -19,4 +19,13 @@ export async function resumeAutonomousRun(projectId: string, runId: string): Pro
 
 export async function abandonAutonomousRun(projectId: string, runId: string): Promise<void> {
   return apiPost<void>(`/api/projects/${projectId}/autonomous-runs/${runId}/abandon`, {})
+}
+
+export async function resolveAutonomousException(
+  projectId: string,
+  runId: string,
+  exceptionId: string,
+  action: AutonomousExceptionAction,
+): Promise<void> {
+  return apiPost<void>(`/api/projects/${projectId}/autonomous-runs/${runId}/exceptions/${exceptionId}/actions`, { action })
 }
