@@ -20,17 +20,13 @@ import {
   foreshadowingCharacters,
   foreshadowingItems,
   novelProjects,
-  projectPersonaConfigs,
   storyBibles,
   storyFactTriples,
   volumes,
-  writingPersonas,
 } from '../../db/schema'
 import { StoryStructureService } from '../story/story-structure.service'
 import { KnowledgeRetrievalService } from './knowledge-retrieval.service'
 import { buildGlobalNarrativeControl } from './narrative-control.service'
-import { buildPersonaMemoryContext } from './persona-memory.service'
-import { buildPersonaPromptForProject } from './persona-prompt.service'
 
 function buildKnowledgeSearchTerms(input: {
   userInstruction?: string
@@ -179,33 +175,7 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
       }
     })
 
-  // 5. Persona Prompt
-  let persona: BuiltAIContext['persona'] | undefined
-  if (scene !== 'chat') {
-    const personaPrompt = await buildPersonaPromptForProject(projectId, scene)
-    if (personaPrompt) {
-      // Find active persona config to get name and strength
-      const [config] = await db
-        .select({
-          name: writingPersonas.name,
-          strength: projectPersonaConfigs.strength,
-        })
-        .from(projectPersonaConfigs)
-        .innerJoin(writingPersonas, eq(projectPersonaConfigs.personaId, writingPersonas.id))
-        .where(eq(projectPersonaConfigs.projectId, projectId))
-        .limit(1)
-
-      if (config) {
-        persona = {
-          name: config.name,
-          strength: config.strength,
-          prompt: personaPrompt,
-        }
-      }
-    }
-  }
-
-  // 6. Knowledge Snippets (Hybrid Retrieval)
+  // 5. Knowledge Snippets (Hybrid Retrieval)
   const searchTerms = buildKnowledgeSearchTerms({
     userInstruction,
     chapterTitle: currentChapterData?.title,
@@ -226,13 +196,7 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
       })
     : []
 
-  // 6b. Project-level accumulated writing memory (Scene-aware)
-  const personaMemoryRes = scene !== 'chat'
-    ? await buildPersonaMemoryContext(projectId, scene, userInstruction)
-    : null
-  const personaMemory = personaMemoryRes ? [personaMemoryRes] : []
-
-  // 7. Assemble Nearby Chapters
+  // 6. Assemble Nearby Chapters
   let nearbyChapters: BuiltAIContext['nearbyChapters'] | undefined
   if (currentChapterData) {
     const volumeId = currentChapterData.volumeId
@@ -489,9 +453,7 @@ export async function buildProjectAIContext(input: AIContextRequest): Promise<Bu
     characters: characterSummaries,
     relationships: relationshipSummaries,
     conflicts: conflictSummaries,
-    persona,
     knowledgeSnippets,
-    personaMemory,
     chapterMemories: recentMemories,
     chapterElements: chapterElementSummaries,
     foreshadowingItems: foreshadowingSummaries,

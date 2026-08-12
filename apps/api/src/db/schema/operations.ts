@@ -1,7 +1,5 @@
 import { integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
-import { aiContextSnapshots } from './ai'
-import { chapters } from './chapter'
 import { novelProjects } from './project'
 
 export const authoringEvents = pgTable('authoring_events', {
@@ -12,27 +10,6 @@ export const authoringEvents = pgTable('authoring_events', {
   eventType: text('event_type').notNull(),
   source: text('source').notNull(), // manual, ai, system, task, smoke
   payload: jsonb('payload'),
-  createdAt: timestamp('created_at', { mode: 'string' }).notNull().$defaultFn(() => new Date().toISOString()),
-})
-
-export const aiQualityFeedback = pgTable('ai_quality_feedback', {
-  id: text('id').primaryKey(),
-  projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
-  sceneId: text('scene_id'),
-  contextSnapshotId: text('context_snapshot_id').references(() => aiContextSnapshots.id, { onDelete: 'set null' }),
-  modelProvider: text('model_provider').notNull(),
-  modelName: text('model_name').notNull(),
-  taskType: text('task_type').notNull(),
-  ratingOverall: integer('rating_overall').notNull(),
-  ratingConsistency: integer('rating_consistency'),
-  ratingCharacter: integer('rating_character'),
-  ratingPlot: integer('rating_plot'),
-  ratingStyle: integer('rating_style'),
-  ratingUsefulness: integer('rating_usefulness'),
-  issueTags: jsonb('issue_tags'), // array of strings
-  comment: text('comment'),
-  accepted: integer('accepted').notNull().default(0), // 0: no, 1: yes
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().$defaultFn(() => new Date().toISOString()),
 })
 

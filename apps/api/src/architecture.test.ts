@@ -148,4 +148,19 @@ describe('api architecture boundaries', () => {
     const utilityBarrel = readFileSync(join(sourceRoot, 'shared/utils/index.ts'), 'utf8')
     expect(utilityBarrel).not.toMatch(/\b(?:fail|success)\b/)
   })
+
+  it('does not restore unreachable legacy product experiments', () => {
+    const forbiddenSchemaFiles = ['persona.ts', 'writing-goals.ts']
+    for (const file of forbiddenSchemaFiles)
+      expect(existsSync(join(sourceRoot, 'db/schema', file)), file).toBe(false)
+
+    const applicationSources = sourceFiles(sourceRoot)
+      .filter(file => !file.endsWith('.test.ts'))
+      .map(file => readFileSync(file, 'utf8'))
+      .join('\n')
+
+    expect(applicationSources).not.toMatch(
+      /\b(?:aiSettings|aiQualityFeedback|referenceTrainingSets|writingPersonas|writingGoals|dailyWritingStats)\b/,
+    )
+  })
 })

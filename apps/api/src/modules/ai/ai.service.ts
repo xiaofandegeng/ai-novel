@@ -548,7 +548,6 @@ export async function* streamChat(
     projectId: string
     context?: string
     model?: string
-    personaPrompt?: string | null
   },
 ) {
   if (!messages || !messages.length) {
@@ -567,10 +566,6 @@ export async function* streamChat(
   if (options.context) {
     systemMessages.push({ role: 'system', content: `Context: ${options.context}` })
   }
-  if (options.personaPrompt) {
-    systemMessages.push({ role: 'system', content: `写作人格约束：\n${options.personaPrompt}` })
-  }
-
   const response = await openai.chat.completions.create({
     model: options.model || settings.model,
     messages: [...systemMessages, ...messages],

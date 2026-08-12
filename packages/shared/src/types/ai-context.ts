@@ -1,4 +1,4 @@
-export type AIScene = 'outline' | 'project_outline' | 'volume_outline' | 'draft' | 'polish' | 'quality' | 'story_bible' | 'knowledge' | 'persona_training' | 'persona_drift' | 'chat'
+export type AIScene = 'outline' | 'project_outline' | 'volume_outline' | 'draft' | 'polish' | 'quality' | 'story_bible' | 'knowledge' | 'chat'
 
 export interface AIContextRequest {
   projectId: string
@@ -141,13 +141,7 @@ export interface BuiltAIContext {
   characters: CharacterContextSummary[]
   relationships: RelationshipContextSummary[]
   conflicts: ConflictContextSummary[]
-  persona?: {
-    name: string
-    strength: number
-    prompt: string
-  }
   knowledgeSnippets: KnowledgeContextSnippet[]
-  personaMemory: string[]
   chapterMemories: string[]
   chapterElements: string[]
   foreshadowingItems: ForeshadowingContextSummary[]

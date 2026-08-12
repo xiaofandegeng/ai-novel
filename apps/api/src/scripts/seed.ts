@@ -4,7 +4,6 @@ import { db, sql } from '../db'
 import {
   acts,
   aiContextSnapshots,
-  chapterAnalyses,
   chapterElements,
   chapterMemories,
   chapterPostprocessRuns,
@@ -21,24 +20,16 @@ import {
   knowledgeNotes,
   knowledgeSources,
   novelProjects,
-  personaMemoryCards,
   projectAppliedTemplates,
-  projectPersonaConfigs,
   projectPromptOverrides,
   promptTemplates,
   qualityReports,
-  referenceChapterAnalysisErrors,
-  referenceChapters,
-  referenceTrainingSets,
-  referenceWorks,
   storyBibles,
   storyFactTriples,
   storyStructureTemplates,
   volumes,
-  workStyleReports,
   writingJobs,
   writingJobSteps,
-  writingPersonas,
 } from '../db/schema'
 
 const now = new Date().toISOString()
@@ -59,15 +50,6 @@ async function clearProjectData() {
   await db.delete(writingJobSteps)
   await db.delete(writingJobs)
   await db.delete(aiContextSnapshots)
-  await db.delete(projectPersonaConfigs)
-  await db.delete(personaMemoryCards)
-  await db.delete(writingPersonas)
-  await db.delete(workStyleReports)
-  await db.delete(chapterAnalyses)
-  await db.delete(referenceChapterAnalysisErrors)
-  await db.delete(referenceChapters)
-  await db.delete(referenceWorks)
-  await db.delete(referenceTrainingSets)
   await db.delete(knowledgeEmbeddings)
   await db.delete(knowledgeNotes)
   await db.delete(knowledgeChunks)
@@ -778,137 +760,6 @@ async function seed() {
     suggestions: j(['增加一个林岚尝试验证笔迹的动作', '让顾临川先给出半真半假的解释']),
     createdAt: now,
   })
-
-  const trainingSetId = id()
-  const workId = id()
-  const refChapterId = id()
-  const personaId = id()
-
-  await db.insert(referenceTrainingSets).values({
-    id: trainingSetId,
-    name: '都市悬疑高压节奏测试训练集',
-    description: '用于验证参考作品拆解、报告、人格式约束和项目绑定流程。',
-    genre: '都市悬疑',
-    targetPersonaType: '高压反转型',
-    status: 'ready',
-    createdAt: now,
-    updatedAt: now,
-  })
-  await db.insert(referenceWorks).values({
-    id: workId,
-    trainingSetId,
-    title: '测试参考作品 A',
-    author: '系统样本',
-    sourceType: 'sample',
-    fileName: 'persona-sample-a.txt',
-    fileSize: 4096,
-    wordCount: 1600,
-    chapterCount: 1,
-    status: 'completed',
-    createdAt: now,
-    updatedAt: now,
-  })
-  await db.insert(referenceChapters).values({
-    id: refChapterId,
-    workId,
-    trainingSetId,
-    title: '第 1 章 异常来信',
-    chapterNumber: 1,
-    content: '测试文本摘要：主角收到异常来信，现实证据被逐步抹除，结尾出现身份反转。',
-    wordCount: 38,
-    createdAt: now,
-  })
-  await db.insert(chapterAnalyses).values({
-    id: id(),
-    chapterId: refChapterId,
-    workId,
-    trainingSetId,
-    openingHook: '异常物件直接打破日常秩序',
-    conflictType: '身份危机 + 外部追逐',
-    pressureSource: '证据消失和时间限制',
-    protagonistAction: '主动验证线索并进入危险地点',
-    payoffType: '小真相兑现后立刻抛出更大问题',
-    cliffhanger: '主角自己也出现在名单上',
-    emotionCurve: '冷静调查 -> 被迫相信 -> 压迫升级 -> 身份反转',
-    pacingScore: 86,
-    dialogueRatio: 28,
-    descriptionRatio: 34,
-    narrativePattern: '异常线索开场，三段式升级，结尾身份反转',
-    tropeTags: '异常来信,身份危机,雨夜入口,名单反转',
-    craftNotes: '每 800-1200 字推进一次压力；结尾保留未回答问题。',
-    riskNotes: '避免复刻具体来信文本和专名。',
-    createdAt: now,
-  })
-  await db.insert(workStyleReports).values({
-    id: id(),
-    workId,
-    trainingSetId,
-    summary: '高压悬疑开场，依靠异常物件、证据消失和身份反转推动读者继续阅读。',
-    coreAppeal: '主角越查越发现自己也在谜团中心。',
-    pacingModel: '短钩子开场，连续三次信息升级，每章末保留一个更大的问题。',
-    hookModel: '用身份、名单、记忆缺口做结尾钩子。',
-    conflictModel: '外部规则压迫主角，内部怀疑削弱主角判断。',
-    characterModel: '同盟角色必须保留一个会伤害主角的秘密。',
-    languageProfile: '冷静、具象、少解释，用物件和动作承载信息。',
-    chapterTemplate: '异常物件 -> 验证失败 -> 规则显现 -> 代价出现 -> 反转钩子',
-    strengths: '节奏稳定，悬念升级清晰，人物信任关系天然带冲突。',
-    weaknesses: '容易过早解释规则，削弱神秘感。',
-    avoidCopying: '不得复刻异常来信原文、名单桥段具体措辞和参考作品专名。',
-    createdAt: now,
-  })
-  await db.insert(writingPersonas).values({
-    id: personaId,
-    name: '高压雨夜悬疑人格',
-    description: '用于测试的已发布写作人格，只保留抽象技巧，不包含参考原文。',
-    genre: '都市悬疑',
-    sourceTrainingSetId: trainingSetId,
-    status: 'published',
-    coreAppeal: '主角追查他人时逐渐发现自己也被卷入核心谜团。',
-    pacingRules: '每个场景必须有可见压力；每章至少三次信息升级。',
-    conflictRules: '外部规则压迫和人物隐瞒必须同时推进。',
-    characterRules: '同盟不能完全透明，帮助主角时也要制造新代价。',
-    languageRules: '少解释，多用物件、动作和环境异常传递信息。',
-    chapterRules: '异常开场、验证失败、规则显现、代价出现、结尾反转。',
-    hookRules: '结尾钩子优先使用身份、记忆、名单、信件和门锁类意象。',
-    forbiddenRules: '不得复刻参考作品原文、专名、完整桥段和标志性场景。',
-    similarityGuardrails: '生成后检查是否出现与参考样本连续相似表达，若有则改写为本项目设定。',
-    createdAt: now,
-    updatedAt: now,
-  })
-  await db.insert(projectPersonaConfigs).values({
-    id: id(),
-    projectId,
-    personaId,
-    strength: 72,
-    enabledForOutline: 1,
-    enabledForDraft: 1,
-    enabledForPolish: 1,
-    enabledForQualityReview: 1,
-    projectOverrides: '本项目优先保持镜中城规则和林岚人物弧线；人格只影响节奏和悬疑推进方式。',
-    disabledRules: null,
-    createdAt: now,
-    updatedAt: now,
-  })
-  await db.insert(personaMemoryCards).values([
-    {
-      id: id(),
-      projectId,
-      cardType: 'pacing',
-      content: '章节结尾优先使用“证据反咬主角”的钩子，而不是单纯出现新敌人。',
-      tags: 'pacing,ending_hook',
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: id(),
-      projectId,
-      cardType: 'style',
-      content: '用雨、镜面、旧照片等反光物承载记忆异常，减少直接说明。',
-      tags: 'style,symbolism',
-      createdAt: now,
-      updatedAt: now,
-    },
-  ])
 
   const jobId = id()
   await db.insert(writingJobs).values({
