@@ -4,6 +4,7 @@ import { httpCommandOptions } from '../../shared/http/command-options'
 import { fail, success } from '../../shared/http/responses'
 import { errorMessage } from '../../shared/utils'
 import { autoPlanScenesForChapter } from '../automation/auto-repair.service'
+import * as postprocessQueries from '../automation/chapter-postprocess.queries'
 import * as postprocessService from '../automation/chapter-postprocess.service'
 import {
   CHANGE_CHAPTER_COMMAND,
@@ -67,16 +68,16 @@ export function registerChapterRoutes(app: Hono) {
   })
 
   app.get('/api/projects/:projectId/chapters/:id/memory', async (c) => {
-    const memory = await postprocessService.getChapterMemory(c.req.param('projectId'), c.req.param('id'))
+    const memory = await postprocessQueries.getChapterMemory(c.req.param('projectId'), c.req.param('id'))
     return c.json(success(memory))
   })
 
   app.get('/api/projects/:projectId/memories', async (c) => {
-    return c.json(success(await postprocessService.getProjectMemories(c.req.param('projectId'))))
+    return c.json(success(await postprocessQueries.getProjectMemories(c.req.param('projectId'))))
   })
 
   app.get('/api/projects/:projectId/chapters/:id/postprocess-runs', async (c) => {
-    const runs = await postprocessService.getPostprocessRuns(c.req.param('projectId'), c.req.param('id'))
+    const runs = await postprocessQueries.getPostprocessRuns(c.req.param('projectId'), c.req.param('id'))
     return c.json(success(runs))
   })
 
