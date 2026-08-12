@@ -10,6 +10,7 @@ import { registerPromptSettingsEventing } from './modules/ai/prompt-settings.eve
 import { registerCharacterEventing } from './modules/character/character.eventing'
 import { registerRelationshipEventing } from './modules/character/relationship.eventing'
 import { registerConflictEventing } from './modules/narrative/conflict.eventing'
+import { registerForeshadowingEventing } from './modules/narrative/foreshadowing.eventing'
 import { registerProjectEventing } from './modules/project/project.eventing'
 import { registerChapterEventing } from './modules/story/chapter.eventing'
 import { registerStoryStructureEventing } from './modules/story/story-structure.eventing'
@@ -63,6 +64,12 @@ registerRelationshipEventing({
   projections: projectionRegistry,
 })
 registerConflictEventing({
+  aggregates: aggregateRepository,
+  commands: commandBus,
+  events: domainEventRegistry,
+  projections: projectionRegistry,
+})
+registerForeshadowingEventing({
   aggregates: aggregateRepository,
   commands: commandBus,
   events: domainEventRegistry,

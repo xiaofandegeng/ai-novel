@@ -79,11 +79,11 @@
 - Modify: foreshadowing services/routes
 - Modify: `apps/api/src/eventing-runtime.ts`
 
-- [ ] Define `ForeshadowingCreated`, `ForeshadowingChanged`, `ForeshadowingDeleted`, and `ForeshadowingCharactersReplaced`.
-- [ ] Express progression, payoff, and abandonment as validated state changes.
-- [ ] Validate referenced chapters and characters and atomically replace character links.
-- [ ] Project and replay the item and character-link read models.
-- [ ] Commit: `feat(api): event source foreshadowing ledger`.
+- [x] Define `ForeshadowingCreated`, `ForeshadowingChanged`, `ForeshadowingDeleted`, and `ForeshadowingCharactersReplaced`.
+- [x] Express progression, payoff, and abandonment as validated state changes.
+- [x] Validate referenced chapters and characters and atomically replace character links.
+- [x] Project and replay the item and character-link read models.
+- [x] Commit: `feat(api): event source foreshadowing ledger`.
 
 ## Task 6: Chapter knowledge aggregate
 

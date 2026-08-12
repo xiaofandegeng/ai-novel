@@ -3,7 +3,6 @@ import { timestamps } from './_helpers'
 import { autonomousWritingRuns, writingJobs, writingJobSteps } from './ai'
 import { chapterPostprocessRuns, chapters, chapterScenes } from './chapter'
 
-import { characters } from './character'
 import { novelProjects } from './project'
 
 export const chapterElements = pgTable('chapter_elements', {
@@ -61,9 +60,9 @@ export const foreshadowingItems = pgTable('foreshadowing_items', {
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
   title: text('title').notNull(),
   description: text('description'),
-  setupChapterId: text('setup_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
-  expectedPayoffChapterId: text('expected_payoff_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
-  payoffChapterId: text('payoff_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
+  setupChapterId: text('setup_chapter_id'),
+  expectedPayoffChapterId: text('expected_payoff_chapter_id'),
+  payoffChapterId: text('payoff_chapter_id'),
   status: text('status').$type<'open' | 'progressing' | 'paid_off' | 'abandoned'>().notNull().default('open'),
   importance: text('importance').$type<'major' | 'normal' | 'minor'>().notNull().default('normal'),
   relatedCharacters: text('related_characters'),
@@ -77,7 +76,7 @@ export const foreshadowingCharacters = pgTable('foreshadowing_characters', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
   foreshadowingId: text('foreshadowing_id').notNull().references(() => foreshadowingItems.id, { onDelete: 'cascade' }),
-  characterId: text('character_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
+  characterId: text('character_id').notNull(),
   relationType: text('relation_type').$type<'protagonist' | 'antagonist' | 'victim' | 'witness' | 'related'>().notNull().default('related'),
   ...timestamps,
 }, table => ({
