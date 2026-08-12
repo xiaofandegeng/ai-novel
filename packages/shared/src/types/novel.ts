@@ -18,6 +18,12 @@ export interface NovelProject {
   updatedAt: string
 }
 
+export interface DeleteProjectResult extends Record<string, unknown> {
+  id: string
+  deleted: true
+  deletedAt: string
+}
+
 export interface StoryBible {
   id: string
   projectId: string

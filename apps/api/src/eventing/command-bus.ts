@@ -1,6 +1,12 @@
 import type { EventRegistry } from './event-registry'
 import type { EventStore, EventStoreSession } from './event-store'
-import type { CommandDecision, CommandEnvelope, JsonObject } from './event-types'
+import type {
+  CommandDecision,
+  CommandEnvelope,
+  CommandReceiptProtection,
+  CommandReceiptRecord,
+  JsonObject,
+} from './event-types'
 import type { ProjectionRegistry } from './projection-runner'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { eq } from 'drizzle-orm'
@@ -22,6 +28,9 @@ export type CommandHandler<
 
 type RegisteredCommandHandler = CommandHandler<JsonObject, JsonObject>
 type CommandReceipt = typeof commandReceipts.$inferSelect
+
+const RECEIPT_RESULT_FORMAT = 'command-receipt-result-v1' as const
+const GENERIC_REJECTION_MESSAGE = 'Command was rejected'
 
 export class CommandBus {
   private readonly handlers = new Map<string, RegisteredCommandHandler>()
@@ -55,8 +64,13 @@ export class CommandBus {
       return this.dispatchInSession<TResult>(command, handler, activeSession)
 
     const existing = await this.readReceipt(command.commandId)
-    if (existing)
-      return receiptResult<TResult>(existing)
+    if (existing) {
+      return receiptResult<TResult>(
+        existing,
+        receipt => this.store.unprotectReceiptResult(receipt),
+        projectId => this.store.isProjectDeleted(projectId),
+      )
+    }
 
     try {
       return await this.store.withTransaction(async (session) => {
@@ -94,8 +108,20 @@ export class CommandBus {
       .from(commandReceipts)
       .where(eq(commandReceipts.commandId, command.commandId))
       .limit(1)
-    if (receipt)
-      return receiptResult<TResult>(receipt)
+    if (receipt) {
+      return receiptResult<TResult>(
+        receipt,
+        stored => session.unprotectReceiptResult(stored),
+        projectId => session.isProjectDeleted(projectId),
+      )
+    }
+
+    if (command.projectId && await session.isProjectDeleted(command.projectId)) {
+      throw new DomainCommandError(
+        'PROJECT_NOT_FOUND',
+        'Project not found',
+      )
+    }
 
     const decision = await handler(command, { session })
     assertProjectScope(command, decision)
@@ -115,6 +141,13 @@ export class CommandBus {
     await this.projections.projectSync(session.transaction, events)
     await session.enqueueOutbox(decision.outbox ?? [])
 
+    const receiptProtection = resolveReceiptProtection(command, decision)
+    const storedResult = receiptProtection === 'project-content'
+      ? protectedReceiptResult(
+          await session.protectReceiptResult(command, decision.result),
+        )
+      : plaintextReceiptResult(decision.result)
+
     await session.transaction.insert(commandReceipts).values({
       commandId: command.commandId,
       commandType: command.commandType,
@@ -122,9 +155,10 @@ export class CommandBus {
       aggregateId: command.aggregateId,
       projectId: command.projectId ?? null,
       status: 'completed',
-      result: decision.result,
+      result: storedResult,
       finishedAt: new Date().toISOString(),
     })
+    await session.finalizeContentProtection(events)
     return decision.result as TResult
   }
 
@@ -145,20 +179,41 @@ export class CommandBus {
       projectId: command.projectId ?? null,
       status: 'failed',
       errorCode: error.code,
-      errorMessage: error.message,
+      errorMessage: GENERIC_REJECTION_MESSAGE,
       finishedAt: new Date().toISOString(),
     }).onConflictDoNothing()
   }
 }
 
-function receiptResult<TResult extends JsonObject>(receipt: CommandReceipt): TResult {
-  if (receipt.status === 'completed' && isJsonObject(receipt.result))
-    return receipt.result as TResult
+async function receiptResult<TResult extends JsonObject>(
+  receipt: CommandReceipt,
+  unprotect: (receipt: CommandReceiptRecord) => Promise<JsonObject>,
+  isProjectDeleted: (projectId: string) => Promise<boolean>,
+): Promise<TResult> {
+  if (receipt.status !== 'completed') {
+    throw new DomainCommandError(
+      receipt.errorCode ?? 'COMMAND_REJECTED',
+      receipt.errorMessage ?? GENERIC_REJECTION_MESSAGE,
+    )
+  }
 
-  throw new DomainCommandError(
-    receipt.errorCode ?? 'COMMAND_REJECTED',
-    receipt.errorMessage ?? 'Command was rejected',
-  )
+  const stored = readStoredReceiptResult(receipt.result)
+  if (stored.receiptProtection === 'none')
+    return stored.plaintext as TResult
+
+  if (!receipt.projectId)
+    throw new Error('Invalid command receipt result format')
+  if (await isProjectDeleted(receipt.projectId)) {
+    throw new DomainCommandError(
+      'PROJECT_NOT_FOUND',
+      'Project not found',
+    )
+  }
+
+  return await unprotect({
+    ...receipt,
+    result: stored.protected,
+  }) as TResult
 }
 
 function assertProjectScope(command: CommandEnvelope, decision: CommandDecision<JsonObject>): void {
@@ -180,5 +235,73 @@ function assertProjectScope(command: CommandEnvelope, decision: CommandDecision<
 }
 
 function isJsonObject(value: JsonObject | null): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function resolveReceiptProtection(
+  command: CommandEnvelope,
+  decision: CommandDecision<JsonObject>,
+): CommandReceiptProtection {
+  const protection = decision.receiptProtection
+    ?? (command.projectId ? 'project-content' : 'none')
+  if (protection === 'project-content' && !command.projectId) {
+    throw new DomainCommandError(
+      'PROJECT_SCOPE_REQUIRED',
+      'Protected command receipt requires a project id',
+    )
+  }
+  return protection
+}
+
+function plaintextReceiptResult(result: JsonObject): JsonObject {
+  return {
+    format: RECEIPT_RESULT_FORMAT,
+    receiptProtection: 'none',
+    plaintext: result,
+  }
+}
+
+function protectedReceiptResult(result: JsonObject): JsonObject {
+  return {
+    format: RECEIPT_RESULT_FORMAT,
+    receiptProtection: 'project-content',
+    protected: result,
+  }
+}
+
+type StoredReceiptResult
+  = | { receiptProtection: 'none', plaintext: JsonObject }
+    | { receiptProtection: 'project-content', protected: JsonObject }
+
+function readStoredReceiptResult(result: JsonObject | null): StoredReceiptResult {
+  if (!isJsonObject(result) || result.format !== RECEIPT_RESULT_FORMAT)
+    throw new Error('Invalid command receipt result format')
+
+  if (result.receiptProtection === 'none') {
+    if (!hasExactKeys(result, ['format', 'plaintext', 'receiptProtection'])
+      || !isJsonObjectValue(result.plaintext)) {
+      throw new Error('Invalid command receipt result format')
+    }
+    return { receiptProtection: 'none', plaintext: result.plaintext }
+  }
+
+  if (result.receiptProtection === 'project-content') {
+    if (!hasExactKeys(result, ['format', 'protected', 'receiptProtection'])
+      || !isJsonObjectValue(result.protected)) {
+      throw new Error('Invalid command receipt result format')
+    }
+    return { receiptProtection: 'project-content', protected: result.protected }
+  }
+
+  throw new Error('Invalid command receipt result format')
+}
+
+function hasExactKeys(result: JsonObject, expected: string[]): boolean {
+  const actual = Object.keys(result).sort()
+  return actual.length === expected.length
+    && actual.every((key, index) => key === expected[index])
+}
+
+function isJsonObjectValue(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

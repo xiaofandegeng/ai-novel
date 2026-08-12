@@ -1,4 +1,4 @@
-import type { ProjectStatus } from '@ai-novel/shared'
+import type { DeleteProjectResult, ProjectStatus } from '@ai-novel/shared'
 import type {
   AggregateDefinition,
   AggregateRepository,
@@ -107,6 +107,7 @@ function registerEvents(events: EventRegistry): void {
     events.register({
       eventType,
       currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
       upcasters: {},
       validate: validateProjectEvent,
     })
@@ -115,6 +116,7 @@ function registerEvents(events: EventRegistry): void {
     events.register({
       eventType,
       currentSchemaVersion: 1,
+      payloadProtection: 'none',
       upcasters: {},
       validate: validateTimestampEvent,
     })
@@ -161,6 +163,11 @@ function registerCommands(runtime: ProjectEventingRuntime): void {
     const loaded = await runtime.aggregates.loadInSession(context.session, projectAggregate, stream)
     assertActiveProject(loaded.state)
     const timestamp = now()
+    const result: DeleteProjectResult = {
+      id: loaded.state.id,
+      deleted: true,
+      deletedAt: timestamp,
+    }
     return {
       streams: [{
         stream,
@@ -170,7 +177,8 @@ function registerCommands(runtime: ProjectEventingRuntime): void {
           timestampEvent(PROJECT_DELETED, 'deletedAt', command, timestamp),
         ],
       }],
-      result: projectResult(loaded.state),
+      result,
+      receiptProtection: 'none',
     }
   })
 }

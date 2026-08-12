@@ -1,4 +1,4 @@
-import type { CreateProjectInput, UpdateProjectInput } from '@ai-novel/shared'
+import type { CreateProjectInput, DeleteProjectResult, UpdateProjectInput } from '@ai-novel/shared'
 import type { JsonObject } from '../../eventing'
 import type { ProjectSnapshot } from './project.eventing'
 import { eq } from 'drizzle-orm'
@@ -59,7 +59,7 @@ export async function updateProject(
 }
 
 export function deleteProject(id: string, options: ProjectCommandOptions = {}) {
-  return commandBus.dispatch<ProjectSnapshot>(projectCommand(
+  return commandBus.dispatch<DeleteProjectResult>(projectCommand(
     DELETE_PROJECT_COMMAND,
     id,
     {},

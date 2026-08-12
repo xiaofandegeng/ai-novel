@@ -2,6 +2,8 @@ export type JsonObject = Record<string, unknown>
 
 export type EventPayloadProtection = 'none' | 'project-content'
 
+export type CommandReceiptProtection = 'none' | 'project-content'
+
 export interface StreamRef {
   aggregateType: string
   aggregateId: string
@@ -75,6 +77,7 @@ export interface OutboxIntent {
 export interface CommandDecision<TResult> {
   streams: StreamAppend[]
   result: TResult
+  receiptProtection?: CommandReceiptProtection
   outbox?: OutboxIntent[]
 }
 

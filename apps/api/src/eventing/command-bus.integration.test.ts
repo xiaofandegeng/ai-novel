@@ -1,10 +1,23 @@
-import type { CommandEnvelope, JsonObject, PendingEvent, StreamRef } from './event-types'
+import type { EventingExecutor } from './content-protector'
+import type {
+  CommandEnvelope,
+  JsonObject,
+  PendingEvent,
+  StoredEvent,
+  StreamRef,
+} from './event-types'
+import { Buffer } from 'node:buffer'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../db'
 import { commandReceipts, eventOutbox } from '../db/schema'
+import { ProjectDataKeyStore } from '../security/project-data-key.store'
 import { resetTestDatabase } from '../test/database'
 import { CommandBus } from './command-bus'
+import {
+  NoopEventingContentProtector,
+  ProjectEventingContentProtector,
+} from './content-protector'
 import { DomainCommandError, UnknownCommandTypeError } from './errors'
 import { EventRegistry } from './event-registry'
 import { EventStore } from './event-store'
@@ -58,7 +71,6 @@ describe('commandBus', () => {
     ])
     await expect(readReceipt('command-1')).resolves.toMatchObject({
       status: 'completed',
-      result: { id: 'thing-1' },
     })
     await expect(db.select().from(eventOutbox)).resolves.toMatchObject([
       { id: 'outbox-command-1', status: 'pending' },
@@ -86,6 +98,57 @@ describe('commandBus', () => {
     expect(second).toEqual(first)
     expect(handlerCalls).toBe(1)
     await expect(store.loadStream(stream)).resolves.toHaveLength(1)
+  })
+
+  it('encrypts a project-scoped completed receipt and decrypts its durable duplicate result', async () => {
+    const { bus } = createProtectedRuntime()
+    let handlerCalls = 0
+    bus.register('CreateKernelThing', async (command) => {
+      handlerCalls += 1
+      return {
+        streams: [{
+          stream,
+          expectedVersion: 0,
+          events: [{
+            ...pending('event-command-protected', 'KernelThingCreated'),
+            payload: { title: command.payload.title },
+          }],
+        }],
+        result: { id: command.aggregateId, title: command.payload.title },
+      }
+    })
+
+    const first = await bus.dispatch<{ id: string, title: string }>(command())
+    const second = await bus.dispatch<{ id: string, title: string }>(command())
+
+    expect(first).toEqual({ id: 'thing-1', title: '测试对象' })
+    expect(second).toEqual(first)
+    expect(handlerCalls).toBe(1)
+    const receipt = await readReceipt('command-1')
+    expect(receipt?.result).toMatchObject({
+      format: 'command-receipt-result-v1',
+      receiptProtection: 'project-content',
+    })
+    expect(JSON.stringify(receipt?.result)).not.toContain(first.title)
+  })
+
+  it('rejects an unmarked plaintext result for a project-scoped completed receipt', async () => {
+    const { bus } = createProtectedRuntime()
+    bus.register('CreateKernelThing', async () => {
+      throw new Error('handler must not execute for a durable receipt')
+    })
+    await db.insert(commandReceipts).values({
+      commandId: 'command-1',
+      commandType: 'CreateKernelThing',
+      aggregateType: stream.aggregateType,
+      aggregateId: stream.aggregateId,
+      projectId: stream.projectId,
+      status: 'completed',
+      result: { id: 'thing-1', title: '明文不可接受' },
+      finishedAt: '2026-08-11T00:00:00.000Z',
+    })
+
+    await expect(bus.dispatch(command())).rejects.toThrow('receipt result format')
   })
 
   it('rolls back events, outbox, and receipt when a synchronous projector fails', async () => {
@@ -118,6 +181,27 @@ describe('commandBus', () => {
 
     await expect(store.loadStream(stream)).resolves.toHaveLength(0)
     await expect(db.select().from(eventOutbox)).resolves.toHaveLength(0)
+    await expect(readReceipt('command-1')).resolves.toBeUndefined()
+  })
+
+  it('inserts the receipt before security finalization and rolls everything back on failure', async () => {
+    const contentProtector = new ReceiptOrderingContentProtector()
+    const orderingStore = new EventStore({ contentProtector })
+    const bus = new CommandBus(orderingStore, new ProjectionRegistry())
+    bus.register('CreateKernelThing', async () => ({
+      streams: [{
+        stream,
+        expectedVersion: 0,
+        events: [pending('event-finalization-order', 'KernelThingCreated')],
+      }],
+      result: { id: 'thing-1' },
+      receiptProtection: 'none',
+    }))
+
+    await expect(bus.dispatch(command())).rejects.toThrow('security finalization failed')
+
+    expect(contentProtector.receiptObserved).toBe(true)
+    await expect(orderingStore.loadStream(stream)).resolves.toEqual([])
     await expect(readReceipt('command-1')).resolves.toBeUndefined()
   })
 
@@ -160,7 +244,7 @@ describe('commandBus', () => {
     await expect(readReceipt('command-1')).resolves.toMatchObject({
       status: 'failed',
       errorCode: 'TITLE_REQUIRED',
-      errorMessage: '标题不能为空',
+      errorMessage: 'Command was rejected',
     })
   })
 
@@ -307,4 +391,48 @@ async function readReceipt(commandId: string): Promise<JsonObject | undefined> {
     .where(eq(commandReceipts.commandId, commandId))
     .limit(1)
   return receipt
+}
+
+function createProtectedRuntime() {
+  const events = new EventRegistry()
+  events.register({
+    eventType: 'KernelThingCreated',
+    currentSchemaVersion: 1,
+    payloadProtection: 'project-content',
+    upcasters: {},
+    validate: payload => payload as JsonObject,
+  })
+  const contentProtector = new ProjectEventingContentProtector(
+    events,
+    new ProjectDataKeyStore(Buffer.alloc(32, 19)),
+    {
+      projectCreatedEventType: 'KernelThingCreated',
+      projectDeletedEventType: 'KernelThingDeleted',
+    },
+  )
+  const store = new EventStore({ contentProtector })
+  const projections = new ProjectionRegistry(events)
+  return {
+    bus: new CommandBus(store, projections, events),
+    store,
+  }
+}
+
+class ReceiptOrderingContentProtector extends NoopEventingContentProtector {
+  receiptObserved = false
+
+  override async finalizeBatch(
+    executor: EventingExecutor,
+    events: StoredEvent[],
+  ): Promise<void> {
+    const commandId = events[0]?.commandId
+    if (commandId) {
+      const [receipt] = await executor.select({ commandId: commandReceipts.commandId })
+        .from(commandReceipts)
+        .where(eq(commandReceipts.commandId, commandId))
+        .limit(1)
+      this.receiptObserved = Boolean(receipt)
+    }
+    throw new Error('security finalization failed')
+  }
 }

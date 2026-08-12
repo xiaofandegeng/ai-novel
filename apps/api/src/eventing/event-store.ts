@@ -2,6 +2,8 @@ import type { EventingContentProtector } from './content-protector'
 import type {
   AggregateSnapshot,
   AppendBatch,
+  CommandEnvelope,
+  CommandReceiptRecord,
   JsonObject,
   OutboxIntent,
   StoredEvent,
@@ -28,6 +30,10 @@ export interface EventStoreSession {
   enqueueOutbox: (messages: OutboxIntent[]) => Promise<void>
   getSnapshot: (stream: StreamRef) => Promise<AggregateSnapshot | null>
   putSnapshot: (snapshot: AggregateSnapshot) => Promise<void>
+  protectReceiptResult: (command: CommandEnvelope, result: JsonObject) => Promise<JsonObject>
+  unprotectReceiptResult: (receipt: CommandReceiptRecord) => Promise<JsonObject>
+  finalizeContentProtection: (events: StoredEvent[]) => Promise<void>
+  isProjectDeleted: (projectId: string) => Promise<boolean>
 }
 
 export interface EventStoreOptions {
@@ -46,7 +52,11 @@ export class EventStore {
 
   async withTransaction<T>(work: (session: EventStoreSession) => Promise<T>): Promise<T> {
     return db.transaction(async (transaction) => {
-      return work(createSession(transaction, this.contentProtector))
+      return work(createSession(
+        transaction,
+        this.contentProtector,
+        this.projectDeletedEventType,
+      ))
     })
   }
 
@@ -75,6 +85,23 @@ export class EventStore {
     return this.contentProtector.unprotectEvents(db, rows.map(toStoredEvent))
   }
 
+  async unprotectReceiptResult(receipt: CommandReceiptRecord): Promise<JsonObject> {
+    return this.contentProtector.unprotectReceiptResult(db, receipt)
+  }
+
+  async isProjectDeleted(projectId: string): Promise<boolean> {
+    if (!this.projectDeletedEventType)
+      return false
+    const [row] = await db.select({ eventId: domainEvents.eventId })
+      .from(domainEvents)
+      .where(and(
+        eq(domainEvents.projectId, projectId),
+        eq(domainEvents.eventType, this.projectDeletedEventType),
+      ))
+      .limit(1)
+    return Boolean(row)
+  }
+
   async readHeadersForDeletedProjects(): Promise<Set<string>> {
     if (!this.projectDeletedEventType)
       throw new Error('Project deleted event type is not configured')
@@ -89,6 +116,7 @@ export class EventStore {
 function createSession(
   transaction: EventingTransaction,
   contentProtector: EventingContentProtector,
+  projectDeletedEventType: string | undefined,
 ): EventStoreSession {
   return {
     transaction,
@@ -274,6 +302,27 @@ function createSession(
             createdAt: snapshot.createdAt,
           },
         })
+    },
+    async protectReceiptResult(command, result) {
+      return contentProtector.protectReceiptResult(transaction, command, result)
+    },
+    async unprotectReceiptResult(receipt) {
+      return contentProtector.unprotectReceiptResult(transaction, receipt)
+    },
+    async finalizeContentProtection(events) {
+      await contentProtector.finalizeBatch(transaction, events)
+    },
+    async isProjectDeleted(projectId) {
+      if (!projectDeletedEventType)
+        return false
+      const [row] = await transaction.select({ eventId: domainEvents.eventId })
+        .from(domainEvents)
+        .where(and(
+          eq(domainEvents.projectId, projectId),
+          eq(domainEvents.eventType, projectDeletedEventType),
+        ))
+        .limit(1)
+      return Boolean(row)
     },
   }
 }
