@@ -1,6 +1,7 @@
 import { db } from '../../db'
-import { aiUsageRecords } from '../../db/schema'
 import { generateId } from '../../shared/utils'
+import { compactAIOperationPayload, dispatchAIOperationCommand } from './ai-operations.commands'
+import { RECORD_AI_OPERATION_COMMAND } from './ai-operations.eventing'
 
 export class AIUsageService {
   static async recordUsage(params: {
@@ -19,9 +20,7 @@ export class AIUsageService {
     errorCode?: string | null
   }) {
     const id = generateId()
-    await db.insert(aiUsageRecords).values({
-      id,
-      projectId: params.projectId,
+    await dispatchAIOperationCommand(RECORD_AI_OPERATION_COMMAND, params.projectId, id, compactAIOperationPayload({ kind: 'usage', data: {
       chapterId: params.chapterId || null,
       contextSnapshotId: params.contextSnapshotId || null,
       provider: params.provider,
@@ -34,7 +33,7 @@ export class AIUsageService {
       status: params.status,
       estimatedCost: params.estimatedCost || null,
       errorCode: params.errorCode || null,
-    })
+    } }))
     return id
   }
 

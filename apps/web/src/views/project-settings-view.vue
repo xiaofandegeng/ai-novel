@@ -124,8 +124,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="h-full flex flex-col overflow-y-auto bg-bg-page p-8">
-    <header class="mb-8 flex items-center justify-between">
+  <div class="h-full flex flex-col overflow-y-auto bg-bg-page p-4 lg:p-8 sm:p-6">
+    <header class="mb-6 flex shrink-0 flex-col items-start gap-4 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h1 class="flex items-center gap-2 text-2xl text-text-primary font-bold">
           <Settings class="text-primary" :size="24" />
@@ -148,23 +148,23 @@ onMounted(() => {
     </header>
 
     <!-- Settings Tabs -->
-    <div class="bg-bg-card mb-8 w-fit flex gap-1 border border-border-light rounded-xl p-1 shadow-sm">
+    <div class="bg-bg-card mb-6 max-w-full w-fit flex shrink-0 gap-1 overflow-x-auto border border-border-light rounded-xl p-1 shadow-sm sm:mb-8">
       <button
-        class="rounded-lg px-6 py-2 text-sm font-medium transition-all"
+        class="shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition-all sm:px-6"
         :class="activeTab === 'general' ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:bg-bg-page'"
         @click="activeTab = 'general'"
       >
         常规设置
       </button>
       <button
-        class="rounded-lg px-6 py-2 text-sm font-medium transition-all"
+        class="shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition-all sm:px-6"
         :class="activeTab === 'ai' ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:bg-bg-page'"
         @click="activeTab = 'ai'"
       >
         AI 提示词与结构
       </button>
       <button
-        class="rounded-lg px-6 py-2 text-sm font-medium transition-all"
+        class="shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition-all sm:px-6"
         :class="activeTab === 'ai-provider' ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:bg-bg-page'"
         @click="activeTab = 'ai-provider'"
       >
@@ -182,7 +182,7 @@ onMounted(() => {
       @confirm="handleDelete"
     />
 
-    <div v-if="!loading" class="mx-auto max-w-4xl w-full">
+    <div v-if="!loading" class="mx-auto max-w-4xl w-full shrink-0">
       <div v-if="activeTab === 'general'" class="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
         <!-- Basic Info Section -->
         <section class="space-y-4">
@@ -190,8 +190,8 @@ onMounted(() => {
             <BookOpen class="text-primary" :size="18" />
             基础信息
           </h2>
-          <NPanel class="p-6 space-y-6">
-            <div class="grid grid-cols-2 gap-6">
+          <NPanel class="p-4 space-y-6 sm:p-6">
+            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div class="space-y-2">
                 <NInput v-model="form.title" label="作品名称" placeholder="输入作品名称" />
               </div>
@@ -240,7 +240,7 @@ onMounted(() => {
             <Download class="text-primary" :size="18" />
             数据备份
           </h2>
-          <NPanel class="p-6">
+          <NPanel class="p-4 sm:p-6">
             <div class="space-y-3">
               <p class="text-xs text-text-muted leading-relaxed">
                 导出当前项目的完整数据（包括大纲、正文、设定）。备份文件可用于历史留档。

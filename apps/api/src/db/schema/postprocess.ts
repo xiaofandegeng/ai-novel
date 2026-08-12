@@ -1,15 +1,12 @@
 import { integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
-import { autonomousWritingRuns, writingJobs, writingJobSteps } from './ai'
-import { chapterPostprocessRuns, chapters, chapterScenes } from './chapter'
-
-import { characters } from './character'
+import { autonomousWritingRuns } from './ai'
 import { novelProjects } from './project'
 
 export const chapterElements = pgTable('chapter_elements', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull(),
   elementType: text('element_type').$type<'character' | 'location' | 'item' | 'organization' | 'event'>().notNull(),
   elementId: text('element_id'),
   elementName: text('element_name').notNull(),
@@ -26,12 +23,14 @@ export const chapterElements = pgTable('chapter_elements', {
 export const chapterPostprocessSuggestions = pgTable('chapter_postprocess_suggestions', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
-  runId: text('run_id').references(() => chapterPostprocessRuns.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull(),
+  runId: text('run_id'),
+  autonomousRunId: text('autonomous_run_id'),
+  writingJobId: text('writing_job_id'),
   suggestionType: text('suggestion_type').$type<'fact_triple' | 'foreshadowing_add' | 'foreshadowing_payoff' | 'chapter_element' | 'character_add' | 'character_state' | 'conflict_add' | 'conflict_update' | 'continuity_note' | 'style_note' | 'relationship_update'>().notNull(),
   payload: text('payload').notNull(),
   confidence: integer('confidence').notNull().default(70),
-  status: text('status').$type<'pending' | 'accepted' | 'rejected' | 'applied' | 'acknowledged' | 'apply_failed'>().notNull().default('pending'),
+  status: text('status').$type<'pending' | 'accepted' | 'applying' | 'rejected' | 'applied' | 'acknowledged' | 'apply_failed'>().notNull().default('pending'),
   reason: text('reason'),
   ...timestamps,
 })
@@ -46,7 +45,7 @@ export const storyFactTriples = pgTable('story_fact_triples', {
   objectName: text('object_name').notNull(),
   confidence: integer('confidence').notNull().default(70),
   sourceType: text('source_type').$type<'manual' | 'ai_extracted' | 'auto_inferred'>().notNull().default('manual'),
-  sourceChapterId: text('source_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
+  sourceChapterId: text('source_chapter_id'),
   status: text('status').$type<'pending' | 'confirmed' | 'rejected'>().notNull().default('pending'),
   relatedChapters: text('related_chapters'),
   notes: text('notes'),
@@ -61,9 +60,9 @@ export const foreshadowingItems = pgTable('foreshadowing_items', {
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
   title: text('title').notNull(),
   description: text('description'),
-  setupChapterId: text('setup_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
-  expectedPayoffChapterId: text('expected_payoff_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
-  payoffChapterId: text('payoff_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
+  setupChapterId: text('setup_chapter_id'),
+  expectedPayoffChapterId: text('expected_payoff_chapter_id'),
+  payoffChapterId: text('payoff_chapter_id'),
   status: text('status').$type<'open' | 'progressing' | 'paid_off' | 'abandoned'>().notNull().default('open'),
   importance: text('importance').$type<'major' | 'normal' | 'minor'>().notNull().default('normal'),
   relatedCharacters: text('related_characters'),
@@ -77,7 +76,7 @@ export const foreshadowingCharacters = pgTable('foreshadowing_characters', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
   foreshadowingId: text('foreshadowing_id').notNull().references(() => foreshadowingItems.id, { onDelete: 'cascade' }),
-  characterId: text('character_id').notNull().references(() => characters.id, { onDelete: 'cascade' }),
+  characterId: text('character_id').notNull(),
   relationType: text('relation_type').$type<'protagonist' | 'antagonist' | 'victim' | 'witness' | 'related'>().notNull().default('related'),
   ...timestamps,
 }, table => ({
@@ -88,10 +87,10 @@ export const foreshadowingCharacters = pgTable('foreshadowing_characters', {
 export const chapterChangeSets = pgTable('chapter_change_sets', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
-  sceneId: text('scene_id').references(() => chapterScenes.id, { onDelete: 'set null' }),
-  writingJobId: text('writing_job_id').references(() => writingJobs.id, { onDelete: 'set null' }),
-  sourceStepId: text('source_step_id').references(() => writingJobSteps.id, { onDelete: 'set null' }),
+  chapterId: text('chapter_id').notNull(),
+  sceneId: text('scene_id'),
+  writingJobId: text('writing_job_id'),
+  sourceStepId: text('source_step_id'),
   status: text('status').$type<
     'drafted'
     | 'reviewing'
@@ -119,7 +118,7 @@ export const chapterChangeSetItems = pgTable('chapter_change_set_items', {
   id: text('id').primaryKey(),
   changeSetId: text('change_set_id').notNull().references(() => chapterChangeSets.id, { onDelete: 'cascade' }),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull(),
   itemType: text('item_type').$type<
     'draft'
     | 'character_create'
@@ -148,10 +147,10 @@ export const autonomousRunExceptions = pgTable('autonomous_run_exceptions', {
   id: text('id').primaryKey(),
   runId: text('run_id').notNull().references(() => autonomousWritingRuns.id, { onDelete: 'cascade' }),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
-  changeSetId: text('change_set_id').references(() => chapterChangeSets.id, { onDelete: 'set null' }),
-  writingJobId: text('writing_job_id').references(() => writingJobs.id, { onDelete: 'set null' }),
-  stepId: text('step_id').references(() => writingJobSteps.id, { onDelete: 'set null' }),
+  chapterId: text('chapter_id'),
+  changeSetId: text('change_set_id'),
+  writingJobId: text('writing_job_id'),
+  stepId: text('step_id'),
   exceptionType: text('exception_type').$type<
     'consistency_blocked'
     | 'high_risk_change_set'

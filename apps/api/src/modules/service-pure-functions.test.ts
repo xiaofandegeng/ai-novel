@@ -15,7 +15,6 @@ function baseContext(): BuiltAIContext {
     relationships: [],
     conflicts: [],
     knowledgeSnippets: [],
-    personaMemory: [],
     chapterMemories: [],
     chapterElements: [],
     foreshadowingItems: [],

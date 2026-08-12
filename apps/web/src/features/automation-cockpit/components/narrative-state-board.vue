@@ -195,4 +195,16 @@ const tabs = [
     background-color: var(--bg-surface, #ffffff);
   }
 }
+
+@media (max-width: 767px) {
+  .narrative-state-board {
+    height: auto;
+    min-height: 560px;
+
+    .board-content {
+      min-height: 500px;
+      overflow: visible;
+    }
+  }
+}
 </style>

@@ -1,7 +1,17 @@
+import type { JsonObject } from '../../eventing'
+import type { ProjectPromptOverrideSnapshot } from './prompt-settings.eventing'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { projectPromptOverrides, promptTemplateRuns, promptTemplates } from '../../db/schema'
-import { generateId, now } from '../../shared/utils'
+import { projectPromptOverrides, promptTemplates } from '../../db/schema'
+import { commandBus } from '../../eventing-runtime'
+import { generateId } from '../../shared/utils'
+import { compactAIOperationPayload, dispatchAIOperationCommand } from './ai-operations.commands'
+import { RECORD_AI_OPERATION_COMMAND } from './ai-operations.eventing'
+import {
+  PROJECT_PROMPT_OVERRIDE_AGGREGATE_TYPE,
+  promptOverrideAggregateId,
+  SET_PROJECT_PROMPT_OVERRIDE_COMMAND,
+} from './prompt-settings.eventing'
 
 export interface RenderedPrompt {
   system: string
@@ -13,7 +23,7 @@ export interface PromptOverrideInput {
   templateKey: string
   overrideSystemPrompt?: string | null
   overrideUserPromptTemplate?: string | null
-  enabled?: boolean
+  enabled?: boolean | 0 | 1
 }
 
 export function listPromptTemplates() {
@@ -24,39 +34,31 @@ export function listProjectPromptOverrides(projectId: string) {
   return db.select().from(projectPromptOverrides).where(eq(projectPromptOverrides.projectId, projectId))
 }
 
-export async function upsertProjectPromptOverride(projectId: string, input: PromptOverrideInput) {
-  const [existing] = await db
-    .select()
-    .from(projectPromptOverrides)
-    .where(and(
-      eq(projectPromptOverrides.projectId, projectId),
-      eq(projectPromptOverrides.templateKey, input.templateKey),
-    ))
-    .limit(1)
+export interface PromptOverrideCommandOptions {
+  commandId?: string
+  correlationId?: string
+}
 
-  if (existing) {
-    await db.update(projectPromptOverrides).set({
-      overrideSystemPrompt: input.overrideSystemPrompt,
-      overrideUserPromptTemplate: input.overrideUserPromptTemplate,
-      enabled: input.enabled !== undefined ? (input.enabled ? 1 : 0) : existing.enabled,
-      updatedAt: now(),
-    }).where(eq(projectPromptOverrides.id, existing.id))
-    return { id: existing.id, created: false }
-  }
+type PromptOverrideCommandResult = ProjectPromptOverrideSnapshot & {
+  created: boolean
+}
 
-  const id = generateId()
-  const timestamp = now()
-  await db.insert(projectPromptOverrides).values({
-    id,
+export async function upsertProjectPromptOverride(
+  projectId: string,
+  input: PromptOverrideInput,
+  options: PromptOverrideCommandOptions = {},
+) {
+  const commandId = options.commandId ?? generateId()
+  const result = await commandBus.dispatch<PromptOverrideCommandResult>({
+    commandId,
+    commandType: SET_PROJECT_PROMPT_OVERRIDE_COMMAND,
+    aggregateType: PROJECT_PROMPT_OVERRIDE_AGGREGATE_TYPE,
+    aggregateId: promptOverrideAggregateId(projectId, input.templateKey),
     projectId,
-    templateKey: input.templateKey,
-    overrideSystemPrompt: input.overrideSystemPrompt,
-    overrideUserPromptTemplate: input.overrideUserPromptTemplate,
-    enabled: input.enabled ? 1 : 0,
-    createdAt: timestamp,
-    updatedAt: timestamp,
+    correlationId: options.correlationId ?? commandId,
+    payload: compactPayload(input),
   })
-  return { id, created: true }
+  return { id: result.id, created: result.created }
 }
 
 export class PromptTemplateService {
@@ -112,14 +114,21 @@ export class PromptTemplateService {
     renderedPreview?: string | null
   }) {
     const id = generateId()
-    await db.insert(promptTemplateRuns).values({
-      id,
-      projectId: params.projectId,
+    await dispatchAIOperationCommand(RECORD_AI_OPERATION_COMMAND, params.projectId, id, compactAIOperationPayload({ kind: 'prompt_run', data: {
       templateId: params.templateId,
       templateVersion: params.templateVersion,
       contextSnapshotId: params.contextSnapshotId || null,
       renderedPreview: params.renderedPreview || null,
-    })
+    } }))
     return id
   }
+}
+
+function compactPayload(input: PromptOverrideInput): JsonObject {
+  const payload = Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined),
+  )
+  if (input.enabled === 0 || input.enabled === 1)
+    payload.enabled = input.enabled === 1
+  return payload
 }

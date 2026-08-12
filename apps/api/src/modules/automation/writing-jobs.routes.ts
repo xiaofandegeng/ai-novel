@@ -2,14 +2,13 @@ import type { CreateWritingJobInput } from '@ai-novel/shared'
 import type { Hono } from 'hono'
 import { fail, success } from '../../shared/http/responses'
 import { errorMessage } from '../../shared/utils'
+import { getLatestWritingJob, getWritingJob } from './writing-job.queries'
 import {
   continueWritingJob,
   createWritingJob,
   deleteWritingJob,
   getJobSteps,
-  getLatestWritingJob,
   getProjectJobSteps,
-  getWritingJob,
   pauseWritingJob,
   retryStep,
   startJob,

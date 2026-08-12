@@ -2,26 +2,72 @@ import type {
   ChapterChangeSet,
   ConsistencyGuardReport,
 } from '@ai-novel/shared'
+import type { ChapterChangeSetCommandOptions } from './chapter-change-set.commands'
+import type { ChapterChangeSetItemSnapshot, ChapterChangeSetSnapshot } from './chapter-change-set.eventing'
 import type { ExtractedChapterChanges } from './chapter-postprocess.service'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import {
   chapterChangeSetItems,
   chapterChangeSets,
-  chapterMemories,
   chapters,
   chapterScenes,
   writingJobSteps,
 } from '../../db/schema'
+import { commandBus } from '../../eventing-runtime'
 import { errorMessage, generateId, now } from '../../shared/utils'
+import { dispatchChapterKnowledgeCommand } from '../story/chapter-knowledge.commands'
+import { RECORD_CHAPTER_MEMORY_COMMAND } from '../story/chapter-knowledge.eventing'
+import { dispatchChapterCommand } from '../story/chapter.commands'
+import { CHANGE_CHAPTER_COMMAND, CHANGE_SCENE_COMMAND } from '../story/chapter.eventing'
 import { createSnapshot } from '../story/version.service'
+import { compactChapterChangeSetPayload, dispatchChapterChangeSetCommand } from './chapter-change-set.commands'
+import {
+  CHANGE_CHANGE_SET_COMMAND,
+  CHANGE_CHANGE_SET_ITEM_COMMAND,
+  DRAFT_CHANGE_SET_COMMAND,
+} from './chapter-change-set.eventing'
 import { applyOneSuggestion } from './postprocess-suggestion.service'
+import { assertWritingJobAuthorized, RunAuthorizationRevokedError } from './run-authorization.service'
+import { dispatchWritingJobCommand } from './writing-job.commands'
+import { CHANGE_WRITING_JOB_STEP_COMMAND } from './writing-job.eventing'
 
 type ChapterPostprocessResult = ExtractedChapterChanges
 
 type ChangeSetRow = typeof chapterChangeSets.$inferSelect
 type ChangeSetItemRow = typeof chapterChangeSetItems.$inferSelect
 type ChangeSetWithItems = ChangeSetRow & { items: ChangeSetItemRow[] }
+
+async function changeChangeSet(
+  projectId: string,
+  changeSetId: string,
+  fields: Partial<Pick<ChapterChangeSetSnapshot, 'status' | 'applyReportJson' | 'beforeSnapshotId' | 'afterSnapshotId' | 'appliedAt'>>,
+  commandId?: string,
+) {
+  return dispatchChapterChangeSetCommand<ChapterChangeSetSnapshot>(
+    CHANGE_CHANGE_SET_COMMAND,
+    projectId,
+    changeSetId,
+    compactChapterChangeSetPayload(fields),
+    commandId ? { commandId, correlationId: changeSetId, causationId: changeSetId } : {},
+  )
+}
+
+async function changeChangeSetItem(
+  projectId: string,
+  changeSetId: string,
+  itemId: string,
+  fields: Partial<Pick<ChapterChangeSetItemSnapshot, 'status' | 'applyError'>>,
+  commandId?: string,
+) {
+  return dispatchChapterChangeSetCommand<ChapterChangeSetItemSnapshot>(
+    CHANGE_CHANGE_SET_ITEM_COMMAND,
+    projectId,
+    changeSetId,
+    compactChapterChangeSetPayload({ id: itemId, ...fields }),
+    commandId ? { commandId, correlationId: changeSetId, causationId: itemId } : {},
+  )
+}
 
 function objectPayload(value: unknown): Record<string, unknown> {
   if (value && typeof value === 'object' && !Array.isArray(value))
@@ -87,35 +133,51 @@ export async function createChapterChangeSet(input: {
   const riskLevel = calculateRiskLevel(consistencyReport, extractedChanges)
   const riskSummary = generateRiskSummary(consistencyReport, extractedChanges)
 
-  const [changeSet] = await db.insert(chapterChangeSets).values({
-    id,
-    projectId,
-    chapterId,
-    sceneId: sceneId || null,
-    writingJobId: writingJobId || null,
-    sourceStepId: sourceStepId || null,
-    status: 'drafted',
-    riskLevel,
-    riskSummary,
-    draftTitle: draftTitle || null,
-    draftContent,
-    consistencyReportJson: consistencyReport,
-    extractedChangesJson: extractedChanges,
-    createdAt: now(),
-    updatedAt: now(),
-  }).returning()
+  const items = createChangeSetItems(draftContent, extractedChanges)
+  return commandBus.runAtomically(async () => {
+    const changeSet = await dispatchChapterChangeSetCommand<ChapterChangeSetSnapshot>(
+      DRAFT_CHANGE_SET_COMMAND,
+      projectId,
+      id,
+      compactChapterChangeSetPayload({
+        chapterId,
+        sceneId: sceneId || null,
+        writingJobId: writingJobId || null,
+        sourceStepId: sourceStepId || null,
+        riskLevel,
+        riskSummary,
+        draftTitle: draftTitle || null,
+        draftContent,
+        consistencyReportJson: consistencyReport,
+        extractedChangesJson: extractedChanges,
+        items,
+      }),
+      { commandId: `DraftChangeSet:${id}`, correlationId: id },
+    )
 
-  // Create individual items
-  await createChangeSetItems(id, projectId, chapterId, draftContent, extractedChanges)
+    // Update the writing job step if provided
+    if (sourceStepId) {
+      const [sourceStep] = await db.select({ jobId: writingJobSteps.jobId })
+        .from(writingJobSteps)
+        .where(eq(writingJobSteps.id, sourceStepId))
+        .limit(1)
+      if (sourceStep) {
+        await dispatchWritingJobCommand(
+          CHANGE_WRITING_JOB_STEP_COMMAND,
+          projectId,
+          sourceStep.jobId,
+          { id: sourceStepId, changeSetId: id },
+          {
+            commandId: `CreateChangeSet:${id}:link-step`,
+            correlationId: id,
+            causationId: id,
+          },
+        )
+      }
+    }
 
-  // Update the writing job step if provided
-  if (sourceStepId) {
-    await db.update(writingJobSteps)
-      .set({ changeSetId: id })
-      .where(eq(writingJobSteps.id, sourceStepId))
-  }
-
-  return changeSet
+    return changeSet
+  })
 }
 
 function calculateRiskLevel(report: ConsistencyGuardReport, changes: ChapterPostprocessResult): 'low' | 'medium' | 'high' {
@@ -157,34 +219,24 @@ function generateRiskSummary(report: ConsistencyGuardReport, changes: ChapterPos
   return parts.join('；') || '未发现显著风险'
 }
 
-async function createChangeSetItems(
-  changeSetId: string,
-  projectId: string,
-  chapterId: string,
+function createChangeSetItems(
   draftContent: string,
   changes: ChapterPostprocessResult,
 ) {
-  const items: Array<typeof chapterChangeSetItems.$inferInsert> = []
+  const items: Array<Pick<typeof chapterChangeSetItems.$inferInsert, 'id' | 'itemType' | 'title' | 'payloadJson' | 'riskLevel'>> = []
 
   // Draft item
   items.push({
     id: generateId(),
-    changeSetId,
-    projectId,
-    chapterId,
     itemType: 'draft',
     title: '章节正文草稿',
     payloadJson: { content: draftContent },
     riskLevel: 'low',
-    status: 'pending',
   })
 
   // Memory item
   items.push({
     id: generateId(),
-    changeSetId,
-    projectId,
-    chapterId,
     itemType: 'chapter_memory',
     title: '章节记忆摘要',
     payloadJson: {
@@ -196,7 +248,6 @@ async function createChangeSetItems(
       themeProgress: changes.themeProgress,
     },
     riskLevel: 'low',
-    status: 'pending',
   })
 
   // Characters
@@ -204,14 +255,10 @@ async function createChangeSetItems(
     for (const char of changes.newCharacters) {
       items.push({
         id: generateId(),
-        changeSetId,
-        projectId,
-        chapterId,
         itemType: 'character_create',
         title: `发现新人物：${char.name}`,
         payloadJson: char,
         riskLevel: 'high',
-        status: 'pending',
       })
     }
   }
@@ -221,14 +268,10 @@ async function createChangeSetItems(
     for (const fact of changes.facts) {
       items.push({
         id: generateId(),
-        changeSetId,
-        projectId,
-        chapterId,
         itemType: 'fact_create',
         title: `提取事实：${fact.subjectName} ${fact.predicate} ${fact.objectName}`,
         payloadJson: fact,
         riskLevel: (fact.confidence ?? 70) < 70 ? 'medium' : 'low',
-        status: 'pending',
       })
     }
   }
@@ -238,14 +281,10 @@ async function createChangeSetItems(
     for (const fs of changes.foreshadowingAdded) {
       items.push({
         id: generateId(),
-        changeSetId,
-        projectId,
-        chapterId,
         itemType: 'foreshadowing_create',
         title: `新增伏笔：${fs.title}`,
         payloadJson: fs,
         riskLevel: 'medium',
-        status: 'pending',
       })
     }
   }
@@ -255,14 +294,10 @@ async function createChangeSetItems(
     for (const payoff of changes.foreshadowingPayoffs) {
       items.push({
         id: generateId(),
-        changeSetId,
-        projectId,
-        chapterId,
         itemType: 'foreshadowing_payoff',
         title: `回收伏笔：${payoff.title}`,
         payloadJson: payoff,
         riskLevel: 'medium',
-        status: 'pending',
       })
     }
   }
@@ -272,14 +307,10 @@ async function createChangeSetItems(
     for (const rel of changes.relationshipUpdates) {
       items.push({
         id: generateId(),
-        changeSetId,
-        projectId,
-        chapterId,
         itemType: 'relationship_update',
         title: `关系变化：${rel.characterAName} & ${rel.characterBName}`,
         payloadJson: rel,
         riskLevel: rel.strength > 7 ? 'high' : 'medium',
-        status: 'pending',
       })
     }
   }
@@ -289,14 +320,10 @@ async function createChangeSetItems(
     for (const conflict of changes.newConflicts) {
       items.push({
         id: generateId(),
-        changeSetId,
-        projectId,
-        chapterId,
         itemType: 'conflict_create',
         title: `发现新矛盾：${conflict.title}`,
         payloadJson: conflict,
         riskLevel: 'high',
-        status: 'pending',
       })
     }
   }
@@ -305,14 +332,10 @@ async function createChangeSetItems(
     for (const update of changes.conflictUpdates) {
       items.push({
         id: generateId(),
-        changeSetId,
-        projectId,
-        chapterId,
         itemType: 'conflict_update',
         title: `矛盾推进：${update.title}`,
         payloadJson: update,
         riskLevel: 'medium',
-        status: 'pending',
       })
     }
   }
@@ -322,21 +345,15 @@ async function createChangeSetItems(
     for (const note of changes.styleNotes) {
       items.push({
         id: generateId(),
-        changeSetId,
-        projectId,
-        chapterId,
         itemType: 'style_note',
         title: `风格笔记：${note.title || '新风格建议'}`,
         payloadJson: note,
         riskLevel: 'low',
-        status: 'pending',
       })
     }
   }
 
-  if (items.length > 0) {
-    await db.insert(chapterChangeSetItems).values(items)
-  }
+  return items
 }
 
 export async function getChapterChangeSets(projectId: string, chapterId: string): Promise<ChapterChangeSet[]> {
@@ -362,45 +379,29 @@ export async function getChangeSetById(projectId: string, id: string): Promise<C
   return { ...changeSet, items }
 }
 
-export async function approveChangeSet(projectId: string, changeSetId: string): Promise<void> {
-  await db.update(chapterChangeSets)
-    .set({ status: 'approved', updatedAt: now() })
-    .where(and(
-      eq(chapterChangeSets.id, changeSetId),
-      eq(chapterChangeSets.projectId, projectId),
-    ))
-
-  await db.update(chapterChangeSetItems)
-    .set({ status: 'approved', updatedAt: now() })
-    .where(and(
-      eq(chapterChangeSetItems.changeSetId, changeSetId),
-      eq(chapterChangeSetItems.projectId, projectId),
-    ))
+export async function approveChangeSet(projectId: string, changeSetId: string, options: ChapterChangeSetCommandOptions = {}): Promise<void> {
+  const fullChangeSet = await getChangeSetById(projectId, changeSetId)
+  if (!fullChangeSet)
+    throw new Error('Change set not found')
+  await commandBus.runAtomically(async () => {
+    for (const item of fullChangeSet.items.filter(item => ['pending', 'blocked', 'apply_failed'].includes(item.status)))
+      await changeChangeSetItem(projectId, changeSetId, item.id, { status: 'approved' }, options.commandId ? `${options.commandId}:item:${item.id}` : undefined)
+    await changeChangeSet(projectId, changeSetId, { status: 'approved' }, options.commandId)
+  })
 }
 
-export async function approveChangeSetItem(projectId: string, changeSetId: string, itemId: string): Promise<void> {
-  await db.update(chapterChangeSetItems)
-    .set({ status: 'approved', updatedAt: now() })
-    .where(and(
-      eq(chapterChangeSetItems.id, itemId),
-      eq(chapterChangeSetItems.changeSetId, changeSetId),
-      eq(chapterChangeSetItems.projectId, projectId),
-    ))
+export async function approveChangeSetItem(projectId: string, changeSetId: string, itemId: string, options: ChapterChangeSetCommandOptions = {}): Promise<void> {
+  await changeChangeSetItem(projectId, changeSetId, itemId, { status: 'approved' }, options.commandId)
 }
 
-export async function rejectChangeSetItem(projectId: string, changeSetId: string, itemId: string): Promise<void> {
-  await db.update(chapterChangeSetItems)
-    .set({ status: 'rejected', updatedAt: now() })
-    .where(and(
-      eq(chapterChangeSetItems.id, itemId),
-      eq(chapterChangeSetItems.changeSetId, changeSetId),
-      eq(chapterChangeSetItems.projectId, projectId),
-    ))
+export async function rejectChangeSetItem(projectId: string, changeSetId: string, itemId: string, options: ChapterChangeSetCommandOptions = {}): Promise<void> {
+  await changeChangeSetItem(projectId, changeSetId, itemId, { status: 'rejected' }, options.commandId)
 }
 
 export async function applyChangeSet(
   projectId: string,
   changeSetId: string,
+  options: ChapterChangeSetCommandOptions = {},
 ): Promise<{ alreadyApplied: true } | { success: true }> {
   const fullChangeSet = await getChangeSetById(projectId, changeSetId)
   if (!fullChangeSet)
@@ -413,9 +414,17 @@ export async function applyChangeSet(
 
   if (fullChangeSet.status === 'applied')
     return { alreadyApplied: true }
+  if (fullChangeSet.status !== 'approved')
+    throw new Error('Change set must be approved before it can be applied')
+
+  const approvedItems = fullChangeSet.items.filter(item => item.status === 'approved')
+  const approvedDraft = approvedItems.find(item => item.itemType === 'draft')
 
   try {
-    return await db.transaction(async (tx) => {
+    return await commandBus.runAtomically(async (tx) => {
+      if (fullChangeSet.writingJobId)
+        await assertWritingJobAuthorized(projectId, fullChangeSet.writingJobId)
+
       // 1. Get current content for before snapshot
       // P1-5: 章节查询增加 projectId 限制
       const [chapter] = await tx.select({ draft: chapters.draft })
@@ -430,34 +439,63 @@ export async function applyChangeSet(
       }
 
       const beforeContent = chapter.draft || ''
-      const beforeSnapshot = await createSnapshot(projectId, fullChangeSet.chapterId, beforeContent || ' ', `Unified Change Set Apply Before: ${changeSetId}`)
-      if ('error' in beforeSnapshot)
-        throw new Error(beforeSnapshot.error)
+      let beforeSnapshotId: string | null = null
+      if (approvedDraft && beforeContent) {
+        const beforeSnapshot = await createSnapshot(
+          projectId,
+          fullChangeSet.chapterId,
+          beforeContent,
+          `Unified Change Set Apply Before: ${changeSetId}`,
+          {
+            commandId: `ApplyChangeSet:${changeSetId}:before`,
+            correlationId: changeSetId,
+            causationId: changeSetId,
+          },
+        )
+        if ('error' in beforeSnapshot)
+          throw new Error(beforeSnapshot.error)
+        beforeSnapshotId = beforeSnapshot.id
+      }
 
       // 2. Apply draft
-      if (fullChangeSet.draftContent) {
+      if (approvedDraft && fullChangeSet.draftContent) {
         // P1-4: 场景自动写作区分写入目标
         if (fullChangeSet.sceneId) {
-          await tx.update(chapterScenes)
-            .set({ content: fullChangeSet.draftContent, status: 'reviewed', updatedAt: now() })
-            .where(and(
-              eq(chapterScenes.id, fullChangeSet.sceneId),
-              eq(chapterScenes.projectId, projectId),
-              eq(chapterScenes.chapterId, fullChangeSet.chapterId),
-            ))
+          await dispatchChapterCommand(
+            CHANGE_SCENE_COMMAND,
+            projectId,
+            fullChangeSet.chapterId,
+            {
+              id: fullChangeSet.sceneId,
+              content: fullChangeSet.draftContent,
+              status: 'reviewed',
+            },
+            {
+              commandId: `ApplyChangeSet:${changeSetId}:scene`,
+              correlationId: changeSetId,
+              causationId: changeSetId,
+            },
+          )
         }
         else {
-          await tx.update(chapters)
-            .set({ draft: fullChangeSet.draftContent, updatedAt: now() })
-            .where(and(
-              eq(chapters.id, fullChangeSet.chapterId),
-              eq(chapters.projectId, projectId),
-            ))
+          await dispatchChapterCommand(
+            CHANGE_CHAPTER_COMMAND,
+            projectId,
+            fullChangeSet.chapterId,
+            {
+              draft: fullChangeSet.draftContent,
+              note: `Unified Change Set Apply: ${changeSetId}`,
+            },
+            {
+              commandId: `ApplyChangeSet:${changeSetId}:chapter`,
+              correlationId: changeSetId,
+              causationId: changeSetId,
+            },
+          )
         }
       }
 
       // 3. Apply approved items
-      const approvedItems = fullChangeSet.items.filter(item => item.status === 'approved')
       for (const item of approvedItems) {
         // P1-3: 关键项目失败应抛错回滚
         switch (item.itemType) {
@@ -466,33 +504,25 @@ export async function applyChangeSet(
             break
           case 'chapter_memory': {
             const payload = objectPayload(item.payloadJson)
-            const memoryFields = {
+            const memoryFields = Object.fromEntries(Object.entries({
               summary: optionalText(payload.summary),
               keyEvents: optionalText(payload.keyEvents),
               characterStateChanges: optionalText(payload.characterStateChanges),
               relationshipChanges: optionalText(payload.relationshipChanges),
               conflictProgress: optionalText(payload.conflictProgress),
               themeProgress: optionalText(payload.themeProgress),
-            }
-            const existing = await tx.select().from(chapterMemories).where(and(
-              eq(chapterMemories.projectId, projectId),
-              eq(chapterMemories.chapterId, fullChangeSet.chapterId),
-            ))
-            if (existing.length > 0) {
-              await tx.update(chapterMemories)
-                .set({ ...memoryFields, updatedAt: now() })
-                .where(eq(chapterMemories.id, existing[0].id))
-            }
-            else {
-              await tx.insert(chapterMemories).values({
-                id: generateId(),
-                projectId,
-                chapterId: fullChangeSet.chapterId,
-                ...memoryFields,
-                createdAt: now(),
-                updatedAt: now(),
-              })
-            }
+            }).filter(([, value]) => value !== undefined))
+            await dispatchChapterKnowledgeCommand(
+              RECORD_CHAPTER_MEMORY_COMMAND,
+              projectId,
+              fullChangeSet.chapterId,
+              { id: generateId(), ...memoryFields },
+              {
+                commandId: `ApplyChangeSet:${changeSetId}:memory:${item.id}`,
+                correlationId: changeSetId,
+                causationId: item.id,
+              },
+            )
             break
           }
           default: {
@@ -510,78 +540,84 @@ export async function applyChangeSet(
             }
 
             const suggestionType = typeMapping[item.itemType]
-            if (suggestionType) {
-              await applyOneSuggestion(
-                suggestionType,
-                objectPayload(item.payloadJson),
-                projectId,
-                fullChangeSet.chapterId,
-                70, // Default confidence for change sets
-                tx,
-              )
-            }
+            if (!suggestionType)
+              throw new Error(`Unsupported change set item type: ${item.itemType}`)
+            await applyOneSuggestion(
+              suggestionType,
+              objectPayload(item.payloadJson),
+              projectId,
+              fullChangeSet.chapterId,
+              70, // Default confidence for change sets
+              {
+                commandId: `ApplyChangeSet:${changeSetId}:item:${item.id}`,
+                correlationId: changeSetId,
+                causationId: item.id,
+              },
+            )
             break
           }
         }
 
         // Mark item as applied
-        await tx.update(chapterChangeSetItems)
-          .set({ status: 'applied', updatedAt: now() })
-          .where(eq(chapterChangeSetItems.id, item.id))
+        await changeChangeSetItem(projectId, changeSetId, item.id, { status: 'applied' }, options.commandId ? `${options.commandId}:item:${item.id}` : undefined)
       }
 
       // 4. Mark change set as applied
-      const afterSnapshot = await createSnapshot(projectId, fullChangeSet.chapterId, fullChangeSet.draftContent || beforeContent || ' ', `Unified Change Set Apply After: ${changeSetId}`)
-      if ('error' in afterSnapshot)
-        throw new Error(afterSnapshot.error)
+      const afterContent = approvedDraft ? (fullChangeSet.draftContent || beforeContent) : ''
+      let afterSnapshotId: string | null = null
+      if (afterContent) {
+        const afterSnapshot = await createSnapshot(
+          projectId,
+          fullChangeSet.chapterId,
+          afterContent,
+          `Unified Change Set Apply After: ${changeSetId}`,
+          {
+            commandId: `ApplyChangeSet:${changeSetId}:after`,
+            correlationId: changeSetId,
+            causationId: changeSetId,
+          },
+        )
+        if ('error' in afterSnapshot)
+          throw new Error(afterSnapshot.error)
+        afterSnapshotId = afterSnapshot.id
+      }
 
-      await tx.update(chapterChangeSets)
-        .set({
-          status: 'applied',
-          appliedAt: now(),
-          updatedAt: now(),
-          beforeSnapshotId: beforeSnapshot.id,
-          afterSnapshotId: afterSnapshot.id,
-        })
-        .where(eq(chapterChangeSets.id, changeSetId))
+      await changeChangeSet(projectId, changeSetId, {
+        status: 'applied',
+        appliedAt: now(),
+        beforeSnapshotId,
+        afterSnapshotId,
+      }, options.commandId ? `${options.commandId}:complete` : undefined)
 
       return { success: true }
     })
   }
   catch (error: unknown) {
+    if (error instanceof RunAuthorizationRevokedError)
+      throw error
+
     console.error(`Failed to apply change set ${changeSetId}:`, error)
 
     // P1-3: 失败时记录在 applyReportJson 并标记失败
-    await db.update(chapterChangeSets)
-      .set({
-        status: 'apply_failed',
-        applyReportJson: {
-          error: errorMessage(error, 'Unknown error during transaction'),
-          failedAt: now(),
-        },
-        updatedAt: now(),
-      })
-      .where(and(
-        eq(chapterChangeSets.id, changeSetId),
-        eq(chapterChangeSets.projectId, projectId),
-      ))
+    await changeChangeSet(projectId, changeSetId, {
+      status: 'apply_failed',
+      applyReportJson: {
+        error: errorMessage(error, 'Unknown error during transaction'),
+        failedAt: now(),
+      },
+    })
 
     throw error
   }
 }
 
-export async function rejectChangeSet(projectId: string, changeSetId: string): Promise<void> {
-  await db.update(chapterChangeSets)
-    .set({ status: 'rejected', updatedAt: now() })
-    .where(and(
-      eq(chapterChangeSets.id, changeSetId),
-      eq(chapterChangeSets.projectId, projectId),
-    ))
-
-  await db.update(chapterChangeSetItems)
-    .set({ status: 'rejected', updatedAt: now() })
-    .where(and(
-      eq(chapterChangeSetItems.changeSetId, changeSetId),
-      eq(chapterChangeSetItems.projectId, projectId),
-    ))
+export async function rejectChangeSet(projectId: string, changeSetId: string, options: ChapterChangeSetCommandOptions = {}): Promise<void> {
+  const fullChangeSet = await getChangeSetById(projectId, changeSetId)
+  if (!fullChangeSet)
+    throw new Error('Change set not found')
+  await commandBus.runAtomically(async () => {
+    for (const item of fullChangeSet.items.filter(item => !['applied', 'rejected'].includes(item.status)))
+      await changeChangeSetItem(projectId, changeSetId, item.id, { status: 'rejected' }, options.commandId ? `${options.commandId}:item:${item.id}` : undefined)
+    await changeChangeSet(projectId, changeSetId, { status: 'rejected' }, options.commandId)
+  })
 }

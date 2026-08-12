@@ -1,13 +1,12 @@
 import { integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
 import { timestamps } from './_helpers'
-import { chapters, chapterScenes } from './chapter'
 import { novelProjects } from './project'
 
 export const writingJobs = pgTable('writing_jobs', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  currentChapterId: text('current_chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
-  sceneId: text('scene_id').references(() => chapterScenes.id, { onDelete: 'set null' }),
+  currentChapterId: text('current_chapter_id'),
+  sceneId: text('scene_id'),
   mode: text('mode').$type<'outline_only' | 'draft_only' | 'outline_then_draft' | 'scene_draft'>().notNull(),
   status: text('status').$type<'idle' | 'running' | 'paused' | 'completed' | 'failed' | 'isolated'>().notNull().default('idle'),
   executionMode: text('execution_mode').$type<'auto'>().notNull().default('auto'),
@@ -22,7 +21,7 @@ export const writingJobs = pgTable('writing_jobs', {
 export const writingJobSteps = pgTable('writing_job_steps', {
   id: text('id').primaryKey(),
   jobId: text('job_id').notNull().references(() => writingJobs.id, { onDelete: 'cascade' }),
-  stepType: text('step_type').$type<'prepare_context' | 'generate_plan' | 'validate_plan' | 'generate_draft' | 'generate_scene_draft' | 'consistency_check' | 'apply_draft' | 'save_version' | 'postprocess' | 'classify_suggestions' | 'apply_suggestions' | 'update_health' | 'build_change_set' | 'evaluate_change_set' | 'apply_change_set' | 'auto_repair' | 'done'>().notNull(),
+  stepType: text('step_type').$type<'prepare_context' | 'generate_plan' | 'validate_plan' | 'generate_draft' | 'generate_scene_draft' | 'postprocess' | 'classify_suggestions' | 'apply_suggestions' | 'update_health' | 'build_change_set' | 'evaluate_change_set' | 'apply_change_set' | 'auto_repair' | 'done'>().notNull(),
   status: text('status').$type<'pending' | 'running' | 'completed' | 'failed' | 'skipped'>().notNull().default('pending'),
   autoDecision: text('auto_decision').$type<'approved' | 'paused' | 'rejected' | 'not_applicable' | 'medium_risk_repair' | 'repaired' | 'isolated' | 'skipped' | 'failed'>(),
   autoRiskLevel: text('auto_risk_level').$type<'none' | 'low' | 'medium' | 'high' | 'critical'>(),
@@ -40,7 +39,7 @@ export const writingJobSteps = pgTable('writing_job_steps', {
 export const aiContextSnapshots = pgTable('ai_context_snapshots', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id'),
   scene: text('scene'),
   requestId: text('request_id').notNull(),
   modelProvider: text('model_provider'),
@@ -54,7 +53,7 @@ export const aiContextSnapshots = pgTable('ai_context_snapshots', {
 export const qualityReports = pgTable('quality_reports', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id'),
   scope: text('scope').$type<'chapter' | 'book'>().notNull(),
   score: integer('score').notNull(),
   rhythmScore: integer('rhythm_score'),
@@ -73,7 +72,9 @@ export const autonomousWritingRuns = pgTable('autonomous_writing_runs', {
   status: text('status').$type<
     'idle'
     | 'running'
+    | 'pausing'
     | 'paused'
+    | 'abandoning'
     | 'completed'
     | 'failed'
     | 'abandoned'
@@ -100,9 +101,9 @@ export const autonomousRunJobs = pgTable('autonomous_run_jobs', {
   id: text('id').primaryKey(),
   runId: text('run_id').notNull().references(() => autonomousWritingRuns.id, { onDelete: 'cascade' }),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  writingJobId: text('writing_job_id').notNull().references(() => writingJobs.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').references(() => chapters.id, { onDelete: 'set null' }),
-  sceneId: text('scene_id').references(() => chapterScenes.id, { onDelete: 'set null' }),
+  writingJobId: text('writing_job_id').notNull(),
+  chapterId: text('chapter_id'),
+  sceneId: text('scene_id'),
   status: text('status').$type<'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'isolated'>().notNull().default('pending'),
   orderIndex: integer('order_index').notNull(),
   isolationReason: text('isolation_reason'),

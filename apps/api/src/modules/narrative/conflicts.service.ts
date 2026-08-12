@@ -1,10 +1,19 @@
 import type { CreateConflictInput, UpdateConflictInput } from '@ai-novel/shared'
+import type { ConflictCommandOptions } from './conflict.commands'
+import type { ConflictSnapshot } from './conflict.eventing'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { conflictParticipants, conflicts } from '../../db/schema'
-import { assertCharactersBelongToProject, assertConflictBelongsToProject } from '../../shared/ownership'
-import { generateId, updatedFields } from '../../shared/utils'
+import { DomainCommandError } from '../../eventing'
+import { generateId } from '../../shared/utils'
 import { matchCharacterIdsFromText } from '../character/character-utils.service'
+import { compactConflictPayload, dispatchConflictCommand } from './conflict.commands'
+import {
+  CHANGE_CONFLICT_COMMAND,
+  CREATE_CONFLICT_COMMAND,
+  DELETE_CONFLICT_COMMAND,
+  REPLACE_CONFLICT_PARTICIPANTS_COMMAND,
+} from './conflict.eventing'
 
 type ConflictInput = CreateConflictInput & { participantIds?: string[] }
 type ConflictUpdate = UpdateConflictInput & { participantIds?: string[] }
@@ -18,52 +27,75 @@ export function listConflicts(projectId: string) {
   return db.select().from(conflicts).where(eq(conflicts.projectId, projectId))
 }
 
-export async function createConflict(projectId: string, input: ConflictInput) {
+export async function createConflict(
+  projectId: string,
+  input: ConflictInput,
+  options: ConflictCommandOptions = {},
+) {
   const participantIds = input.participantIds?.length
     ? input.participantIds
     : await matchCharacterIdsFromText(projectId, input.participants ?? null)
-  const [row] = await db.insert(conflicts).values({
-    id: generateId(),
+  const id = generateId()
+  const result = await dispatchConflictCommand<ConflictSnapshot>(
+    CREATE_CONFLICT_COMMAND,
     projectId,
-    title: input.title,
-    type: input.type,
-    intensity: input.intensity,
-    status: input.status,
-    participants: input.participants,
-    participantIds: participantIds ? JSON.stringify(participantIds) : null,
-    description: input.description,
-    resolution: input.resolution,
-  }).returning()
-  return row
+    id,
+    compactConflictPayload({ ...input, participantIds: participantIds ?? undefined }),
+    options,
+  )
+  return await getConflict(projectId, result.id) ?? result
 }
 
-export async function updateConflict(projectId: string, id: string, input: ConflictUpdate) {
+export async function updateConflict(
+  projectId: string,
+  id: string,
+  input: ConflictUpdate,
+  options: ConflictCommandOptions = {},
+) {
   const participantIds = input.participants !== undefined && !input.participantIds?.length
     ? await matchCharacterIdsFromText(projectId, input.participants)
     : input.participantIds
-  const [row] = await db.update(conflicts).set(updatedFields({
-    title: input.title,
-    type: input.type,
-    intensity: input.intensity,
-    status: input.status,
-    participants: input.participants,
-    participantIds: participantIds ? JSON.stringify(participantIds) : undefined,
-    description: input.description,
-    resolution: input.resolution,
-  })).where(and(eq(conflicts.id, id), eq(conflicts.projectId, projectId))).returning()
-  return row ?? null
+  try {
+    const result = await dispatchConflictCommand<ConflictSnapshot>(
+      CHANGE_CONFLICT_COMMAND,
+      projectId,
+      id,
+      compactConflictPayload({ ...input, participantIds: participantIds ?? undefined }),
+      options,
+    )
+    return await getConflict(projectId, result.id) ?? result
+  }
+  catch (error: unknown) {
+    if (isConflictMissing(error))
+      return null
+    throw error
+  }
 }
 
-export async function deleteConflict(projectId: string, id: string) {
-  const [row] = await db.delete(conflicts).where(and(
-    eq(conflicts.id, id),
-    eq(conflicts.projectId, projectId),
-  )).returning()
-  return row ?? null
+export async function deleteConflict(
+  projectId: string,
+  id: string,
+  options: ConflictCommandOptions = {},
+) {
+  try {
+    return await dispatchConflictCommand<ConflictSnapshot>(
+      DELETE_CONFLICT_COMMAND,
+      projectId,
+      id,
+      {},
+      options,
+    )
+  }
+  catch (error: unknown) {
+    if (isConflictMissing(error))
+      return null
+    throw error
+  }
 }
 
 export async function listConflictParticipants(projectId: string, conflictId: string) {
-  await assertConflictBelongsToProject(projectId, conflictId)
+  if (!await getConflict(projectId, conflictId))
+    throw new Error('矛盾不属于当前项目')
   return db.select().from(conflictParticipants).where(and(
     eq(conflictParticipants.projectId, projectId),
     eq(conflictParticipants.conflictId, conflictId),
@@ -74,22 +106,32 @@ export async function replaceConflictParticipants(
   projectId: string,
   conflictId: string,
   input: ConflictParticipantInput[],
+  options: ConflictCommandOptions = {},
 ) {
-  await assertConflictBelongsToProject(projectId, conflictId)
-  await assertCharactersBelongToProject(projectId, input.map(item => item.characterId))
-  await db.transaction(async (tx) => {
-    await tx.delete(conflictParticipants).where(and(
-      eq(conflictParticipants.projectId, projectId),
-      eq(conflictParticipants.conflictId, conflictId),
-    ))
-    if (input.length > 0) {
-      await tx.insert(conflictParticipants).values(input.map(item => ({
+  await dispatchConflictCommand(
+    REPLACE_CONFLICT_PARTICIPANTS_COMMAND,
+    projectId,
+    conflictId,
+    {
+      participants: input.map(item => ({
         id: generateId(),
-        projectId,
-        conflictId,
         characterId: item.characterId,
-        roleInConflict: item.roleInConflict || null,
-      })))
-    }
-  })
+        roleInConflict: item.roleInConflict ?? null,
+      })),
+    },
+    options,
+  )
+}
+
+async function getConflict(projectId: string, id: string) {
+  const [row] = await db.select().from(conflicts).where(and(
+    eq(conflicts.id, id),
+    eq(conflicts.projectId, projectId),
+  )).limit(1)
+  return row ?? null
+}
+
+function isConflictMissing(error: unknown): boolean {
+  return error instanceof DomainCommandError
+    && (error.code === 'CONFLICT_NOT_FOUND' || error.code === 'PROJECT_NOT_FOUND')
 }

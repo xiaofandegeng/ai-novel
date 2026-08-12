@@ -1,9 +1,16 @@
 import type { CreateChapterInput, UpdateChapterInput } from '@ai-novel/shared'
 import type { Hono } from 'hono'
+import { httpCommandOptions } from '../../shared/http/command-options'
 import { fail, success } from '../../shared/http/responses'
 import { errorMessage } from '../../shared/utils'
 import { autoPlanScenesForChapter } from '../automation/auto-repair.service'
+import * as postprocessQueries from '../automation/chapter-postprocess.queries'
 import * as postprocessService from '../automation/chapter-postprocess.service'
+import {
+  CHANGE_CHAPTER_COMMAND,
+  CREATE_CHAPTER_COMMAND,
+  DELETE_CHAPTER_COMMAND,
+} from './chapter.eventing'
 import { createChapter, deleteChapter, getChapter, listChapters, updateChapter } from './chapters.service'
 
 type PostprocessTrigger = Parameters<typeof postprocessService.runChapterPostprocess>[0]['trigger']
@@ -26,15 +33,23 @@ export function registerChapterRoutes(app: Hono) {
     if (!Number.isInteger(body.chapterNumber) || body.chapterNumber < 1)
       return c.json(fail('Chapter number must be a positive integer'), 400)
 
-    const result = await createChapter(c.req.param('projectId'), { ...body, title })
+    const projectId = c.req.param('projectId')
+    const result = await createChapter(
+      projectId,
+      { ...body, title },
+      httpCommandOptions(c, CREATE_CHAPTER_COMMAND, projectId),
+    )
     return result.error ? c.json(fail(result.error), 400) : c.json(success(result.row), 201)
   })
 
   app.patch('/api/projects/:projectId/chapters/:id', async (c) => {
+    const projectId = c.req.param('projectId')
+    const id = c.req.param('id')
     const result = await updateChapter(
-      c.req.param('projectId'),
-      c.req.param('id'),
+      projectId,
+      id,
       await c.req.json<UpdateChapterInput>(),
+      httpCommandOptions(c, CHANGE_CHAPTER_COMMAND, projectId, id),
     )
     if (result.error)
       return c.json(fail(result.error), result.notFound ? 404 : 400)
@@ -42,21 +57,27 @@ export function registerChapterRoutes(app: Hono) {
   })
 
   app.delete('/api/projects/:projectId/chapters/:id', async (c) => {
-    const row = await deleteChapter(c.req.param('projectId'), c.req.param('id'))
+    const projectId = c.req.param('projectId')
+    const id = c.req.param('id')
+    const row = await deleteChapter(
+      projectId,
+      id,
+      httpCommandOptions(c, DELETE_CHAPTER_COMMAND, projectId, id),
+    )
     return row ? c.json(success(row, 'Chapter deleted')) : c.json(fail('Chapter not found'), 404)
   })
 
   app.get('/api/projects/:projectId/chapters/:id/memory', async (c) => {
-    const memory = await postprocessService.getChapterMemory(c.req.param('projectId'), c.req.param('id'))
+    const memory = await postprocessQueries.getChapterMemory(c.req.param('projectId'), c.req.param('id'))
     return c.json(success(memory))
   })
 
   app.get('/api/projects/:projectId/memories', async (c) => {
-    return c.json(success(await postprocessService.getProjectMemories(c.req.param('projectId'))))
+    return c.json(success(await postprocessQueries.getProjectMemories(c.req.param('projectId'))))
   })
 
   app.get('/api/projects/:projectId/chapters/:id/postprocess-runs', async (c) => {
-    const runs = await postprocessService.getPostprocessRuns(c.req.param('projectId'), c.req.param('id'))
+    const runs = await postprocessQueries.getPostprocessRuns(c.req.param('projectId'), c.req.param('id'))
     return c.json(success(runs))
   })
 

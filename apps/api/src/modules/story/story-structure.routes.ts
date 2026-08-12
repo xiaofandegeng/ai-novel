@@ -1,6 +1,8 @@
 import type { Hono } from 'hono'
+import { httpCommandOptions } from '../../shared/http/command-options'
 import { fail, success } from '../../shared/http/responses'
 import { errorMessage } from '../../shared/utils'
+import { APPLY_STRUCTURE_TEMPLATE_COMMAND } from './story-structure.eventing'
 import { StoryStructureService } from './story-structure.service'
 
 export function registerStoryStructureRoutes(app: Hono) {
@@ -16,7 +18,11 @@ export function registerStoryStructureRoutes(app: Hono) {
     if (!body.templateId)
       return c.json(fail('templateId is required'), 400)
     try {
-      const acts = await StoryStructureService.applyTemplate(projectId, body.templateId)
+      const acts = await StoryStructureService.applyTemplate(
+        projectId,
+        body.templateId,
+        httpCommandOptions(c, APPLY_STRUCTURE_TEMPLATE_COMMAND, projectId, body.templateId),
+      )
       return c.json(success(acts), 201)
     }
     catch (error: unknown) {

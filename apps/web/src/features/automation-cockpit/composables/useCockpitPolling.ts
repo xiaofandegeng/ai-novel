@@ -11,7 +11,7 @@ export function useCockpitPolling(projectId: string, intervalMs = 4000) {
     timerId = setInterval(() => {
       // 只有在 run 处于运行或需要确认时才发起轮询，以避免冗余的后台请求
       const runStatus = store.payload?.run?.status
-      if (runStatus === 'running' || runStatus === 'waiting_review') {
+      if (runStatus === 'running' || runStatus === 'pausing' || runStatus === 'abandoning') {
         store.fetchCockpit(projectId)
       }
       else {
@@ -32,7 +32,7 @@ export function useCockpitPolling(projectId: string, intervalMs = 4000) {
   watch(
     () => store.payload?.run?.status,
     (status) => {
-      if (status === 'running' || status === 'waiting_review') {
+      if (status === 'running' || status === 'pausing' || status === 'abandoning') {
         startPolling()
       }
       else {

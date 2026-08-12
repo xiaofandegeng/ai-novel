@@ -1,6 +1,6 @@
 # 本地开发与配置
 
-更新日期：2026-08-11
+更新日期：2026-08-12
 
 ## 1. 环境要求
 
@@ -16,7 +16,7 @@ cp .env.example .env
 pnpm install
 pnpm db:init-vector
 pnpm db:migrate
-pnpm --filter @ai-novel/api db:seed
+pnpm db:seed
 ```
 
 Seed 会重建演示数据，只能用于明确的本地开发数据库。
@@ -54,6 +54,33 @@ TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/ai_novel_test
 
 测试启动器拒绝任何数据库名不以 `_test` 结尾的地址。不要把开发库或生产库地址复制到该变量。
 
+### 事件溯源内核
+
+当前 migration 会完整创建 Event Store、stream、快照、命令回执、投影 checkpoint、Outbox 和全部产品投影，并安装 `domain_events` 的 append-only 触发器：
+
+```bash
+pnpm db:migrate
+```
+
+这一步会创建事件内核和当前全部读模型。Project、设置、Prompt、故事结构、章节、人物、关系、冲突、伏笔、叙事知识和自动化运行均使用事件作为事实来源。迁移命令不会主动清空已有数据库；本项目已选择不保留旧业务数据的直接切换方式，本地首次切换使用：
+
+```bash
+pnpm db:rebuild
+pnpm db:seed
+pnpm db:replay
+```
+
+`db:rebuild` 会删除本地开发库的 `public` 与 Drizzle migration schema，数据不可恢复；脚本拒绝非本地目标。`db:replay` 会清空可重建投影并按事件全局位置恢复。
+
+事件内核集成测试始终连接 `_test` 数据库：
+
+```bash
+pnpm --filter @ai-novel/api exec vitest run src/eventing
+pnpm --filter @ai-novel/api test:coverage
+```
+
+Outbox worker、Process Manager 和投影重放由 API 事件内核提供；全部 handler/projector 在 `eventing-runtime.ts` 注册。不得在 route 内直接操作 Event Store、Outbox 或 checkpoint，也不得从自动化服务直接写业务投影表。重放规则是先调用投影的 project-aware `reset`，再以受限 `batchSize` 按全局位置扫描；失败会回滚读模型并记录诊断状态。章节版本是不可变投影，删除接口固定返回冲突响应。
+
 ### AI 与 Embedding
 
 推荐通过“项目设置 → AI 服务配置”维护 Provider、Base URL、模型、API Key 和温度。环境变量只提供默认值：
@@ -69,9 +96,12 @@ AI_EMBEDDING_PROVIDER=openai-compatible
 AI_EMBEDDING_BASE_URL=https://api.openai.com/v1
 AI_EMBEDDING_MODEL=text-embedding-3-small
 AI_EMBEDDING_API_KEY=sk-xxx
+
+# 保存项目 API Key 时必填；必须是 32 字节随机值的 base64 编码
+AI_CREDENTIAL_MASTER_KEY=base64-encoded-32-byte-key
 ```
 
-API Key 保存后不会在页面中回显。
+API Key 保存后使用 AES-256-GCM 加密，不会进入事件、命令回执或项目设置投影，也不会在页面中回显。所有 AI 执行接口都要求明确的项目 ID。
 
 ## 4. 启动
 
@@ -89,6 +119,7 @@ pnpm dev
 ```bash
 pnpm check
 pnpm test:coverage
+pnpm db:replay
 ```
 
 若本机环境限制进程访问 PostgreSQL，API 集成测试需要在允许连接本机 5432 端口的终端中执行。

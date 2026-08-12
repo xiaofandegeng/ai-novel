@@ -8,6 +8,8 @@
     "db:generate": "drizzle-kit generate",
     "db:init-vector": "tsx src/scripts/init-vector.ts",
     "db:migrate": "drizzle-kit migrate",
+    "db:rebuild": "tsx src/scripts/rebuild-database.ts",
+    "db:replay": "tsx src/scripts/replay-projections.ts --all",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/scripts/seed.ts",
     "test": "vitest run",

@@ -2,7 +2,9 @@ import crypto from 'node:crypto'
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { knowledgeEmbeddings } from '../../db/schema'
-import { generateId, now } from '../../shared/utils'
+import { generateId } from '../../shared/utils'
+import { compactAIOperationPayload, dispatchAIOperationCommand } from './ai-operations.commands'
+import { CHANGE_AI_OPERATION_COMMAND, RECORD_AI_OPERATION_COMMAND } from './ai-operations.eventing'
 import { callAIEmbedding, getEffectiveAISettings } from './ai.service'
 
 export type EmbeddingContentType
@@ -21,8 +23,8 @@ export interface EmbeddingInput {
   chunkId?: string
 }
 
-async function getEmbeddingConfig() {
-  const settings = await getEffectiveAISettings()
+async function getEmbeddingConfig(projectId: string) {
+  const settings = await getEffectiveAISettings(projectId)
   return {
     model: settings.embeddingModel || 'text-embedding-3-small',
   }
@@ -40,7 +42,7 @@ function getContentHash(text: string): string {
  */
 export async function getOrCreateEmbedding(input: EmbeddingInput): Promise<number[]> {
   const contentHash = getContentHash(input.text)
-  const { model } = await getEmbeddingConfig()
+  const { model } = await getEmbeddingConfig(input.projectId)
 
   // 1. 尝试从数据库查找已有记录
   const [existing] = await db
@@ -60,35 +62,18 @@ export async function getOrCreateEmbedding(input: EmbeddingInput): Promise<numbe
   }
 
   // 2. 调用 AI 生成向量
-  const vector = await callAIEmbedding(input.text, { model })
+  const vector = await callAIEmbedding(input.text, { projectId: input.projectId, model })
 
   // 3. 存储到数据库
-  const timestamp = now()
-  await db.insert(knowledgeEmbeddings).values({
-    id: generateId(),
-    projectId: input.projectId,
+  const embeddingId = existing?.id ?? generateId()
+  await dispatchAIOperationCommand(existing ? CHANGE_AI_OPERATION_COMMAND : RECORD_AI_OPERATION_COMMAND, input.projectId, embeddingId, compactAIOperationPayload({ kind: 'embedding', data: {
     sourceId: input.sourceId,
     chunkId: input.chunkId,
     embeddingModel: model,
     embeddingVector: vector,
     contentType: input.contentType,
     contentHash,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  }).onConflictDoUpdate({
-    target: [
-      knowledgeEmbeddings.projectId,
-      knowledgeEmbeddings.embeddingModel,
-      knowledgeEmbeddings.contentType,
-      knowledgeEmbeddings.contentHash,
-    ],
-    set: {
-      embeddingVector: vector,
-      sourceId: input.sourceId,
-      chunkId: input.chunkId,
-      updatedAt: timestamp,
-    },
-  })
+  } }))
 
   return vector
 }
@@ -103,10 +88,10 @@ export async function searchSimilarEmbeddings(params: {
   limit?: number
 }) {
   const { projectId, query, contentType, limit = 5 } = params
-  const { model } = await getEmbeddingConfig()
+  const { model } = await getEmbeddingConfig(projectId)
 
   // 1. 生成查询向量
-  const queryVector = await callAIEmbedding(query, { model })
+  const queryVector = await callAIEmbedding(query, { projectId, model })
 
   // 2. 使用 pgvector 进行余弦相似度检索
   // 1 - (v1 <=> v2) = cosine similarity

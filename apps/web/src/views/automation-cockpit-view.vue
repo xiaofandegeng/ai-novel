@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AutonomousExceptionAction } from '@ai-novel/shared'
 import { useToast } from '@ai-novel/ui'
 import { onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -6,10 +7,11 @@ import { useRoute } from 'vue-router'
 import { useChapterStore } from '@/features/automation-cockpit/stores/chapter.store'
 import AutomationControlPanel from '../features/automation-cockpit/components/automation-control-panel.vue'
 import ChapterDetailDrawer from '../features/automation-cockpit/components/chapter-detail-drawer.vue'
-
 import ChapterPipelinePanel from '../features/automation-cockpit/components/chapter-pipeline-panel.vue'
+
 // 导入子组件
 import CockpitHeader from '../features/automation-cockpit/components/cockpit-header.vue'
+import ExceptionCenterPanel from '../features/automation-cockpit/components/exception-center-panel.vue'
 import NarrativeEventStream from '../features/automation-cockpit/components/narrative-event-stream.vue'
 import NarrativeStateBoard from '../features/automation-cockpit/components/narrative-state-board.vue'
 // 导入驾驶舱组合式与轮询函数
@@ -31,6 +33,7 @@ const {
   plotDirection,
   health,
   events,
+  exceptions,
   chapterDetail,
   loadCockpit,
   loadChapter,
@@ -40,6 +43,7 @@ const {
   abandonRun,
   approveItem,
   rejectItem,
+  resolveException,
 } = useAutomationCockpit(projectId)
 
 useCockpitPolling(projectId, 4000)
@@ -54,6 +58,7 @@ const drawerInitialTab = ref<'content' | 'outline' | 'scenes'>('content')
 
 const detailDrawerVisible = ref(false)
 const activeChapterId = ref('')
+const resolvingExceptionId = ref<string | null>(null)
 
 // 监听路由 query 参数，实现深层链接或点击直达
 watch(
@@ -132,6 +137,20 @@ async function handleSaveChapter(text: string) {
     toast.add('保存失败：保存正文时发生异常。', 'error')
   }
 }
+
+async function handleExceptionAction(exceptionId: string, action: AutonomousExceptionAction) {
+  resolvingExceptionId.value = exceptionId
+  try {
+    await resolveException(exceptionId, action)
+    toast.add('异常处理命令已提交，工作流状态已更新。', 'success')
+  }
+  catch {
+    toast.add('异常处理失败，请刷新后重试。', 'error')
+  }
+  finally {
+    resolvingExceptionId.value = null
+  }
+}
 </script>
 
 <template>
@@ -171,6 +190,12 @@ async function handleSaveChapter(text: string) {
             />
           </div>
         </div>
+
+        <ExceptionCenterPanel
+          :exceptions="exceptions"
+          :busy-id="resolvingExceptionId"
+          @action="handleExceptionAction"
+        />
 
         <!-- 回写事件流 -->
         <div class="event-stream-container">
@@ -297,6 +322,47 @@ async function handleSaveChapter(text: string) {
       flex-direction: column;
       min-width: 0;
       height: 100%;
+    }
+  }
+}
+
+@media (max-width: 767px) {
+  .automation-cockpit-view {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+
+    .cockpit-content-layout {
+      flex-direction: column;
+      overflow: visible;
+      padding: 0.75rem;
+
+      .left-control-region {
+        flex: none;
+        width: 100%;
+        overflow: visible;
+        padding-right: 0;
+
+        .pipeline-card {
+          min-height: 0;
+
+          .pipeline-scroll-wrap {
+            overflow: visible;
+          }
+        }
+
+        .event-stream-container {
+          height: auto;
+          min-height: 320px;
+        }
+      }
+
+      .right-narrative-region {
+        flex: none;
+        width: 100%;
+        height: auto;
+        min-height: 560px;
+      }
     }
   }
 }

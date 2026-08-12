@@ -1,3 +1,5 @@
+import type { AutonomousRunException } from './autonomous-writing'
+
 export interface CockpitProjectSummary {
   id: string
   title: string
@@ -9,7 +11,7 @@ export interface CockpitProjectSummary {
 
 export interface CockpitRunSummary {
   id: string
-  status: 'running' | 'paused' | 'waiting_review' | 'completed' | 'failed' | 'abandoned' | 'cancelled' | 'idle'
+  status: 'running' | 'pausing' | 'paused' | 'abandoning' | 'completed' | 'failed' | 'abandoned' | 'idle'
   strategy: 'safe' | 'balanced' | 'fast'
   targetChapterCount: number
   completedChapterCount: number
@@ -163,10 +165,12 @@ export interface AutomationCockpitPayload {
   plotDirection: CockpitPlotDirection
   health: CockpitHealthSummary
   events: CockpitNarrativeEvent[]
+  exceptions: AutonomousRunException[]
 }
 
 export interface CockpitChapterDetail {
   id: string
+  chapterNumber: number
   title: string
   content?: string | null
   summary?: string | null

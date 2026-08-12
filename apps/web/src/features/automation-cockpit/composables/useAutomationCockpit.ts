@@ -1,4 +1,4 @@
-import type { CreateAutonomousRunInput } from '@ai-novel/shared'
+import type { AutonomousExceptionAction, CreateAutonomousRunInput } from '@ai-novel/shared'
 import { computed } from 'vue'
 import * as runsApi from '../api/autonomous-runs.api'
 import { useAutomationCockpitStore } from '../stores/automation-cockpit.store'
@@ -16,6 +16,7 @@ export function useAutomationCockpit(projectId: string) {
   const plotDirection = computed(() => store.payload?.plotDirection || null)
   const health = computed(() => store.payload?.health || null)
   const events = computed(() => store.payload?.events || [])
+  const exceptions = computed(() => store.payload?.exceptions || [])
   const chapterDetail = computed(() => store.chapterDetail)
 
   async function loadCockpit() {
@@ -33,8 +34,10 @@ export function useAutomationCockpit(projectId: string) {
   async function startRun(input: CreateAutonomousRunInput) {
     if (!projectId)
       return
-    const newRun = await runsApi.createAutonomousRun(projectId, input)
-    await runsApi.startAutonomousRun(projectId, newRun.id)
+    const runId = run.value?.status === 'idle'
+      ? run.value.id
+      : (await runsApi.createAutonomousRun(projectId, input)).id
+    await runsApi.startAutonomousRun(projectId, runId)
     await loadCockpit()
   }
 
@@ -73,6 +76,13 @@ export function useAutomationCockpit(projectId: string) {
     await loadCockpit()
   }
 
+  async function resolveException(exceptionId: string, action: AutonomousExceptionAction) {
+    if (!projectId || !run.value)
+      return
+    await runsApi.resolveAutonomousException(projectId, run.value.id, exceptionId, action)
+    await loadCockpit()
+  }
+
   return {
     project,
     run,
@@ -84,6 +94,7 @@ export function useAutomationCockpit(projectId: string) {
     plotDirection,
     health,
     events,
+    exceptions,
     chapterDetail,
     loadCockpit,
     loadChapter,
@@ -93,5 +104,6 @@ export function useAutomationCockpit(projectId: string) {
     abandonRun,
     approveItem,
     rejectItem,
+    resolveException,
   }
 }

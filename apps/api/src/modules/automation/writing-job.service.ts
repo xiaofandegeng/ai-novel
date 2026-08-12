@@ -1,23 +1,47 @@
 import type { AutonomousStrategy, CreateWritingJobInput, WritingJob, WritingJobStepType } from '@ai-novel/shared'
-import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm'
+import type { ChapterSnapshot, SceneSnapshot } from '../story/chapter.eventing'
+import type { SuggestionRunScope } from './postprocess-suggestion.service'
+import type { WritingJobSnapshot } from './writing-job.eventing'
+import { and, asc, eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { autonomousRunExceptions, autonomousRunJobs, autonomousWritingRuns, chapters, chapterScenes, projectHealthReports, writingJobs, writingJobSteps } from '../../db/schema'
+import { autonomousRunJobs, autonomousWritingRuns, chapters, chapterScenes, writingJobs, writingJobSteps } from '../../db/schema'
+import { DomainCommandError } from '../../eventing'
+import { commandBus, wakeEventOutbox } from '../../eventing-runtime'
 import { assertOptionalChapterBelongsToProject } from '../../shared/ownership'
 import { errorMessage, generateId, now } from '../../shared/utils'
 import { renderAIContext } from '../ai/ai-context-renderer'
 import { createAIContextSnapshot } from '../ai/ai-context-snapshot.service'
 import { buildProjectAIContext } from '../ai/ai-context.service'
+import { compactAIOperationPayload, dispatchAIOperationCommand } from '../ai/ai-operations.commands'
+import { RECORD_AI_OPERATION_COMMAND } from '../ai/ai-operations.eventing'
 import { callAIJSON, getEffectiveAISettings } from '../ai/ai.service'
 import { runConsistencyGuard } from '../ai/consistency-guard.service'
-import { AuthoringEventService } from '../narrative/authoring-event.service'
 import { getProjectHealthMetrics } from '../narrative/health-metrics.service'
-import { createSnapshot } from '../story/version.service'
+import { dispatchChapterCommand } from '../story/chapter.commands'
+import {
+  CHANGE_CHAPTER_COMMAND,
+  PLAN_SCENES_COMMAND,
+} from '../story/chapter.eventing'
 import { decideNextAction } from './auto-decision.service'
 import { attemptAutoRepair, attemptAutoRepairPlan } from './auto-repair.service'
+import { changeAutonomousRun, changeAutonomousRunJob, recordAutonomousException } from './autonomous-writing.service'
 import { applyChangeSet as applyChangeSetSvc, approveChangeSet as approveChangeSetSvc, createChapterChangeSet, rejectChangeSet as rejectChangeSetSvc } from './chapter-change-set.service'
 import { extractChapterChanges, runChapterPostprocess, runScenePostprocess } from './chapter-postprocess.service'
 import { applyAutoSuggestions, getSuggestions } from './postprocess-suggestion.service'
+import { assertWritingJobAuthorized, RunAuthorizationRevokedError } from './run-authorization.service'
 import { runGraphInference } from './story-graph-inference.service'
+import { compactWritingJobPayload, dispatchWritingJobCommand } from './writing-job.commands'
+import {
+  CHANGE_WRITING_JOB_COMMAND,
+  CHANGE_WRITING_JOB_STEP_COMMAND,
+  CREATE_WRITING_JOB_COMMAND,
+  DELETE_WRITING_JOB_COMMAND,
+  REPLACE_WRITING_JOB_STEPS_COMMAND,
+  REQUEST_WRITING_JOB_EXECUTION_COMMAND,
+} from './writing-job.eventing'
+import { getWritingJob } from './writing-job.queries'
+
+export { getLatestWritingJob, getWritingJob } from './writing-job.queries'
 
 function mapActionToDecision(action: 'continue' | 'repair' | 'isolate' | 'skip' | 'stop_run'): 'approved' | 'medium_risk_repair' | 'isolated' | 'skipped' | 'failed' {
   switch (action) {
@@ -33,7 +57,22 @@ type JobMode = 'outline_only' | 'draft_only' | 'outline_then_draft' | 'scene_dra
 type WritingJobStatus = NonNullable<typeof writingJobs.$inferInsert['status']>
 type TerminalWritingJobStatus = 'completed' | 'failed' | 'isolated'
 type JobStepUpdate = Partial<typeof writingJobSteps.$inferInsert>
-type SceneBeatType = NonNullable<typeof chapterScenes.$inferInsert['beatType']>
+type SceneBeatType = NonNullable<SceneSnapshot['beatType']>
+
+async function changeRunJobForWritingJob(
+  projectId: string,
+  runId: string,
+  writingJobId: string,
+  fields: Parameters<typeof changeAutonomousRunJob>[3],
+  commandId?: string,
+): Promise<void> {
+  const [runJob] = await db.select({ id: autonomousRunJobs.id })
+    .from(autonomousRunJobs)
+    .where(and(eq(autonomousRunJobs.runId, runId), eq(autonomousRunJobs.writingJobId, writingJobId)))
+    .limit(1)
+  if (runJob)
+    await changeAutonomousRunJob(projectId, runId, runJob.id, fields, commandId)
+}
 
 interface GeneratedScenePlan {
   sceneNumber?: number
@@ -122,26 +161,6 @@ const STEP_SEQUENCE: Record<JobMode, WritingJobStepType[]> = {
   ],
 }
 
-export async function getLatestWritingJob(projectId: string) {
-  const [activeRow] = await db.select().from(writingJobs).where(and(
-    eq(writingJobs.projectId, projectId),
-    inArray(writingJobs.status, ['idle', 'running']),
-  )).orderBy(desc(writingJobs.createdAt))
-  if (activeRow)
-    return activeRow
-
-  const [row] = await db.select().from(writingJobs).where(eq(writingJobs.projectId, projectId)).orderBy(desc(writingJobs.createdAt))
-  return row ?? null
-}
-
-export async function getWritingJob(projectId: string, id: string) {
-  const [row] = await db.select().from(writingJobs).where(and(
-    eq(writingJobs.id, id),
-    eq(writingJobs.projectId, projectId),
-  ))
-  return row ?? null
-}
-
 export async function createWritingJob(projectId: string, input: CreateWritingJobInput) {
   const { mode, currentChapterId, sceneId } = input
   if (['draft_only', 'outline_then_draft', 'scene_draft'].includes(mode) && !currentChapterId)
@@ -164,46 +183,64 @@ export async function createWritingJob(projectId: string, input: CreateWritingJo
     return { row: null, error: '必须选择目标章节，以便自动写入正文' }
 
   const id = generateId()
-  const [row] = await db.insert(writingJobs).values({
-    id,
+  const row = await dispatchWritingJobCommand<WritingJobSnapshot>(
+    CREATE_WRITING_JOB_COMMAND,
     projectId,
-    mode,
-    currentChapterId,
-    sceneId,
-    executionMode: 'auto',
-    status: 'idle',
-  }).returning()
-  await initializeJobSteps(id)
+    id,
+    compactWritingJobPayload({
+      mode,
+      currentChapterId,
+      sceneId,
+      steps: buildJobSteps(id, mode),
+    }),
+  )
   return { row, error: null }
 }
 
 export async function pauseWritingJob(projectId: string, id: string) {
-  const [row] = await db.update(writingJobs).set({
-    status: 'paused',
-    updatedAt: now(),
-  }).where(and(eq(writingJobs.id, id), eq(writingJobs.projectId, projectId))).returning()
-  return row ?? null
+  try {
+    return await dispatchWritingJobCommand<WritingJobSnapshot>(
+      CHANGE_WRITING_JOB_COMMAND,
+      projectId,
+      id,
+      { status: 'paused' },
+    )
+  }
+  catch (error: unknown) {
+    if (isWritingJobMissing(error))
+      return null
+    throw error
+  }
 }
 
 export async function continueWritingJob(projectId: string, id: string) {
-  const [row] = await db.update(writingJobs).set({
-    status: 'running',
-    lastError: null,
-    updatedAt: now(),
-  }).where(and(
-    eq(writingJobs.id, id),
-    eq(writingJobs.projectId, projectId),
-    eq(writingJobs.status, 'paused'),
-  )).returning()
-  return row ?? null
+  const current = await getWritingJob(projectId, id)
+  if (!current || current.status !== 'paused')
+    return null
+  const job = await dispatchWritingJobCommand<WritingJobSnapshot>(
+    CHANGE_WRITING_JOB_COMMAND,
+    projectId,
+    id,
+    { status: 'running', lastError: null },
+  )
+  await requestWritingJobExecution(projectId, id, `ContinueWritingJob:${id}:${current.updatedAt}`)
+  return job
 }
 
 export async function deleteWritingJob(projectId: string, id: string) {
-  const [row] = await db.delete(writingJobs).where(and(
-    eq(writingJobs.id, id),
-    eq(writingJobs.projectId, projectId),
-  )).returning()
-  return row ?? null
+  try {
+    return await dispatchWritingJobCommand<WritingJobSnapshot>(
+      DELETE_WRITING_JOB_COMMAND,
+      projectId,
+      id,
+      {},
+    )
+  }
+  catch (error: unknown) {
+    if (isWritingJobMissing(error))
+      return null
+    throw error
+  }
 }
 
 export async function getProjectJobSteps(projectId: string, jobId: string) {
@@ -222,27 +259,22 @@ export async function initializeJobSteps(jobId: string): Promise<void> {
   if (!job)
     throw new Error('Job not found')
 
-  const sequence = STEP_SEQUENCE[job.mode]
-  const timestamp = now()
+  await dispatchWritingJobCommand(
+    REPLACE_WRITING_JOB_STEPS_COMMAND,
+    job.projectId,
+    jobId,
+    { steps: buildJobSteps(jobId, job.mode) },
+  )
+}
 
-  // Delete any existing steps first (in case of re-initialization)
-  await db.delete(writingJobSteps).where(eq(writingJobSteps.jobId, jobId))
-
-  const values = sequence.map((stepType, index) => ({
+function buildJobSteps(jobId: string, mode: JobMode) {
+  return STEP_SEQUENCE[mode].map((stepType, index) => ({
     id: generateId(),
     jobId,
     stepType,
     status: 'pending' as const,
     input: JSON.stringify({ stepIndex: index }),
-    output: null,
-    error: null,
-    startedAt: null,
-    finishedAt: null,
-    createdAt: timestamp,
-    updatedAt: timestamp,
   }))
-
-  await db.insert(writingJobSteps).values(values)
 }
 
 export async function getJobSteps(jobId: string) {
@@ -264,14 +296,19 @@ export async function getJobSteps(jobId: string) {
 }
 
 async function updateJobStatus(jobId: string, status: WritingJobStatus, lastError?: string | null) {
-  const fields: Partial<typeof writingJobs.$inferInsert> = {
-    status,
-    updatedAt: now(),
-  }
+  const [current] = await db.select({ projectId: writingJobs.projectId }).from(writingJobs).where(eq(writingJobs.id, jobId))
+  if (!current)
+    throw new Error('Job not found')
+  const fields: Partial<typeof writingJobs.$inferInsert> = { status }
   if (lastError !== undefined) {
     fields.lastError = lastError
   }
-  await db.update(writingJobs).set(fields).where(eq(writingJobs.id, jobId))
+  await dispatchWritingJobCommand(
+    CHANGE_WRITING_JOB_COMMAND,
+    current.projectId,
+    jobId,
+    compactWritingJobPayload(fields),
+  )
 
   // P1-3: 如果是自动驾驶任务，通知 Run 进度
   if (isTerminalWritingJobStatus(status)) {
@@ -290,7 +327,22 @@ async function updateJobStatus(jobId: string, status: WritingJobStatus, lastErro
 }
 
 async function updateStep(stepId: string, fields: JobStepUpdate) {
-  await db.update(writingJobSteps).set({ ...fields, updatedAt: now() }).where(eq(writingJobSteps.id, stepId))
+  const [step] = await db.select({ jobId: writingJobSteps.jobId }).from(writingJobSteps).where(eq(writingJobSteps.id, stepId))
+  if (!step)
+    throw new Error('Step not found')
+  const [job] = await db.select({ projectId: writingJobs.projectId }).from(writingJobs).where(eq(writingJobs.id, step.jobId))
+  if (!job)
+    throw new Error('Job not found')
+  await dispatchWritingJobCommand(
+    CHANGE_WRITING_JOB_STEP_COMMAND,
+    job.projectId,
+    step.jobId,
+    compactWritingJobPayload({ id: stepId, ...fields }),
+  )
+}
+
+function isWritingJobMissing(error: unknown) {
+  return error instanceof DomainCommandError && error.code === 'WRITING_JOB_NOT_FOUND'
 }
 
 async function getJobAndChapter(jobId: string, projectId: string) {
@@ -339,7 +391,7 @@ async function executePrepareContext(
   const rendered = renderAIContext(context)
 
   // Record snapshot
-  const settings = await getEffectiveAISettings()
+  const settings = await getEffectiveAISettings(projectId)
   await createAIContextSnapshot({
     projectId,
     chapterId: chapterId || undefined,
@@ -357,6 +409,7 @@ async function executePrepareContext(
 }
 
 async function executeGenerateSceneDraft(
+  projectId: string,
   contextOutput: string,
   sceneTitle: string | null,
   stepId: string,
@@ -393,7 +446,10 @@ ${contextPrompt}
     },
   ]
 
-  const plan = await callAIJSON<Record<string, unknown>>(messages, { temperature: 60 })
+  const plan = await callAIJSON<Record<string, unknown>>(messages, {
+    temperature: 60,
+    metadata: { projectId, taskType: 'generate_scene_plan' },
+  })
   const output = JSON.stringify(plan)
   await updateStep(stepId, { output, updatedAt: now() })
   return output
@@ -403,7 +459,7 @@ async function executeGeneratePlan(
   contextOutput: string,
   chapterTitle: string | null,
   stepId: string,
-  projectId?: string,
+  projectId: string,
   chapterId?: string | null,
 ): Promise<string> {
   const parsed = JSON.parse(contextOutput)
@@ -455,11 +511,17 @@ ${contextPrompt}
     },
   ]
 
-  const plan = await callAIJSON<GeneratedChapterPlan>(messages, { temperature: 60 })
+  const plan = await callAIJSON<GeneratedChapterPlan>(messages, {
+    temperature: 60,
+    metadata: { projectId, chapterId: chapterId || undefined, taskType: 'generate_plan' },
+  })
 
   if (projectId && chapterId) {
-    await db.transaction(async (tx) => {
-      await tx.update(chapters).set({
+    await dispatchChapterCommand<ChapterSnapshot>(
+      CHANGE_CHAPTER_COMMAND,
+      projectId,
+      chapterId,
+      {
         title: typeof plan.title === 'string' && plan.title.trim() ? plan.title.trim() : undefined,
         goals: typeof plan.goals === 'string' ? plan.goals : null,
         conflicts: typeof plan.conflicts === 'string' ? plan.conflicts : null,
@@ -469,35 +531,43 @@ ${contextPrompt}
         endingHook: typeof plan.endingHook === 'string' ? plan.endingHook : null,
         outline: typeof plan.outline === 'string' ? plan.outline : null,
         status: 'planning',
-        updatedAt: now(),
-      }).where(and(eq(chapters.id, chapterId), eq(chapters.projectId, projectId)))
+      },
+      {
+        commandId: `GenerateChapterPlan:${stepId}:chapter`,
+        correlationId: stepId,
+        causationId: stepId,
+      },
+    )
 
-      if (Array.isArray(plan.scenes) && plan.scenes.length > 0) {
-        await tx.delete(chapterScenes).where(and(
-          eq(chapterScenes.projectId, projectId),
-          eq(chapterScenes.chapterId, chapterId),
-        ))
-
-        await tx.insert(chapterScenes).values(plan.scenes.slice(0, 8).map((scene, index) => ({
-          id: generateId(),
-          projectId,
-          chapterId,
-          sceneNumber: Number(scene.sceneNumber) || index + 1,
-          title: typeof scene.title === 'string' ? scene.title : `场景 ${index + 1}`,
-          location: typeof scene.location === 'string' ? scene.location : null,
-          purpose: typeof scene.purpose === 'string' ? scene.purpose : null,
-          summary: typeof scene.summary === 'string' ? scene.summary : null,
-          characters: Array.isArray(scene.characters) ? JSON.stringify(scene.characters) : null,
-          conflict: typeof scene.conflict === 'string' ? scene.conflict : null,
-          conflictLevel: Number(scene.conflictLevel) || 5,
-          beatType: normalizeSceneBeatType(scene.beatType),
-          status: 'planned' as const,
-          orderIndex: index + 1,
-          createdAt: now(),
-          updatedAt: now(),
-        })))
-      }
-    })
+    if (Array.isArray(plan.scenes) && plan.scenes.length > 0) {
+      await dispatchChapterCommand(
+        PLAN_SCENES_COMMAND,
+        projectId,
+        chapterId,
+        {
+          mode: 'replace',
+          scenes: plan.scenes.slice(0, 8).map((scene, index) => ({
+            id: generateId(),
+            sceneNumber: Number(scene.sceneNumber) || index + 1,
+            title: typeof scene.title === 'string' ? scene.title : `场景 ${index + 1}`,
+            location: typeof scene.location === 'string' ? scene.location : null,
+            purpose: typeof scene.purpose === 'string' ? scene.purpose : null,
+            summary: typeof scene.summary === 'string' ? scene.summary : null,
+            characters: Array.isArray(scene.characters) ? JSON.stringify(scene.characters) : null,
+            conflict: typeof scene.conflict === 'string' ? scene.conflict : null,
+            conflictLevel: Number(scene.conflictLevel) || 5,
+            beatType: normalizeSceneBeatType(scene.beatType),
+            status: 'planned' as const,
+            orderIndex: index + 1,
+          })),
+        },
+        {
+          commandId: `GenerateChapterPlan:${stepId}:scenes`,
+          correlationId: stepId,
+          causationId: stepId,
+        },
+      )
+    }
   }
 
   const output = JSON.stringify(plan)
@@ -506,6 +576,7 @@ ${contextPrompt}
 }
 
 async function executeGenerateDraft(
+  projectId: string,
   contextOutput: string,
   planOutput: string,
   stepId: string,
@@ -557,175 +628,12 @@ ${contextPrompt}
     },
   ]
 
-  const draft = await callAIJSON<{ title: string, draft: string, wordCount: number }>(messages, { temperature: 70 })
+  const draft = await callAIJSON<{ title: string, draft: string, wordCount: number }>(messages, {
+    temperature: 70,
+    metadata: { projectId, taskType: 'generate_draft' },
+  })
   const output = JSON.stringify(draft)
   await updateStep(stepId, { output, updatedAt: now() })
-  return output
-}
-
-async function executeConsistencyCheck(
-  projectId: string,
-  chapterId: string | null,
-  sceneId: string | null,
-  draftOutput: string,
-  stepId: string,
-): Promise<string> {
-  const draft = JSON.parse(draftOutput)
-  const report = await runConsistencyGuard(projectId, {
-    chapterId: chapterId || undefined,
-    sceneId: sceneId || undefined,
-    generatedText: draft.draft || '',
-    sourceInstruction: '章节正文生成',
-    scene: 'draft',
-  })
-  const output = JSON.stringify(report)
-  await updateStep(stepId, { output, updatedAt: now() })
-  return output
-}
-async function executeApplyDraft(
-  projectId: string,
-  chapterId: string | null,
-  draftOutput: string,
-  stepId: string,
-  isAutoMode = false,
-): Promise<string> {
-  if (!chapterId)
-    throw new Error('没有可写入的章节')
-
-  const draft = JSON.parse(draftOutput)
-  const content = typeof draft.draft === 'string' ? draft.draft.trim() : ''
-  if (!content)
-    throw new Error('生成正文为空，无法写入章节')
-
-  if (isAutoMode) {
-    const currentContent = (await db.select({ draft: chapters.draft }).from(chapters).where(eq(chapters.id, chapterId)))[0]?.draft || ''
-    await createSnapshot(projectId, chapterId, currentContent, '全自动写作写入前备份 (Before Auto-Write)')
-  }
-
-  const [row] = await db.update(chapters).set({
-    draft: content,
-    title: draft.title || undefined,
-    status: 'completed',
-    updatedAt: now(),
-  }).where(and(
-    eq(chapters.id, chapterId),
-    eq(chapters.projectId, projectId),
-  )).returning()
-
-  if (!row)
-    throw new Error('章节不存在或不属于当前项目')
-
-  // Log event
-  await AuthoringEventService.logEvent({
-    projectId,
-    chapterId,
-    eventType: 'draft_write',
-    source: 'ai',
-    payload: { wordCount: content.length, jobId: stepId },
-  }).catch(err => console.error('Failed to log authoring event:', err))
-
-  if (isAutoMode) {
-    await createSnapshot(projectId, chapterId, content, '全自动写作写入后备份 (After Auto-Write)')
-  }
-
-  const output = JSON.stringify({
-    chapterId,
-    wordCount: content.length,
-    title: row.title,
-  })
-
-  await updateStep(stepId, { output })
-  return output
-}
-
-async function executeApplySceneDraft(
-  projectId: string,
-  sceneId: string | null,
-  draftOutput: string,
-  stepId: string,
-  isAutoMode = false,
-): Promise<string> {
-  if (!sceneId)
-    throw new Error('没有可写入的场景')
-
-  const draft = JSON.parse(draftOutput)
-  const content = typeof draft.draft === 'string' ? draft.draft.trim() : ''
-  if (!content)
-    throw new Error('生成正文为空，无法写入场景')
-
-  const [row] = await db.update(chapterScenes).set({
-    content,
-    status: 'reviewed',
-    updatedAt: now(),
-  }).where(and(
-    eq(chapterScenes.id, sceneId),
-    eq(chapterScenes.projectId, projectId),
-  )).returning()
-
-  if (!row)
-    throw new Error('场景不存在或不属于当前项目')
-
-  if (isAutoMode) {
-    const currentContent = (await db.select({ content: chapterScenes.content }).from(chapterScenes).where(eq(chapterScenes.id, sceneId)))[0]?.content || ''
-    await createSnapshot(projectId, row.chapterId, currentContent, '全自动写作写入前备份 (Before Auto-Write)')
-  }
-
-  // Log event
-  await AuthoringEventService.logEvent({
-    projectId,
-    sceneId,
-    chapterId: row.chapterId,
-    eventType: 'scene_write',
-    source: 'ai',
-    payload: { wordCount: content.length, jobId: stepId },
-  }).catch(err => console.error('Failed to log authoring event:', err))
-
-  if (isAutoMode) {
-    await createSnapshot(projectId, row.chapterId, content, '全自动写作写入后备份 (After Auto-Write)')
-  }
-
-  const output = JSON.stringify({
-    sceneId,
-    wordCount: content.length,
-    title: row.title,
-  })
-  await updateStep(stepId, { output })
-  return output
-}
-
-async function executeSaveVersion(
-  projectId: string,
-  chapterId: string | null,
-  stepId: string,
-): Promise<string> {
-  if (!chapterId) {
-    await updateStep(stepId, {
-      output: JSON.stringify({ skipped: true, reason: 'no_chapter' }),
-      updatedAt: now(),
-    })
-    return JSON.stringify({ skipped: true })
-  }
-
-  const [chapter] = await db.select().from(chapters).where(and(
-    eq(chapters.id, chapterId),
-    eq(chapters.projectId, projectId),
-  ))
-  if (!chapter)
-    throw new Error('章节不存在或不属于当前项目')
-
-  const content = chapter.draft || ''
-  if (!content)
-    throw new Error('章节正文为空，无法保存快照')
-
-  const result = await createSnapshot(
-    projectId,
-    chapterId,
-    content,
-    'Writing job applied draft',
-  )
-  const snapshotId = result && 'id' in result ? result.id : null
-  const output = JSON.stringify({ snapshotId, wordCount: content.length })
-  await updateStep(stepId, { output })
   return output
 }
 
@@ -735,6 +643,7 @@ async function executePostprocess(
   sceneId: string | null,
   draftOutput: string,
   stepId: string,
+  job: WritingJob,
 ): Promise<string> {
   const draft = JSON.parse(draftOutput)
 
@@ -749,12 +658,16 @@ async function executePostprocess(
         chapterId,
         sceneId,
         content: draft.draft || '',
+        autonomousRunId: job.autonomousRunId,
+        writingJobId: job.id,
       })
     : await runChapterPostprocess({
         projectId,
         chapterId,
         content: draft.draft || '',
         trigger: 'auto_drive',
+        autonomousRunId: job.autonomousRunId,
+        writingJobId: job.id,
       })
 
   // Also trigger graph inference after postprocess to identify more candidates
@@ -769,14 +682,32 @@ async function executeApplySuggestions(
   projectId: string,
   chapterId: string | null,
   stepId: string,
-  _job: WritingJob,
+  job: WritingJob,
+  postprocessOutput: string,
 ): Promise<string> {
   if (!chapterId) {
     await updateStep(stepId, { output: JSON.stringify({ skipped: true, reason: 'no_chapter' }) })
     return JSON.stringify({ skipped: true })
   }
 
-  const result = await applyAutoSuggestions(projectId, chapterId, 'aggressive')
+  const { runId: postprocessRunId } = JSON.parse(postprocessOutput) as { runId?: string }
+  if (!job.autonomousRunId || !postprocessRunId)
+    throw new Error('自动应用建议缺少运行作用域')
+  const scope: SuggestionRunScope = {
+    autonomousRunId: job.autonomousRunId,
+    postprocessRunId,
+    writingJobId: job.id,
+  }
+  const [run] = await db.select({ strategy: autonomousWritingRuns.strategy })
+    .from(autonomousWritingRuns)
+    .where(and(
+      eq(autonomousWritingRuns.id, job.autonomousRunId),
+      eq(autonomousWritingRuns.projectId, projectId),
+    ))
+  if (!run)
+    throw new Error('自动写作运行不存在')
+  const level = run.strategy === 'safe' ? 'conservative' : run.strategy === 'balanced' ? 'balanced' : 'aggressive'
+  const result = await applyAutoSuggestions(projectId, chapterId, level, scope)
   const output = JSON.stringify(result)
   await updateStep(stepId, { output, updatedAt: now() })
   return output
@@ -786,6 +717,8 @@ async function executeClassifySuggestions(
   projectId: string,
   chapterId: string | null,
   stepId: string,
+  job: WritingJob,
+  postprocessOutput: string,
 ): Promise<string> {
   if (!chapterId) {
     const output = JSON.stringify({ skipped: true, reason: 'no_chapter' })
@@ -793,7 +726,14 @@ async function executeClassifySuggestions(
     return output
   }
 
-  const suggestions = await getSuggestions(projectId, chapterId)
+  const { runId: postprocessRunId } = JSON.parse(postprocessOutput) as { runId?: string }
+  if (!job.autonomousRunId || !postprocessRunId)
+    throw new Error('建议分类缺少运行作用域')
+  const suggestions = await getSuggestions(projectId, chapterId, {
+    autonomousRunId: job.autonomousRunId,
+    postprocessRunId,
+    writingJobId: job.id,
+  })
   const pending = suggestions.filter(s => s.status === 'pending')
   const output = JSON.stringify({
     total: suggestions.length,
@@ -822,9 +762,7 @@ async function executeUpdateHealth(
   const { riskLevel, score } = calculateHealthScore(metrics)
   const reportId = generateId()
 
-  await db.insert(projectHealthReports).values({
-    id: reportId,
-    projectId,
+  await dispatchAIOperationCommand(RECORD_AI_OPERATION_COMMAND, projectId, reportId, compactAIOperationPayload({ kind: 'health_report', data: {
     scope: 'overall',
     score,
     riskLevel,
@@ -840,7 +778,7 @@ async function executeUpdateHealth(
       riskCount: metrics.risks.length,
       topRisks,
     },
-  })
+  } }))
 
   const output = {
     reportId,
@@ -1098,6 +1036,8 @@ async function executeStep(
 ): Promise<boolean> {
   // Returns true if execution should continue, false if the automation isolated a blocking issue
 
+  await assertWritingJobAuthorized(projectId, job.id)
+
   const timestamp = now()
   await updateStep(step.id, { status: 'running', startedAt: timestamp, error: null })
 
@@ -1121,7 +1061,7 @@ async function executeStep(
         const sceneTitle = sceneId
           ? (await db.select({ title: chapterScenes.title }).from(chapterScenes).where(eq(chapterScenes.id, sceneId)))[0]?.title
           : null
-        await executeGenerateSceneDraft(contextOutput, sceneTitle, step.id)
+        await executeGenerateSceneDraft(projectId, contextOutput, sceneTitle, step.id)
         break
       }
 
@@ -1138,44 +1078,22 @@ async function executeStep(
         const planOutput = job.mode === 'scene_draft'
           ? previousStepOutputs.get('generate_scene_draft') || '{}'
           : previousStepOutputs.get('generate_plan') || '{}'
-        await executeGenerateDraft(contextOutput, planOutput, step.id, job.targetWords)
-        break
-      }
-
-      case 'consistency_check': {
-        const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
-        await executeConsistencyCheck(projectId, chapterId, sceneId, draftOutput, step.id)
-        return true
-      }
-
-      case 'apply_draft': {
-        const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
-        if (job.mode === 'scene_draft') {
-          await executeApplySceneDraft(projectId, sceneId, draftOutput, step.id, true)
-        }
-        else {
-          await executeApplyDraft(projectId, chapterId, draftOutput, step.id, true)
-        }
-        break
-      }
-
-      case 'save_version': {
-        await executeSaveVersion(projectId, chapterId, step.id)
+        await executeGenerateDraft(projectId, contextOutput, planOutput, step.id, job.targetWords)
         break
       }
 
       case 'postprocess': {
         const draftOutput = previousStepOutputs.get('generate_draft') || '{}'
-        await executePostprocess(projectId, chapterId, sceneId, draftOutput, step.id)
+        await executePostprocess(projectId, chapterId, sceneId, draftOutput, step.id, job)
         break
       }
 
       case 'classify_suggestions':
-        await executeClassifySuggestions(projectId, chapterId, step.id)
+        await executeClassifySuggestions(projectId, chapterId, step.id, job, previousStepOutputs.get('postprocess') || '{}')
         break
 
       case 'apply_suggestions':
-        await executeApplySuggestions(projectId, chapterId, step.id, job)
+        await executeApplySuggestions(projectId, chapterId, step.id, job, previousStepOutputs.get('postprocess') || '{}')
         break
 
       case 'build_change_set': {
@@ -1235,17 +1153,15 @@ async function executeStep(
               await updateStep(generateStep.id, { output: repairResult.planContent })
             }
 
-            await db.update(writingJobSteps).set({
-              status: 'pending',
-              output: null,
-              finishedAt: null,
-              autoDecision: null,
-              autoDecisionReason: null,
-              updatedAt: now(),
-            }).where(and(
-              eq(writingJobSteps.jobId, job.id),
-              eq(writingJobSteps.stepType, 'validate_plan'),
-            ))
+            if (validatePlanStep) {
+              await updateStep(validatePlanStep.id, {
+                status: 'pending',
+                output: null,
+                finishedAt: null,
+                autoDecision: null,
+                autoDecisionReason: null,
+              })
+            }
 
             await updateStep(step.id, { status: 'completed', output: JSON.stringify({ success: true, report: repairResult.repairReport }) })
           }
@@ -1285,18 +1201,18 @@ async function executeStep(
               await rejectChangeSetSvc(projectId, oldBuildStep.changeSetId)
             }
 
-            await db.update(writingJobSteps).set({
-              status: 'pending',
-              output: null,
-              changeSetId: null,
-              finishedAt: null,
-              autoDecision: null,
-              autoDecisionReason: null,
-              updatedAt: now(),
-            }).where(and(
-              eq(writingJobSteps.jobId, job.id),
-              or(eq(writingJobSteps.stepType, 'build_change_set'), eq(writingJobSteps.stepType, 'evaluate_change_set')),
-            ))
+            for (const reviewStep of reviewSteps.filter(item => (
+              item.stepType === 'build_change_set' || item.stepType === 'evaluate_change_set'
+            ))) {
+              await updateStep(reviewStep.id, {
+                status: 'pending',
+                output: null,
+                changeSetId: null,
+                finishedAt: null,
+                autoDecision: null,
+                autoDecisionReason: null,
+              })
+            }
 
             await updateStep(step.id, { status: 'completed', output: JSON.stringify({ success: true, report: repairResult.repairReport }) })
           }
@@ -1351,9 +1267,18 @@ async function collectStepOutputs(jobId: string): Promise<Map<string, string>> {
 async function runNextSteps(projectId: string, jobId: string): Promise<void> {
   const { chapter, scene, job } = await getJobAndChapter(jobId, projectId)
 
+  await assertWritingJobAuthorized(projectId, jobId)
   await updateJobStatus(jobId, 'running', null)
 
   while (true) {
+    try {
+      await assertWritingJobAuthorized(projectId, jobId)
+    }
+    catch (error: unknown) {
+      if (error instanceof RunAuthorizationRevokedError)
+        return
+      throw error
+    }
     const allSteps = await getJobSteps(jobId)
     const previousOutputs = await collectStepOutputs(jobId)
 
@@ -1384,23 +1309,21 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
         runStrategy: strategy,
       })
 
-      await db.update(writingJobSteps).set({
+      await updateStep(step.id, {
         autoDecision: mapActionToDecision(decision.action),
         autoRiskLevel: decision.riskLevel,
         autoDecisionReason: decision.reason,
         autoDecisionReport: decision.report,
-        updatedAt: now(),
-      }).where(eq(writingJobSteps.id, step.id))
+      })
 
       if (decision.action === 'isolate' || decision.action === 'skip') {
         await updateJobStatus(jobId, 'isolated', decision.reason)
         if (job.autonomousRunId) {
-          await db.update(autonomousRunJobs).set({
+          await changeRunJobForWritingJob(projectId, job.autonomousRunId, jobId, {
             status: 'isolated',
             isolationReason: decision.reason,
             isolationReport: decision.report,
-            updatedAt: now(),
-          }).where(and(eq(autonomousRunJobs.runId, job.autonomousRunId), eq(autonomousRunJobs.writingJobId, jobId)))
+          })
         }
         return
       }
@@ -1440,15 +1363,14 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
       })
 
       // 更新步骤决策信息
-      await db.update(writingJobSteps).set({
+      await updateStep(step.id, {
         autoDecision: mapActionToDecision(decision.action),
         autoRiskLevel: decision.riskLevel,
         autoDecisionReason: decision.reason,
         autoDecisionReport: decision.report,
         status: 'completed',
         finishedAt: now(),
-        updatedAt: now(),
-      }).where(eq(writingJobSteps.id, step.id))
+      })
 
       if (decision.action === 'continue') {
         // P1-1: 自动通过变更集后必须将变更项转入可应用状态
@@ -1461,7 +1383,9 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
       if (decision.action === 'repair') {
         const hasTriedRepair = allSteps.some(s => s.stepType === 'auto_repair' && s.status !== 'pending')
         if (!hasTriedRepair) {
-          await db.update(writingJobSteps).set({ status: 'pending', updatedAt: now() }).where(and(eq(writingJobSteps.jobId, jobId), eq(writingJobSteps.stepType, 'auto_repair')))
+          const repairStep = allSteps.find(item => item.stepType === 'auto_repair')
+          if (repairStep)
+            await updateStep(repairStep.id, { status: 'pending' })
 
           await updateJobStatus(jobId, 'running', '正在执行自动修复...')
           continue
@@ -1474,12 +1398,11 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
         await updateJobStatus(jobId, 'isolated', decision.reason)
 
         if (job.autonomousRunId) {
-          await db.update(autonomousRunJobs).set({
+          await changeRunJobForWritingJob(projectId, job.autonomousRunId, jobId, {
             status: 'isolated',
             isolationReason: decision.reason,
             isolationReport: decision.report,
-            updatedAt: now(),
-          }).where(and(eq(autonomousRunJobs.runId, job.autonomousRunId), eq(autonomousRunJobs.writingJobId, jobId)))
+          })
         }
         return
       }
@@ -1487,34 +1410,28 @@ async function runNextSteps(projectId: string, jobId: string): Promise<void> {
       if (decision.action === 'stop_run') {
         await updateJobStatus(jobId, 'failed', decision.reason)
         if (job.autonomousRunId) {
-          // Record critical exception
-          await db.insert(autonomousRunExceptions).values({
-            id: generateId(),
-            runId: job.autonomousRunId,
-            projectId,
-            chapterId: job.currentChapterId,
-            writingJobId: jobId,
-            stepId: step.id,
-            exceptionType: 'ai_failed',
-            severity: 'critical',
-            title: 'Critical Error - Run Stopped',
-            description: decision.reason,
-            status: 'open',
-            createdAt: now(),
-            updatedAt: now(),
-          }).catch(err => console.error('Failed to record stop_run exception:', err))
-
-          await db
-            .update(autonomousRunJobs)
-            .set({ status: 'failed', updatedAt: now() })
-            .where(and(eq(autonomousRunJobs.runId, job.autonomousRunId), eq(autonomousRunJobs.writingJobId, jobId)))
-
-          await db.update(autonomousWritingRuns).set({
-            status: 'failed',
-            lastError: decision.reason,
-            failedChapterCount: sql`${autonomousWritingRuns.failedChapterCount} + 1`,
-            updatedAt: now(),
-          }).where(eq(autonomousWritingRuns.id, job.autonomousRunId))
+          const runId = job.autonomousRunId
+          await commandBus.runAtomically(async () => {
+            await recordAutonomousException(projectId, runId, {
+              chapterId: job.currentChapterId,
+              writingJobId: jobId,
+              stepId: step.id,
+              exceptionType: 'ai_failed',
+              severity: 'critical',
+              title: 'Critical Error - Run Stopped',
+              description: decision.reason,
+              status: 'open',
+            }, `StopRun:${runId}:step:${step.id}:exception`)
+            await changeRunJobForWritingJob(projectId, runId, jobId, { status: 'failed' }, `StopRun:${runId}:job:${jobId}`)
+            const [latestRun] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, runId)).limit(1)
+            if (latestRun) {
+              await changeAutonomousRun(projectId, runId, {
+                status: 'failed',
+                lastError: decision.reason,
+                failedChapterCount: latestRun.failedChapterCount + 1,
+              }, `StopRun:${runId}:failed`)
+            }
+          })
         }
         return
       }
@@ -1542,7 +1459,22 @@ export async function startJob(projectId: string, jobId: string): Promise<void> 
     await initializeJobSteps(jobId)
   }
 
+  await requestWritingJobExecution(projectId, jobId, `StartWritingJob:${jobId}:${job.updatedAt}`)
+}
+
+export async function executeWritingJob(projectId: string, jobId: string): Promise<void> {
   await runNextSteps(projectId, jobId)
+}
+
+async function requestWritingJobExecution(projectId: string, jobId: string, commandId: string): Promise<void> {
+  await dispatchWritingJobCommand(
+    REQUEST_WRITING_JOB_EXECUTION_COMMAND,
+    projectId,
+    jobId,
+    {},
+    { commandId, correlationId: jobId, causationId: jobId },
+  )
+  wakeEventOutbox()
 }
 
 export async function retryStep(projectId: string, jobId: string, stepId: string): Promise<void> {
@@ -1603,6 +1535,5 @@ export async function retryStep(projectId: string, jobId: string, stepId: string
     }
   }
 
-  // Run from the retry point
-  await runNextSteps(projectId, jobId)
+  await requestWritingJobExecution(projectId, jobId, `RetryWritingJob:${jobId}:step:${stepId}:${step.updatedAt}`)
 }

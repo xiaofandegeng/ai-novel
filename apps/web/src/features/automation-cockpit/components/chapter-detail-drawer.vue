@@ -57,7 +57,7 @@ function handleSaveContent() {
 <template>
   <NDrawer
     :model-value="modelValue"
-    :title="chapterDetail ? `第 ${chapterDetail.id} 章：${chapterDetail.title}` : '章节详情'"
+    :title="chapterDetail ? `第 ${chapterDetail.chapterNumber} 章：${chapterDetail.title}` : '章节详情'"
     width="680px"
     @update:model-value="emit('update:modelValue', $event)"
   >

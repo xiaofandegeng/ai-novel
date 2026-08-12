@@ -47,7 +47,7 @@ const scopeOptions = [
 const isActive = computed(() => {
   if (!props.run)
     return false
-  return ['running', 'paused', 'waiting_review'].includes(props.run.status)
+  return ['running', 'pausing', 'paused', 'abandoning'].includes(props.run.status)
 })
 
 const progressPercent = computed(() => {
@@ -61,8 +61,9 @@ const statusLabel = computed(() => {
     return '空闲'
   switch (props.run.status) {
     case 'running': return '正在全自动写作中'
+    case 'pausing': return '正在安全暂停…'
     case 'paused': return '任务已暂停'
-    case 'waiting_review': return '等待人工确认/自动修复中'
+    case 'abandoning': return '正在安全终止…'
     case 'completed': return '本次任务已完成'
     case 'failed': return '任务运行失败'
     case 'abandoned': return '任务已被放弃'
@@ -104,8 +105,8 @@ function handleStart() {
     <div v-if="isActive && run" class="active-run-view space-y-4">
       <div class="status-banner" :class="statusClass">
         <div class="flex items-center gap-2">
-          <Loader2 v-if="run.status === 'running'" class="animate-spin text-primary" :size="16" />
-          <AlertCircle v-else-if="run.status === 'failed' || run.status === 'waiting_review'" :size="16" />
+          <Loader2 v-if="run.status === 'running' || run.status === 'pausing' || run.status === 'abandoning'" class="animate-spin text-primary" :size="16" />
+          <AlertCircle v-else-if="run.status === 'failed'" :size="16" />
           <CheckCircle v-else :size="16" />
           <span class="text-sm font-bold">{{ statusLabel }}</span>
         </div>
@@ -133,7 +134,7 @@ function handleStart() {
             <Play :size="15" /> 继续推进
           </NButton>
         </div>
-        <NButton class="w-full" variant="danger" :disabled="loading" @click="emit('abandon')">
+        <NButton class="w-full" variant="danger" :disabled="loading || run.status === 'pausing' || run.status === 'abandoning'" @click="emit('abandon')">
           <StopCircle :size="15" /> 放弃本次任务
         </NButton>
       </div>
@@ -240,7 +241,9 @@ function handleStart() {
     border-radius: 0.5rem;
     font-size: 0.875rem;
 
-    &.status-running {
+    &.status-running,
+    &.status-pausing,
+    &.status-abandoning {
       background-color: var(--primary-soft, #eff6ff);
       color: var(--primary, #2563eb);
     }
@@ -248,12 +251,6 @@ function handleStart() {
     &.status-paused {
       background-color: #fef3c7;
       color: #d97706;
-    }
-
-    &.status-waiting_review {
-      background-color: #fef3c7;
-      color: #d97706;
-      border: 1px dashed #fbbf24;
     }
 
     &.status-completed {

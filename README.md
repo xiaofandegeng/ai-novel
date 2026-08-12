@@ -32,6 +32,7 @@ pnpm install
 # 初始化 pgvector 并应用数据库迁移
 pnpm db:init-vector
 pnpm db:migrate
+pnpm db:seed
 
 # 启动开发服务器
 pnpm dev
@@ -74,6 +75,9 @@ ai-novel/
 | `pnpm db:init-vector` | 初始化 PostgreSQL pgvector 扩展 |
 | `pnpm db:generate`    | 生成数据库迁移文件              |
 | `pnpm db:migrate`     | 应用数据库迁移                  |
+| `pnpm db:rebuild`     | 清空本地开发库并完整重放迁移    |
+| `pnpm db:replay`      | 从领域事件重建全部读模型        |
+| `pnpm db:seed`        | 写入可重复的演示项目与运行数据  |
 | `pnpm db:studio`      | 打开 Drizzle Studio             |
 
 ## 代码规范
@@ -85,6 +89,7 @@ API 集成测试默认使用当前系统用户连接本机 `ai_novel_test`，也
 ## 文档
 
 - [文档索引](docs/README.md)
+- [当前开发状态](docs/status/current-state.md)
 - [产品设计](docs/product/product-design.md)
 - [UI 设计规格](docs/design/ui-design-spec.md)
 - [架构总览](docs/architecture/overview.md)

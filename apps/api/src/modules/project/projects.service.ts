@@ -1,54 +1,92 @@
 import type { CreateProjectInput, UpdateProjectInput } from '@ai-novel/shared'
+import type { JsonObject } from '../../eventing'
+import type { ProjectSnapshot } from './project.eventing'
 import { eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { novelProjects } from '../../db/schema'
-import { generateId, now, updatedFields } from '../../shared/utils'
+import { projectReadModels } from '../../db/schema'
+import { commandBus } from '../../eventing-runtime'
+import { generateId } from '../../shared/utils'
+import {
+  CREATE_PROJECT_COMMAND,
+  DELETE_PROJECT_COMMAND,
+  PROJECT_AGGREGATE_TYPE,
+
+  UPDATE_PROJECT_COMMAND,
+} from './project.eventing'
 
 type CreateProjectPayload = CreateProjectInput & Pick<UpdateProjectInput, 'status'>
 
+export interface ProjectCommandOptions {
+  commandId?: string
+  correlationId?: string
+}
+
 export function listProjects(limit: number, offset: number) {
-  return db.select().from(novelProjects).limit(limit).offset(offset)
+  return db.select().from(projectReadModels).limit(limit).offset(offset)
 }
 
 export async function getProject(id: string) {
-  const [row] = await db.select().from(novelProjects).where(eq(novelProjects.id, id))
+  const [row] = await db.select().from(projectReadModels).where(eq(projectReadModels.id, id))
   return row ?? null
 }
 
-export async function createProject(input: CreateProjectPayload) {
-  const timestamp = now()
-  const [row] = await db.insert(novelProjects).values({
-    id: generateId(),
-    title: input.title,
-    description: input.description,
-    genre: input.genre,
-    theme: input.theme,
-    targetWords: input.targetWords,
-    targetAudience: input.targetAudience,
-    styleProfile: input.styleProfile,
-    status: input.status ?? 'planning',
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  }).returning()
-  return row
+export async function createProject(
+  input: CreateProjectPayload,
+  options: ProjectCommandOptions = {},
+) {
+  const projectId = generateId()
+  const result = await commandBus.dispatch<ProjectSnapshot>(projectCommand(
+    CREATE_PROJECT_COMMAND,
+    projectId,
+    compactPayload(input),
+    options,
+  ))
+  return await getProject(result.id) ?? result
 }
 
-export async function updateProject(id: string, input: UpdateProjectInput) {
-  const fields = updatedFields({
-    title: input.title,
-    description: input.description,
-    genre: input.genre,
-    theme: input.theme,
-    targetWords: input.targetWords,
-    targetAudience: input.targetAudience,
-    styleProfile: input.styleProfile,
-    status: input.status,
-  })
-  const [row] = await db.update(novelProjects).set(fields).where(eq(novelProjects.id, id)).returning()
-  return row ?? null
+export async function updateProject(
+  id: string,
+  input: UpdateProjectInput,
+  options: ProjectCommandOptions = {},
+) {
+  const result = await commandBus.dispatch<ProjectSnapshot>(projectCommand(
+    UPDATE_PROJECT_COMMAND,
+    id,
+    compactPayload(input),
+    options,
+  ))
+  return await getProject(result.id) ?? result
 }
 
-export async function deleteProject(id: string) {
-  const [row] = await db.delete(novelProjects).where(eq(novelProjects.id, id)).returning()
-  return row ?? null
+export function deleteProject(id: string, options: ProjectCommandOptions = {}) {
+  return commandBus.dispatch<ProjectSnapshot>(projectCommand(
+    DELETE_PROJECT_COMMAND,
+    id,
+    {},
+    options,
+  ))
+}
+
+function projectCommand(
+  commandType: string,
+  projectId: string,
+  payload: JsonObject,
+  options: ProjectCommandOptions,
+) {
+  const commandId = options.commandId ?? generateId()
+  return {
+    commandId,
+    commandType,
+    aggregateType: PROJECT_AGGREGATE_TYPE,
+    aggregateId: projectId,
+    projectId,
+    correlationId: options.correlationId ?? commandId,
+    payload,
+  }
+}
+
+function compactPayload(input: object): JsonObject {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined),
+  )
 }

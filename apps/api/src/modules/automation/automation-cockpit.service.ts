@@ -18,6 +18,7 @@ import type {
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import {
+  autonomousRunExceptions,
   autonomousRunJobs,
   autonomousWritingRuns,
   chapterChangeSetItems,
@@ -42,9 +43,6 @@ const STEP_LABEL_MAP: Record<string, string> = {
   validate_plan: '大纲校验',
   generate_draft: '生成正文',
   generate_scene_draft: '生成场景正文',
-  consistency_check: '一致性检查',
-  apply_draft: '应用草稿',
-  save_version: '保存版本',
   postprocess: '章后分析',
   classify_suggestions: '分析建议',
   apply_suggestions: '同步台账',
@@ -487,6 +485,12 @@ export class AutomationCockpitService {
 
     // 11. 结构化回写事件流 (Events)
     const events = await this.getCockpitEvents(projectId, 100)
+    const exceptions = activeRunId
+      ? await db.select().from(autonomousRunExceptions).where(and(
+          eq(autonomousRunExceptions.projectId, projectId),
+          eq(autonomousRunExceptions.runId, activeRunId),
+        )).orderBy(desc(autonomousRunExceptions.createdAt))
+      : []
 
     return {
       project: projectSummary,
@@ -499,6 +503,7 @@ export class AutomationCockpitService {
       plotDirection,
       health: healthSummary,
       events,
+      exceptions,
     }
   }
 
@@ -632,6 +637,7 @@ export class AutomationCockpitService {
 
     return {
       id: chapter.id,
+      chapterNumber: chapter.chapterNumber,
       title: chapter.title,
       content: chapter.draft,
       summary: chapter.summary,

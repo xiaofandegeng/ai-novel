@@ -1,24 +1,65 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import type { CharacterArcSnapshot, CharacterSnapshot } from '../character/character.eventing'
+import type { RelationshipSnapshot } from '../character/relationship.eventing'
+import type { ConflictSnapshot, ConflictTimelineSnapshot } from '../narrative/conflict.eventing'
+import type { ForeshadowingSnapshot } from '../narrative/foreshadowing.eventing'
+import type { StoryFactSnapshot } from '../narrative/narrative-knowledge.eventing'
+import type { ChapterElementSnapshot } from '../story/chapter-knowledge.eventing'
+import type { PostprocessCommandOptions } from './postprocess.commands'
+import type { PostprocessSuggestionSnapshot } from './postprocess.eventing'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import {
-  chapterElements,
+  chapterPostprocessRuns,
   chapterPostprocessSuggestions,
-  characterArcEvents,
   characterRelationships,
   characters,
   conflicts,
-  conflictTimelineEvents,
   foreshadowingItems,
-  storyFactTriples,
 } from '../../db/schema'
-import { errorMessage, generateId, now } from '../../shared/utils'
-import { getOrCreateEmbedding } from '../ai/embedding.service'
+import { DomainCommandError } from '../../eventing'
+import { commandBus } from '../../eventing-runtime'
+import { errorMessage, generateId } from '../../shared/utils'
 import { normalizeCharacterPair } from '../character/character-utils.service'
+import { compactCharacterPayload, dispatchCharacterCommand } from '../character/character.commands'
+import {
+  CHANGE_CHARACTER_COMMAND,
+  CREATE_CHARACTER_COMMAND,
+  RECORD_CHARACTER_ARC_EVENT_COMMAND,
+} from '../character/character.eventing'
+import { compactRelationshipPayload, dispatchRelationshipCommand } from '../character/relationship.commands'
+import { CHANGE_RELATIONSHIP_COMMAND, CREATE_RELATIONSHIP_COMMAND } from '../character/relationship.eventing'
+import { compactConflictPayload, dispatchConflictCommand } from '../narrative/conflict.commands'
+import {
+  CHANGE_CONFLICT_COMMAND,
+  CREATE_CONFLICT_COMMAND,
+  RECORD_CONFLICT_TIMELINE_COMMAND,
+} from '../narrative/conflict.eventing'
+import { compactForeshadowingPayload, dispatchForeshadowingCommand } from '../narrative/foreshadowing.commands'
+import { CHANGE_FORESHADOWING_COMMAND, CREATE_FORESHADOWING_COMMAND } from '../narrative/foreshadowing.eventing'
+import { compactNarrativeKnowledgePayload, dispatchNarrativeKnowledgeCommand } from '../narrative/narrative-knowledge.commands'
+import { RECORD_STORY_FACT_COMMAND } from '../narrative/narrative-knowledge.eventing'
+import { compactChapterKnowledgePayload, dispatchChapterKnowledgeCommand } from '../story/chapter-knowledge.commands'
+import { ADD_CHAPTER_ELEMENT_COMMAND } from '../story/chapter-knowledge.eventing'
+import { compactPostprocessPayload, dispatchPostprocessSuggestionCommand } from './postprocess.commands'
+import {
+  CHANGE_POSTPROCESS_SUGGESTION_COMMAND,
+  GENERATE_POSTPROCESS_SUGGESTION_COMMAND,
+} from './postprocess.eventing'
+import { assertWritingJobAuthorized, RunAuthorizationRevokedError } from './run-authorization.service'
 
 type ApprovalLevel = 'conservative' | 'balanced' | 'aggressive'
 type SuggestionType = typeof chapterPostprocessSuggestions.$inferInsert['suggestionType']
-type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 type CharacterRole = typeof characters.$inferInsert['role']
+
+export interface SuggestionRunScope {
+  autonomousRunId: string
+  postprocessRunId: string
+  writingJobId: string
+}
+
+interface ApplySuggestionOptions extends PostprocessCommandOptions {
+  requireActiveRun?: boolean
+}
 
 interface SuggestionPayload extends Record<string, unknown> {
   subjectName?: string
@@ -120,6 +161,22 @@ export interface ApplyResult {
   skipped: number
 }
 
+export interface SuggestionCommandContext {
+  commandId: string
+  correlationId: string
+  causationId: string
+}
+
+function childCommandContext(context: SuggestionCommandContext | undefined, suffix: string) {
+  if (!context)
+    return undefined
+  return {
+    commandId: `${context.commandId}:${suffix}`,
+    correlationId: context.correlationId,
+    causationId: context.causationId,
+  }
+}
+
 export async function createSuggestion(
   projectId: string,
   chapterId: string,
@@ -128,39 +185,69 @@ export async function createSuggestion(
   payload: object,
   confidence = 70,
   reason?: string,
+  options: PostprocessCommandOptions = {},
 ) {
   const normalizedType = parseSuggestionType(suggestionType)
   const payloadText = JSON.stringify(payload)
-  const [existing] = await db.select().from(chapterPostprocessSuggestions).where(and(
+  const [postprocessRun] = runId
+    ? await db.select({ autonomousRunId: chapterPostprocessRuns.autonomousRunId, writingJobId: chapterPostprocessRuns.writingJobId })
+        .from(chapterPostprocessRuns)
+        .where(and(
+          eq(chapterPostprocessRuns.id, runId),
+          eq(chapterPostprocessRuns.projectId, projectId),
+          eq(chapterPostprocessRuns.chapterId, chapterId),
+        ))
+    : []
+  if (runId && !postprocessRun)
+    throw new Error('章后处理批次不存在')
+
+  const conditions = [
     eq(chapterPostprocessSuggestions.projectId, projectId),
     eq(chapterPostprocessSuggestions.chapterId, chapterId),
     eq(chapterPostprocessSuggestions.suggestionType, normalizedType),
     eq(chapterPostprocessSuggestions.payload, payloadText),
     eq(chapterPostprocessSuggestions.status, 'pending'),
-  ))
+  ]
+  if (runId)
+    conditions.push(eq(chapterPostprocessSuggestions.runId, runId))
+  const [existing] = await db.select().from(chapterPostprocessSuggestions).where(and(...conditions))
   if (existing)
     return existing
 
-  const [row] = await db.insert(chapterPostprocessSuggestions).values({
-    id: generateId(),
+  const id = generateId()
+  return dispatchPostprocessSuggestionCommand<PostprocessSuggestionSnapshot>(
+    GENERATE_POSTPROCESS_SUGGESTION_COMMAND,
     projectId,
-    chapterId,
-    runId,
-    suggestionType: normalizedType,
-    payload: payloadText,
-    confidence,
-    reason,
-  }).returning()
-  return row
+    id,
+    compactPostprocessPayload({
+      chapterId,
+      runId,
+      autonomousRunId: postprocessRun?.autonomousRunId ?? null,
+      writingJobId: postprocessRun?.writingJobId ?? null,
+      suggestionType: normalizedType,
+      payload: payloadText,
+      confidence,
+      reason: reason ?? null,
+    }),
+    options,
+  )
 }
 
-export async function getSuggestions(projectId: string, chapterId: string, runId?: string) {
+export async function getSuggestions(projectId: string, chapterId: string, runIdOrScope?: string | SuggestionRunScope) {
   const conditions = [
     eq(chapterPostprocessSuggestions.projectId, projectId),
     eq(chapterPostprocessSuggestions.chapterId, chapterId),
   ]
-  if (runId)
-    conditions.push(eq(chapterPostprocessSuggestions.runId, runId))
+  if (typeof runIdOrScope === 'string') {
+    conditions.push(eq(chapterPostprocessSuggestions.runId, runIdOrScope))
+  }
+  else if (runIdOrScope) {
+    conditions.push(
+      eq(chapterPostprocessSuggestions.autonomousRunId, runIdOrScope.autonomousRunId),
+      eq(chapterPostprocessSuggestions.runId, runIdOrScope.postprocessRunId),
+      eq(chapterPostprocessSuggestions.writingJobId, runIdOrScope.writingJobId),
+    )
+  }
   return db.select().from(chapterPostprocessSuggestions).where(and(...conditions))
 }
 
@@ -174,108 +261,116 @@ export async function getProjectSuggestions(projectId: string, type?: string) {
   return db.select().from(chapterPostprocessSuggestions).where(and(...conditions))
 }
 
-export async function acceptSuggestion(projectId: string, id: string) {
-  const [row] = await db.update(chapterPostprocessSuggestions).set({
-    status: 'accepted',
-    updatedAt: new Date().toISOString(),
-  }).where(and(
-    eq(chapterPostprocessSuggestions.id, id),
-    eq(chapterPostprocessSuggestions.projectId, projectId),
-    eq(chapterPostprocessSuggestions.status, 'pending'),
-  )).returning()
-  return row
+export async function acceptSuggestion(projectId: string, id: string, options: PostprocessCommandOptions = {}) {
+  return dispatchPostprocessSuggestionCommand<PostprocessSuggestionSnapshot>(CHANGE_POSTPROCESS_SUGGESTION_COMMAND, projectId, id, { status: 'accepted' }, options)
 }
 
-export async function applySuggestion(projectId: string, id: string) {
+export async function applySuggestion(projectId: string, id: string, options: ApplySuggestionOptions = {}) {
   try {
-    return await db.transaction(async (tx) => {
-      const [suggestion] = await tx.update(chapterPostprocessSuggestions)
-        .set({
-          status: 'applied',
-          updatedAt: now(),
-        })
-        .where(and(
-          eq(chapterPostprocessSuggestions.id, id),
-          eq(chapterPostprocessSuggestions.projectId, projectId),
-          inArray(chapterPostprocessSuggestions.status, ['pending', 'accepted']),
-        ))
-        .returning()
+    if (options.requireActiveRun) {
+      const [candidate] = await db.select({ writingJobId: chapterPostprocessSuggestions.writingJobId })
+        .from(chapterPostprocessSuggestions)
+        .where(and(eq(chapterPostprocessSuggestions.id, id), eq(chapterPostprocessSuggestions.projectId, projectId)))
+      if (!candidate?.writingJobId)
+        throw new Error('自动建议缺少写作作业作用域')
+      await assertWritingJobAuthorized(projectId, candidate.writingJobId)
+    }
 
-      if (!suggestion) {
-        const [existing] = await tx.select().from(chapterPostprocessSuggestions).where(and(
-          eq(chapterPostprocessSuggestions.id, id),
-          eq(chapterPostprocessSuggestions.projectId, projectId),
-        ))
-        if (existing)
-          throw new Error('建议已处理，不能重复应用')
-        throw new Error('建议不存在')
-      }
+    const suggestion = await claimSuggestion(projectId, id)
+    if (suggestion.status === 'applied' || suggestion.status === 'acknowledged')
+      return suggestion
 
-      let payload: SuggestionPayload
-      try {
-        const parsed: unknown = JSON.parse(suggestion.payload)
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
-          throw new Error('payload is not an object')
-        payload = parsed as SuggestionPayload
-      }
-      catch {
-        throw new Error('建议数据格式错误')
-      }
-
+    const payload = parseSuggestionPayload(suggestion.payload)
+    return await commandBus.runAtomically(async () => {
+      if (options.requireActiveRun && suggestion.writingJobId)
+        await assertWritingJobAuthorized(projectId, suggestion.writingJobId)
       const resultStatus = await applyOneSuggestion(
         suggestion.suggestionType,
         payload,
         projectId,
         suggestion.chapterId,
         suggestion.confidence,
-        tx,
+        {
+          commandId: options.commandId ? `${options.commandId}:domain` : `ApplySuggestion:${suggestion.id}`,
+          correlationId: options.correlationId ?? suggestion.runId ?? suggestion.id,
+          causationId: suggestion.id,
+        },
       )
-
-      if (resultStatus !== 'applied') {
-        await tx.update(chapterPostprocessSuggestions)
-          .set({ status: resultStatus, updatedAt: now() })
-          .where(eq(chapterPostprocessSuggestions.id, id))
-      }
-
-      const [updated] = await tx.select().from(chapterPostprocessSuggestions).where(eq(chapterPostprocessSuggestions.id, id))
-      return updated
+      return dispatchPostprocessSuggestionCommand<PostprocessSuggestionSnapshot>(
+        CHANGE_POSTPROCESS_SUGGESTION_COMMAND,
+        projectId,
+        id,
+        { status: resultStatus },
+        { commandId: options.commandId ? `${options.commandId}:complete` : undefined, correlationId: options.correlationId },
+      )
     })
   }
   catch (error: unknown) {
+    if (error instanceof RunAuthorizationRevokedError)
+      throw error
     const message = errorMessage(error)
-    if (message !== '建议不存在' && message !== '建议已处理，不能重复应用') {
-      await db.update(chapterPostprocessSuggestions)
-        .set({ status: 'apply_failed', updatedAt: now() })
-        .where(and(
-          eq(chapterPostprocessSuggestions.id, id),
-          eq(chapterPostprocessSuggestions.projectId, projectId),
-          inArray(chapterPostprocessSuggestions.status, ['pending', 'accepted']),
-        ))
+    if (message !== '建议不存在' && message !== '建议已拒绝，不能应用') {
+      await dispatchPostprocessSuggestionCommand(
+        CHANGE_POSTPROCESS_SUGGESTION_COMMAND,
+        projectId,
+        id,
+        { status: 'apply_failed' },
+      )
     }
     throw error
   }
 }
 
-export async function rejectSuggestion(projectId: string, id: string) {
-  const [row] = await db.update(chapterPostprocessSuggestions).set({
-    status: 'rejected',
-    updatedAt: new Date().toISOString(),
-  }).where(and(
+async function claimSuggestion(projectId: string, id: string) {
+  const [current] = await db.select().from(chapterPostprocessSuggestions).where(and(
     eq(chapterPostprocessSuggestions.id, id),
     eq(chapterPostprocessSuggestions.projectId, projectId),
-    eq(chapterPostprocessSuggestions.status, 'pending'),
-  )).returning()
-  return row
+  ))
+  if (!current)
+    throw new Error('建议不存在')
+  if (current.status === 'rejected')
+    throw new Error('建议已拒绝，不能应用')
+  if (['pending', 'accepted', 'apply_failed'].includes(current.status)) {
+    return dispatchPostprocessSuggestionCommand<PostprocessSuggestionSnapshot>(
+      CHANGE_POSTPROCESS_SUGGESTION_COMMAND,
+      projectId,
+      id,
+      { status: 'applying' },
+    )
+  }
+  return current
 }
 
-export async function applyAcceptedSuggestions(projectId: string, chapterId: string): Promise<ApplyResult> {
-  const accepted = await db.select().from(chapterPostprocessSuggestions).where(
-    and(
-      eq(chapterPostprocessSuggestions.projectId, projectId),
-      eq(chapterPostprocessSuggestions.chapterId, chapterId),
-      eq(chapterPostprocessSuggestions.status, 'accepted'),
-    ),
-  )
+function parseSuggestionPayload(value: string): SuggestionPayload {
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      throw new Error('payload is not an object')
+    return parsed as SuggestionPayload
+  }
+  catch {
+    throw new Error('建议数据格式错误')
+  }
+}
+
+export async function rejectSuggestion(projectId: string, id: string, options: PostprocessCommandOptions = {}) {
+  return dispatchPostprocessSuggestionCommand<PostprocessSuggestionSnapshot>(CHANGE_POSTPROCESS_SUGGESTION_COMMAND, projectId, id, { status: 'rejected' }, options)
+}
+
+export async function applyAcceptedSuggestions(projectId: string, chapterId: string, scope?: SuggestionRunScope): Promise<ApplyResult> {
+  const conditions = [
+    eq(chapterPostprocessSuggestions.projectId, projectId),
+    eq(chapterPostprocessSuggestions.chapterId, chapterId),
+    eq(chapterPostprocessSuggestions.status, 'accepted'),
+  ]
+  if (scope) {
+    conditions.push(
+      eq(chapterPostprocessSuggestions.autonomousRunId, scope.autonomousRunId),
+      eq(chapterPostprocessSuggestions.runId, scope.postprocessRunId),
+      eq(chapterPostprocessSuggestions.writingJobId, scope.writingJobId),
+    )
+  }
+  const accepted = await db.select().from(chapterPostprocessSuggestions).where(and(...conditions))
 
   let applied = 0
   let acknowledged = 0
@@ -284,7 +379,7 @@ export async function applyAcceptedSuggestions(projectId: string, chapterId: str
 
   for (const suggestion of accepted) {
     try {
-      const updated = await applySuggestion(projectId, suggestion.id)
+      const updated = await applySuggestion(projectId, suggestion.id, { requireActiveRun: Boolean(scope) })
       if (updated.status === 'applied')
         applied++
       else if (updated.status === 'acknowledged')
@@ -304,8 +399,9 @@ export async function applyAcceptedSuggestions(projectId: string, chapterId: str
 /**
  * 自动根据风险等级筛选并应用建议 (全自动模式使用)
  */
-export async function applyAutoSuggestions(projectId: string, chapterId: string, level: ApprovalLevel): Promise<ApplyResult> {
-  const pending = await getSuggestions(projectId, chapterId)
+export async function applyAutoSuggestions(projectId: string, chapterId: string, level: ApprovalLevel, scope: SuggestionRunScope): Promise<ApplyResult> {
+  await assertWritingJobAuthorized(projectId, scope.writingJobId)
+  const pending = await getSuggestions(projectId, chapterId, scope)
   const autoAcceptableIds: string[] = []
 
   for (const suggestion of pending) {
@@ -315,23 +411,22 @@ export async function applyAutoSuggestions(projectId: string, chapterId: string,
     const confidence = suggestion.confidence || 0
     const type = suggestion.suggestionType
 
+    const lowRisk = ['fact_triple', 'chapter_element', 'continuity_note', 'style_note'].includes(type)
+    const mediumRisk = ['character_state', 'conflict_update', 'relationship_update'].includes(type)
     let isAcceptable = false
 
     if (level === 'conservative') {
-      // 保守模式：置信度 > 90 且非核心实体变更
-      if (confidence >= 90 && !['character_add', 'conflict_add', 'foreshadowing_add'].includes(type)) {
+      if (confidence >= 90 && lowRisk) {
         isAcceptable = true
       }
     }
     else if (level === 'balanced') {
-      // 平衡模式：置信度 > 80
-      if (confidence >= 80) {
+      if (confidence >= 80 && lowRisk) {
         isAcceptable = true
       }
     }
     else if (level === 'aggressive') {
-      // 进取模式：置信度 > 60
-      if (confidence >= 60) {
+      if (confidence >= 70 && (lowRisk || mediumRisk)) {
         isAcceptable = true
       }
     }
@@ -342,16 +437,11 @@ export async function applyAutoSuggestions(projectId: string, chapterId: string,
   }
 
   if (autoAcceptableIds.length > 0) {
-    await db.update(chapterPostprocessSuggestions).set({
-      status: 'accepted',
-      updatedAt: now(),
-    }).where(and(
-      eq(chapterPostprocessSuggestions.projectId, projectId),
-      inArray(chapterPostprocessSuggestions.id, autoAcceptableIds),
-    ))
+    for (const id of autoAcceptableIds)
+      await acceptSuggestion(projectId, id)
   }
 
-  return applyAcceptedSuggestions(projectId, chapterId)
+  return applyAcceptedSuggestions(projectId, chapterId, scope)
 }
 
 /**
@@ -363,44 +453,46 @@ export async function applyOneSuggestion(
   projectId: string,
   chapterId: string,
   confidence: number,
-  tx: Transaction,
+  commandContext?: SuggestionCommandContext,
 ): Promise<'applied' | 'acknowledged'> {
   switch (suggestionType) {
     case 'fact_triple': {
       if (!payload.subjectName || !payload.predicate || !payload.objectName)
         throw new Error('事实三元组缺少必要字段')
-      const [insertedFact] = await tx.insert(storyFactTriples).values({
-        id: generateId(),
-        projectId,
-        subjectType: payload.subjectType || 'unknown',
-        subjectName: payload.subjectName,
-        predicate: payload.predicate,
-        objectType: payload.objectType || 'unknown',
-        objectName: payload.objectName,
-        confidence,
-        sourceType: payload.sourceType === 'auto_inferred' ? 'auto_inferred' : 'ai_extracted',
-        sourceChapterId: chapterId,
-        status: 'confirmed',
-        relatedChapters: payload.relatedChapters ? JSON.stringify(payload.relatedChapters) : undefined,
-        notes: payload.inferenceRule || payload.reason
-          ? JSON.stringify({
-              inferenceRule: payload.inferenceRule,
-              inferenceKey: payload.inferenceKey,
-              sourceTripleIds: payload.sourceTripleIds,
-              sourceElementIds: payload.sourceElementIds,
-              sourceFacts: payload.sourceFacts,
-              reason: payload.reason,
-            })
-          : undefined,
-      }).onConflictDoNothing().returning()
-
-      if (insertedFact) {
-        await getOrCreateEmbedding({
+      try {
+        await dispatchNarrativeKnowledgeCommand<StoryFactSnapshot>(
+          RECORD_STORY_FACT_COMMAND,
           projectId,
-          text: `${insertedFact.subjectName} ${insertedFact.predicate} ${insertedFact.objectName}`,
-          contentType: 'fact_summary',
-          sourceId: insertedFact.id,
-        }).catch(err => console.error('Failed to embed fact triple:', err))
+          compactNarrativeKnowledgePayload({
+            id: generateId(),
+            subjectType: payload.subjectType || 'unknown',
+            subjectName: payload.subjectName,
+            predicate: payload.predicate,
+            objectType: payload.objectType || 'unknown',
+            objectName: payload.objectName,
+            confidence,
+            sourceType: payload.sourceType === 'auto_inferred' ? 'auto_inferred' : 'ai_extracted',
+            sourceChapterId: chapterId,
+            status: 'confirmed',
+            relatedChapters: payload.relatedChapters ? JSON.stringify(payload.relatedChapters) : undefined,
+            notes: payload.inferenceRule || payload.reason
+              ? JSON.stringify({
+                  inferenceRule: payload.inferenceRule,
+                  inferenceKey: payload.inferenceKey,
+                  sourceTripleIds: payload.sourceTripleIds,
+                  sourceElementIds: payload.sourceElementIds,
+                  sourceFacts: payload.sourceFacts,
+                  reason: payload.reason,
+                })
+              : undefined,
+          }),
+          commandContext,
+        )
+      }
+      catch (error: unknown) {
+        if (error instanceof DomainCommandError && error.code === 'STORY_FACT_ALREADY_EXISTS')
+          return 'acknowledged'
+        throw error
       }
 
       return 'applied'
@@ -409,26 +501,33 @@ export async function applyOneSuggestion(
     case 'foreshadowing_add': {
       if (!payload.title)
         throw new Error('伏笔标题为空')
-      const existingForeshadowing = await tx.select().from(foreshadowingItems).where(eq(foreshadowingItems.projectId, projectId))
+      const existingForeshadowing = await db.select().from(foreshadowingItems).where(eq(foreshadowingItems.projectId, projectId))
       const matched = existingForeshadowing.find((item: typeof foreshadowingItems.$inferSelect) => isSimilarTitle(item.title, payload.title))
       if (matched) {
         if (payload.description && !matched.description?.includes(payload.description)) {
-          await tx.update(foreshadowingItems).set({
-            description: [matched.description, payload.description].filter(Boolean).join('\n'),
-            updatedAt: now(),
-          }).where(eq(foreshadowingItems.id, matched.id))
+          await dispatchForeshadowingCommand<ForeshadowingSnapshot>(
+            CHANGE_FORESHADOWING_COMMAND,
+            projectId,
+            matched.id,
+            { description: [matched.description, payload.description].filter(Boolean).join('\n') },
+            childCommandContext(commandContext, 'foreshadowing:change'),
+          )
         }
         return 'acknowledged'
       }
-      await tx.insert(foreshadowingItems).values({
-        id: generateId(),
+      await dispatchForeshadowingCommand<ForeshadowingSnapshot>(
+        CREATE_FORESHADOWING_COMMAND,
         projectId,
-        title: payload.title,
-        description: payload.description,
-        setupChapterId: chapterId,
-        status: 'open',
-        importance: payload.importance || 'normal',
-      })
+        generateId(),
+        compactForeshadowingPayload({
+          title: payload.title,
+          description: payload.description,
+          setupChapterId: chapterId,
+          status: 'open',
+          importance: payload.importance || 'normal',
+        }),
+        childCommandContext(commandContext, 'foreshadowing:create'),
+      )
       return 'applied'
     }
 
@@ -436,17 +535,20 @@ export async function applyOneSuggestion(
       if (!payload.foreshadowingId)
         return 'acknowledged'
 
-      const [updated] = await tx.update(foreshadowingItems).set({
-        status: 'paid_off',
-        payoffChapterId: chapterId,
-        updatedAt: now(),
-      }).where(and(
-        eq(foreshadowingItems.id, payload.foreshadowingId),
-        eq(foreshadowingItems.projectId, projectId),
-      )).returning()
-
-      if (!updated)
-        throw new Error('未找到对应伏笔记录')
+      try {
+        await dispatchForeshadowingCommand<ForeshadowingSnapshot>(
+          CHANGE_FORESHADOWING_COMMAND,
+          projectId,
+          payload.foreshadowingId,
+          { status: 'paid_off', payoffChapterId: chapterId },
+          childCommandContext(commandContext, 'foreshadowing:payoff'),
+        )
+      }
+      catch (error: unknown) {
+        if (error instanceof DomainCommandError && error.code === 'FORESHADOWING_NOT_FOUND')
+          throw new Error('未找到对应伏笔记录')
+        throw error
+      }
 
       return 'applied'
     }
@@ -454,16 +556,27 @@ export async function applyOneSuggestion(
     case 'chapter_element': {
       if (!payload.elementName)
         throw new Error('元素名称为空')
-      await tx.insert(chapterElements).values({
-        id: generateId(),
-        projectId,
-        chapterId,
-        elementType: payload.elementType || 'event',
-        elementId: payload.elementId || null,
-        elementName: payload.elementName,
-        relationType: payload.relationType || 'appears',
-        importance: payload.importance || 'normal',
-      }).onConflictDoNothing()
+      try {
+        await dispatchChapterKnowledgeCommand<ChapterElementSnapshot>(
+          ADD_CHAPTER_ELEMENT_COMMAND,
+          projectId,
+          chapterId,
+          compactChapterKnowledgePayload({
+            id: generateId(),
+            elementType: payload.elementType || 'event',
+            elementId: payload.elementId || null,
+            elementName: payload.elementName,
+            relationType: payload.relationType || 'appears',
+            importance: payload.importance || 'normal',
+          }),
+          childCommandContext(commandContext, 'chapter-element'),
+        )
+      }
+      catch (error: unknown) {
+        if (error instanceof DomainCommandError && error.code === 'CHAPTER_ELEMENT_DUPLICATE')
+          return 'acknowledged'
+        throw error
+      }
       return 'applied'
     }
 
@@ -471,7 +584,7 @@ export async function applyOneSuggestion(
       if (!payload.name)
         throw new Error('角色名称为空')
 
-      const [existing] = await tx.select().from(characters).where(and(
+      const [existing] = await db.select().from(characters).where(and(
         eq(characters.projectId, projectId),
         eq(characters.name, payload.name),
       ))
@@ -485,46 +598,65 @@ export async function applyOneSuggestion(
         const nextRole = existing.role === 'extra' && role !== 'extra'
           ? role
           : existing.role || role
-        await tx.update(characters).set({
-          role: nextRole,
-          goal: existing.goal || payload.goal || undefined,
-          fear: existing.fear || payload.fear || undefined,
-          secret: existing.secret || payload.secret || undefined,
-          desire: existing.desire || payload.desire || undefined,
-          weakness: existing.weakness || payload.weakness || undefined,
-          personality: existing.personality || payload.personality || undefined,
-          arc: existing.arc || payload.arc || undefined,
-          updatedAt: now(),
-        }).where(eq(characters.id, existing.id))
+        await dispatchCharacterCommand<CharacterSnapshot>(
+          CHANGE_CHARACTER_COMMAND,
+          projectId,
+          existing.id,
+          compactCharacterPayload({
+            role: nextRole,
+            goal: existing.goal || payload.goal || undefined,
+            fear: existing.fear || payload.fear || undefined,
+            secret: existing.secret || payload.secret || undefined,
+            desire: existing.desire || payload.desire || undefined,
+            weakness: existing.weakness || payload.weakness || undefined,
+            personality: existing.personality || payload.personality || undefined,
+            arc: existing.arc || payload.arc || undefined,
+          }),
+          childCommandContext(commandContext, 'character:change'),
+        )
       }
       else {
-        const [inserted] = await tx.insert(characters).values({
-          id: generateId(),
+        const inserted = await dispatchCharacterCommand<CharacterSnapshot>(
+          CREATE_CHARACTER_COMMAND,
           projectId,
-          name: payload.name,
-          role,
-          goal: payload.goal || null,
-          fear: payload.fear || null,
-          secret: payload.secret || null,
-          desire: payload.desire || null,
-          weakness: payload.weakness || null,
-          personality: payload.personality || null,
-          arc: payload.arc || null,
-        }).returning()
+          generateId(),
+          compactCharacterPayload({
+            name: payload.name,
+            role,
+            goal: payload.goal || null,
+            fear: payload.fear || null,
+            secret: payload.secret || null,
+            desire: payload.desire || null,
+            weakness: payload.weakness || null,
+            personality: payload.personality || null,
+            arc: payload.arc || null,
+          }),
+          childCommandContext(commandContext, 'character:create'),
+        )
         characterId = inserted.id
       }
 
       if (characterId) {
-        await tx.insert(chapterElements).values({
-          id: generateId(),
-          projectId,
-          chapterId,
-          elementType: 'character',
-          elementId: characterId,
-          elementName: payload.name,
-          relationType: 'appears',
-          importance: role === 'extra' ? 'minor' : 'normal',
-        }).onConflictDoNothing()
+        try {
+          await dispatchChapterKnowledgeCommand<ChapterElementSnapshot>(
+            ADD_CHAPTER_ELEMENT_COMMAND,
+            projectId,
+            chapterId,
+            {
+              id: generateId(),
+              elementType: 'character',
+              elementId: characterId,
+              elementName: payload.name,
+              relationType: 'appears',
+              importance: role === 'extra' ? 'minor' : 'normal',
+            },
+            childCommandContext(commandContext, 'character:chapter-element'),
+          )
+        }
+        catch (error: unknown) {
+          if (!(error instanceof DomainCommandError && error.code === 'CHAPTER_ELEMENT_DUPLICATE'))
+            throw error
+        }
       }
 
       const relations = Array.isArray(payload.relations) ? payload.relations : []
@@ -554,7 +686,7 @@ export async function applyOneSuggestion(
       if (!payload.characterName || !payload.change)
         return 'acknowledged'
 
-      const [char] = await tx.select().from(characters).where(and(
+      const [char] = await db.select().from(characters).where(and(
         eq(characters.name, payload.characterName),
         eq(characters.projectId, projectId),
       ))
@@ -565,35 +697,30 @@ export async function applyOneSuggestion(
           ? `${char.arc}\n- 章节 ${chapterId} 变化：${payload.change}`
           : `- 章节 ${chapterId} 变化：${payload.change}`
 
-        await tx.update(characters).set({
-          arc: updatedArc,
-          updatedAt: now(),
-        }).where(eq(characters.id, char.id))
+        await dispatchCharacterCommand<CharacterSnapshot>(
+          CHANGE_CHARACTER_COMMAND,
+          projectId,
+          char.id,
+          { arc: updatedArc },
+          childCommandContext(commandContext, 'character-state:change'),
+        )
 
         // Also create a character arc event for structured tracking
-        const timestamp = now()
-        const [insertedArc] = await tx.insert(characterArcEvents).values({
-          id: generateId(),
+        await dispatchCharacterCommand<CharacterArcSnapshot>(
+          RECORD_CHARACTER_ARC_EVENT_COMMAND,
           projectId,
-          characterId: char.id,
-          chapterId,
-          sceneId: payload.sceneId || null,
-          eventType: 'belief_changed',
-          afterState: payload.change,
-          evidence: payload.change,
-          sourceType: 'ai_extracted',
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        }).onConflictDoNothing().returning()
-
-        if (insertedArc) {
-          await getOrCreateEmbedding({
-            projectId,
-            text: `${char.name}的变化：${payload.change}`,
-            contentType: 'persona_memory',
-            sourceId: insertedArc.id,
-          }).catch(err => console.error('Failed to embed character state change:', err))
-        }
+          char.id,
+          {
+            id: generateId(),
+            chapterId,
+            sceneId: payload.sceneId || null,
+            eventType: 'belief_changed',
+            afterState: payload.change,
+            evidence: payload.change,
+            sourceType: 'ai_extracted',
+          },
+          childCommandContext(commandContext, 'character-state:arc'),
+        )
 
         return 'applied'
       }
@@ -605,25 +732,27 @@ export async function applyOneSuggestion(
       if (!conflictId)
         return 'acknowledged'
 
-      const updateData: Partial<typeof conflicts.$inferInsert> = { updatedAt: now() }
+      const updateData: Partial<typeof conflicts.$inferInsert> = {}
       if (payload.newStatus)
         updateData.status = payload.newStatus
       if (payload.newIntensity)
         updateData.intensity = payload.newIntensity
 
       // Fetch the conflict before update to capture before-state
-      const [beforeConflict] = await tx.select().from(conflicts).where(and(
+      const [beforeConflict] = await db.select().from(conflicts).where(and(
         eq(conflicts.id, conflictId),
         eq(conflicts.projectId, projectId),
       ))
 
-      const [updated] = await tx.update(conflicts).set(updateData).where(and(
-        eq(conflicts.id, conflictId),
-        eq(conflicts.projectId, projectId),
-      )).returning()
-
-      if (!updated)
+      if (!beforeConflict)
         throw new Error('未找到对应冲突记录')
+      await dispatchConflictCommand<ConflictSnapshot>(
+        CHANGE_CONFLICT_COMMAND,
+        projectId,
+        conflictId,
+        compactConflictPayload(updateData),
+        childCommandContext(commandContext, 'conflict:change'),
+      )
 
       // Create a timeline event to record this transition
       if (beforeConflict) {
@@ -633,27 +762,24 @@ export async function applyOneSuggestion(
         const statusAfter = updateData.status || statusBefore
 
         if (intensityBefore !== intensityAfter || statusBefore !== statusAfter) {
-          await tx.insert(conflictTimelineEvents).values({
-            id: generateId(),
+          await dispatchConflictCommand<ConflictTimelineSnapshot>(
+            RECORD_CONFLICT_TIMELINE_COMMAND,
             projectId,
             conflictId,
-            chapterId,
-            sceneId: payload.sceneId || null,
-            intensityBefore,
-            intensityAfter,
-            statusBefore,
-            statusAfter,
-            reason: payload.reason || null,
-            evidence: null,
-            sourceType: 'ai_extracted',
-          })
-
-          await getOrCreateEmbedding({
-            projectId,
-            text: `矛盾进展 [${updated.title}]：${payload.reason || '状态更新'}`,
-            contentType: 'chapter_memory',
-            sourceId: conflictId,
-          }).catch(err => console.error('Failed to embed conflict update:', err))
+            {
+              id: generateId(),
+              chapterId,
+              sceneId: payload.sceneId || null,
+              intensityBefore,
+              intensityAfter,
+              statusBefore,
+              statusAfter,
+              reason: payload.reason || null,
+              evidence: null,
+              sourceType: 'ai_extracted',
+            },
+            childCommandContext(commandContext, 'conflict:timeline'),
+          )
         }
       }
 
@@ -675,25 +801,20 @@ export async function applyOneSuggestion(
       const conflictStatus = conflictStatuses.has(payload.status as typeof conflicts.$inferInsert['status'])
         ? payload.status as typeof conflicts.$inferInsert['status']
         : 'latent'
-      const [insertedConflict] = await tx.insert(conflicts).values({
-        id: generateId(),
+      await dispatchConflictCommand<ConflictSnapshot>(
+        CREATE_CONFLICT_COMMAND,
         projectId,
-        title: payload.title,
-        type: conflictType,
-        intensity: payload.intensity || 1,
-        status: conflictStatus,
-        participants: payload.participants,
-        description: payload.description,
-      }).returning()
-
-      if (insertedConflict && insertedConflict.description) {
-        await getOrCreateEmbedding({
-          projectId,
-          text: `新矛盾 [${insertedConflict.title}]：${insertedConflict.description}`,
-          contentType: 'chapter_memory',
-          sourceId: insertedConflict.id,
-        }).catch(err => console.error('Failed to embed new conflict:', err))
-      }
+        generateId(),
+        compactConflictPayload({
+          title: payload.title,
+          type: conflictType,
+          intensity: payload.intensity || 1,
+          status: conflictStatus,
+          participants: payload.participants,
+          description: payload.description,
+        }),
+        childCommandContext(commandContext, 'conflict:create'),
+      )
 
       return 'applied'
     }
@@ -703,42 +824,43 @@ export async function applyOneSuggestion(
       if (!characterAName || !characterBName)
         throw new Error('角色名称缺失')
 
-      const [charA] = await tx.select().from(characters).where(and(eq(characters.name, characterAName), eq(characters.projectId, projectId)))
-      const [charB] = await tx.select().from(characters).where(and(eq(characters.name, characterBName), eq(characters.projectId, projectId)))
+      const [charA] = await db.select().from(characters).where(and(eq(characters.name, characterAName), eq(characters.projectId, projectId)))
+      const [charB] = await db.select().from(characters).where(and(eq(characters.name, characterBName), eq(characters.projectId, projectId)))
 
       let finalCharA = charA
       if (!finalCharA) {
-        const [inserted] = await tx.insert(characters).values({
-          id: generateId(),
+        const inserted = await dispatchCharacterCommand<CharacterSnapshot>(
+          CREATE_CHARACTER_COMMAND,
           projectId,
-          name: characterAName,
-          role: 'extra',
-          createdAt: now(),
-          updatedAt: now(),
-        }).returning()
+          generateId(),
+          { name: characterAName, role: 'extra' },
+          childCommandContext(commandContext, 'relationship:character-a'),
+        )
         finalCharA = inserted
       }
 
       let finalCharB = charB
       if (!finalCharB) {
-        const [inserted] = await tx.insert(characters).values({
-          id: generateId(),
+        const inserted = await dispatchCharacterCommand<CharacterSnapshot>(
+          CREATE_CHARACTER_COMMAND,
           projectId,
-          name: characterBName,
-          role: 'extra',
-          createdAt: now(),
-          updatedAt: now(),
-        }).returning()
+          generateId(),
+          { name: characterBName, role: 'extra' },
+          childCommandContext(commandContext, 'relationship:character-b'),
+        )
         finalCharB = inserted
       }
 
       if (shouldPromoteRelationshipRole(type, strength)) {
         for (const character of [finalCharA, finalCharB]) {
           if (character.role === 'extra') {
-            await tx.update(characters).set({
-              role: 'supporting',
-              updatedAt: now(),
-            }).where(eq(characters.id, character.id))
+            await dispatchCharacterCommand<CharacterSnapshot>(
+              CHANGE_CHARACTER_COMMAND,
+              projectId,
+              character.id,
+              { role: 'supporting' },
+              childCommandContext(commandContext, `relationship:promote:${character.id}`),
+            )
           }
         }
       }
@@ -746,32 +868,41 @@ export async function applyOneSuggestion(
       // 规范化 ID 顺序，确保数据库中 A < B，符合 uniqueIndex 要求
       const [charAId, charBId] = normalizeCharacterPair(finalCharA.id, finalCharB.id)
 
-      const [existing] = await tx.select().from(characterRelationships).where(and(
+      const [existing] = await db.select().from(characterRelationships).where(and(
         eq(characterRelationships.projectId, projectId),
         eq(characterRelationships.characterAId, charAId),
         eq(characterRelationships.characterBId, charBId),
       ))
 
       if (existing) {
-        await tx.update(characterRelationships).set({
-          type: type || existing.type,
-          strength: strength !== undefined ? strength : existing.strength,
-          status: status || existing.status,
-          description: description || existing.description,
-          updatedAt: now(),
-        }).where(eq(characterRelationships.id, existing.id))
+        await dispatchRelationshipCommand<RelationshipSnapshot>(
+          CHANGE_RELATIONSHIP_COMMAND,
+          projectId,
+          existing.id,
+          compactRelationshipPayload({
+            type: type || existing.type,
+            strength: strength !== undefined ? strength : existing.strength,
+            status: status || existing.status,
+            description: description || existing.description,
+          }),
+          childCommandContext(commandContext, 'relationship:change'),
+        )
       }
       else {
-        await tx.insert(characterRelationships).values({
-          id: generateId(),
+        await dispatchRelationshipCommand<RelationshipSnapshot>(
+          CREATE_RELATIONSHIP_COMMAND,
           projectId,
-          characterAId: charAId,
-          characterBId: charBId,
-          type: type || 'acquaintance',
-          strength: strength !== undefined ? strength : 1,
-          status: status || '',
-          description: description || '',
-        })
+          generateId(),
+          compactRelationshipPayload({
+            characterAId: charAId,
+            characterBId: charBId,
+            type: type || 'acquaintance',
+            strength: strength !== undefined ? strength : 1,
+            status: status || '',
+            description: description || '',
+          }),
+          childCommandContext(commandContext, 'relationship:create'),
+        )
       }
       return 'applied'
     }

@@ -25,6 +25,7 @@
 - `modules/index.ts` 是唯一 HTTP 模块组合入口。
 - route 只读取协议输入、调用 service、选择状态码和统一响应。
 - `config` 读取运行时配置，`db` 维护连接和 schema，`shared` 只维护跨领域基础能力。
+- `eventing` 只依赖 `config`、`db` 和 `shared`，禁止反向依赖 `modules`。
 - 所有带 `projectId` 的详情、更新、删除和自动处理必须校验资源归属。
 
 ### 共享代码判断
@@ -62,6 +63,11 @@ interface ApiResponse<T> {
 - 不写入 schema 不存在的字段。
 - migration 是完整建库与升级依据，不得清理历史文件。
 - seed 只允许在明确的本地开发数据库执行。
+- 已迁移到事件溯源的领域只能通过 Command Bus 写入；业务 service、route 和脚本不得直接写 `domain_events`、流版本、回执、checkpoint、快照或 Outbox 表。
+- 领域事件必须在 Event Registry 注册并验证 payload；历史 schema 通过连续 upcaster 升级，禁止在读取端散落兼容分支。
+- Command 写入的每条 stream 必须继承并校验命令的 `projectId`，跨项目批量写入直接拒绝。
+- 外部 API、通知、索引等不可回滚副作用必须写入 Outbox，不得在事件追加事务内直接执行。
+- 投影和快照必须可从事件重建，不能承载唯一业务事实。
 
 ## 5. TypeScript 与文件卫生
 
@@ -86,6 +92,7 @@ interface ApiResponse<T> {
 - 领域 service：单元或集成测试。
 - Vue composable / Pinia store：Vitest。
 - HTTP 契约：API 集成测试。
+- Event Store、Command Bus、Outbox、投影和重放：使用隔离 PostgreSQL 的集成测试。
 - 可见 UI 行为：浏览器检查桌面、平板、移动端。
 
 普通改动必须执行：
@@ -99,6 +106,8 @@ pnpm check
 ```bash
 pnpm test:coverage
 ```
+
+`apps/api/src/eventing` 的语句、分支、函数和行覆盖率均不得低于 90%，不得通过排除生产文件或降低阈值绕过。
 
 数据库变更额外执行：
 

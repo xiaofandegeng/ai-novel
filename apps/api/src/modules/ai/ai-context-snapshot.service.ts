@@ -1,7 +1,9 @@
 import { and, desc, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { aiContextSnapshots } from '../../db/schema'
-import { generateId, now } from '../../shared/utils'
+import { generateId } from '../../shared/utils'
+import { compactAIOperationPayload, dispatchAIOperationCommand } from './ai-operations.commands'
+import { RECORD_AI_OPERATION_COMMAND } from './ai-operations.eventing'
 
 export interface CreateSnapshotInput {
   projectId: string
@@ -16,9 +18,8 @@ export interface CreateSnapshotInput {
 }
 
 export async function createAIContextSnapshot(input: CreateSnapshotInput) {
-  const [row] = await db.insert(aiContextSnapshots).values({
-    id: generateId(),
-    projectId: input.projectId,
+  const id = generateId()
+  return dispatchAIOperationCommand(RECORD_AI_OPERATION_COMMAND, input.projectId, id, compactAIOperationPayload({ kind: 'context_snapshot', data: {
     chapterId: input.chapterId,
     scene: input.scene,
     requestId: input.requestId,
@@ -27,9 +28,7 @@ export async function createAIContextSnapshot(input: CreateSnapshotInput) {
     contextPayload: JSON.stringify(input.contextPayload),
     renderedPromptPreview: input.renderedPromptPreview,
     tokenEstimate: input.tokenEstimate,
-    createdAt: now(),
-  }).returning()
-  return row
+  } }))
 }
 
 export function estimateTokens(text: string): number {

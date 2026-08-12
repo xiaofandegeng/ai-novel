@@ -1,3 +1,4 @@
+import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp } from './app'
 import { db, sql } from './db'
@@ -5,9 +6,16 @@ import {
   aiContextSnapshots,
   chapterChangeSetItems,
   chapterChangeSets,
+  domainEvents,
   promptTemplates,
   storyStructureTemplates,
 } from './db/schema'
+import {
+  changeAutonomousRun,
+  createAutonomousRun,
+  pauseAutonomousRun,
+  recordAutonomousException,
+} from './modules/automation/autonomous-writing.service'
 import { resetTestDatabase } from './test/database'
 
 async function createProject(app: ReturnType<typeof createApp>, title = '测试长篇') {
@@ -88,6 +96,52 @@ describe('http application boundary', () => {
     const deleteResponse = await app.request(`/api/projects/${created.data.id}`, { method: 'DELETE' })
     expect(deleteResponse.status).toBe(200)
     expect((await app.request(`/api/projects/${created.data.id}`)).status).toBe(404)
+  })
+
+  it('routes idempotent project writes through the event store', async () => {
+    const createRequest = () => app.request('/api/projects', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'project-create-retry',
+      },
+      body: JSON.stringify({ title: '幂等项目' }),
+    })
+    const firstCreate = await createRequest()
+    const firstBody = await firstCreate.json() as { data: { id: string } }
+    const secondCreate = await createRequest()
+    await expect(secondCreate.json()).resolves.toEqual(firstBody)
+
+    const projectId = firstBody.data.id
+    const updateRequest = () => app.request(`/api/projects/${projectId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'project-update-retry',
+      },
+      body: JSON.stringify({ title: '幂等项目·修订' }),
+    })
+    await updateRequest()
+    await updateRequest()
+
+    const deleteRequest = () => app.request(`/api/projects/${projectId}`, {
+      method: 'DELETE',
+      headers: { 'Idempotency-Key': 'project-delete-retry' },
+    })
+    const firstDelete = await deleteRequest()
+    const firstDeleteBody = await firstDelete.json()
+    const secondDelete = await deleteRequest()
+    await expect(secondDelete.json()).resolves.toEqual(firstDeleteBody)
+
+    const events = await db.select()
+      .from(domainEvents)
+      .where(eq(domainEvents.aggregateId, projectId))
+    expect(events.map(event => event.eventType)).toEqual([
+      'ProjectCreated',
+      'ProjectDetailsChanged',
+      'ProjectDeletionRequested',
+      'ProjectDeleted',
+    ])
   })
 
   it('rejects project creation without a title at the HTTP boundary', async () => {
@@ -210,10 +264,14 @@ describe('http application boundary', () => {
     await expect(response.json()).resolves.toEqual({ success: false, error: 'Chapter title is required' })
   })
 
-  it('persists AI settings while returning only credential-presence flags', async () => {
-    const updateResponse = await app.request('/api/settings/ai', {
+  it('persists project AI settings while returning only credential-presence flags', async () => {
+    const projectId = await createProject(app)
+    const updateRequest = () => app.request(`/api/projects/${projectId}/settings/ai`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'project-ai-settings-retry',
+      },
       body: JSON.stringify({
         provider: 'openai',
         baseUrl: 'https://api.openai.com/v1',
@@ -223,16 +281,38 @@ describe('http application boundary', () => {
         temperature: 120,
       }),
     })
+    const updateResponse = await updateRequest()
     const updated = await updateResponse.json() as { data: Record<string, unknown> }
 
     expect(updateResponse.status).toBe(200)
     expect(updated.data).toMatchObject({ hasApiKey: true, hasEmbeddingApiKey: true, temperature: 100 })
     expect(updated.data).not.toHaveProperty('apiKey')
 
-    const getResponse = await app.request('/api/settings/ai')
+    const getResponse = await app.request(`/api/projects/${projectId}/settings/ai`)
     const current = await getResponse.json() as { data: Record<string, unknown> }
     expect(current.data).not.toHaveProperty('apiKey')
     expect(current.data).not.toHaveProperty('embeddingApiKey')
+
+    const retryResponse = await updateRequest()
+    await expect(retryResponse.json()).resolves.toEqual(updated)
+    const events = await db.select()
+      .from(domainEvents)
+      .where(eq(domainEvents.aggregateId, projectId))
+    expect(events.filter(event => event.aggregateType === 'ProjectSettings')).toHaveLength(3)
+  })
+
+  it('rejects AI execution without an explicit project scope', async () => {
+    const response = await app.request('/api/ai/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: '继续写' }] }),
+    })
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: 'Project ID is required',
+    })
   })
 
   it('saves project prompt overrides and renders the effective template', async () => {
@@ -250,16 +330,28 @@ describe('http application boundary', () => {
       updatedAt: timestamp,
     })
 
-    const saveResponse = await app.request(`/api/projects/${projectId}/prompt-overrides`, {
+    const saveRequest = () => app.request(`/api/projects/${projectId}/prompt-overrides`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'prompt-override-retry',
+      },
       body: JSON.stringify({
         templateKey: 'draft_generate',
         overrideUserPromptTemplate: '续写 {{title}}',
-        enabled: true,
+        enabled: 1,
       }),
     })
+    const saveResponse = await saveRequest()
     expect(saveResponse.status).toBe(201)
+    expect((await saveRequest()).status).toBe(201)
+
+    const promptEvents = (await db.select().from(domainEvents))
+      .filter(event => event.aggregateType === 'ProjectPromptOverride')
+    expect(promptEvents.map(event => event.eventType)).toEqual([
+      'PromptTemplateSelected',
+      'ProjectPromptOverrideChanged',
+    ])
 
     const renderResponse = await app.request(`/api/projects/${projectId}/prompt-templates/draft_generate/test`, {
       method: 'POST',
@@ -305,9 +397,52 @@ describe('http application boundary', () => {
     })
     expect(overlapResponse.status).toBe(400)
 
+    const startResponse = await app.request(`/api/projects/${projectId}/autonomous-runs/${created.data.id}/start`, { method: 'POST' })
+    expect(startResponse.status).toBe(200)
+
     const abandonResponse = await app.request(`/api/projects/${projectId}/autonomous-runs/${created.data.id}/abandon`, { method: 'POST' })
     expect(abandonResponse.status).toBe(200)
     await expect((await app.request(`/api/projects/${projectId}/autonomous-runs/active`)).json()).resolves.toEqual({ success: true, data: null })
+  })
+
+  it('submits explicit exception actions and rejects invalid action payloads', async () => {
+    const projectId = await createProject(app, '异常中心项目')
+    const run = await createAutonomousRun(projectId, {
+      strategy: 'balanced',
+      scopeType: 'next_n_chapters',
+      targetChapterCount: 1,
+    })
+    await changeAutonomousRun(projectId, run.id, { status: 'running' }, 'http-exception-start')
+    await recordAutonomousException(projectId, run.id, {
+      exceptionType: 'operator_override_required',
+      severity: 'high',
+      title: '等待作者选择',
+    }, 'http-exception-open')
+    await pauseAutonomousRun(projectId, run.id, '等待异常中心处置')
+    const exceptionResponse = await requestJson<Array<{ id: string, status: string }>>(
+      app,
+      `/api/projects/${projectId}/autonomous-runs/${run.id}/exceptions`,
+    )
+    expect(exceptionResponse.body.data).toMatchObject([{ status: 'open' }])
+    const exceptionId = exceptionResponse.body.data[0].id
+
+    const invalid = await requestJson(
+      app,
+      `/api/projects/${projectId}/autonomous-runs/${run.id}/exceptions/${exceptionId}/actions`,
+      'POST',
+      { action: 'ignore_everything' },
+    )
+    expect(invalid.response.status).toBe(400)
+
+    const stopped = await requestJson(
+      app,
+      `/api/projects/${projectId}/autonomous-runs/${run.id}/exceptions/${exceptionId}/actions`,
+      'POST',
+      { action: 'stop_run' },
+    )
+    expect(stopped.response.status).toBe(200)
+    const current = await requestJson<{ status: string }>(app, `/api/projects/${projectId}/autonomous-runs/${run.id}`)
+    expect(current.body.data.status).toBe('abandoned')
   })
 
   it('aggregates an empty project into a usable cockpit payload', async () => {
@@ -573,7 +708,8 @@ describe('http application boundary', () => {
     })).body.data
     expect((await requestJson<Array<unknown>>(app, versionPath)).body.data).toHaveLength(1)
 
-    expect((await requestJson(app, `/api/projects/${projectId}/versions/${version.id}`, 'DELETE')).response.status).toBe(200)
+    expect((await requestJson(app, `/api/projects/${projectId}/versions/${version.id}`, 'DELETE')).response.status).toBe(409)
+    expect((await requestJson<Array<unknown>>(app, versionPath)).body.data).toHaveLength(1)
     expect((await requestJson(app, `${elementPath}/${currentElements[0].id}`, 'DELETE')).response.status).toBe(200)
     for (const row of bulk.body.data)
       expect((await requestJson(app, `${scenePath}/${row.id}`, 'DELETE')).response.status).toBe(200)
@@ -651,6 +787,29 @@ describe('http application boundary', () => {
 
     expect((await requestJson(app, `${timelinePath}/${timeline.id}`, 'DELETE')).response.status).toBe(200)
     expect((await requestJson(app, `${arcPath}/${arc.id}`, 'DELETE')).response.status).toBe(200)
+  })
+
+  it('deduplicates retried story-structure HTTP commands', async () => {
+    const projectId = await createProject(app, '结构幂等测试')
+    const createVolume = () => app.request(`/api/projects/${projectId}/volumes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'create-first-volume',
+      },
+      body: JSON.stringify({ title: '第一卷', orderIndex: 1 }),
+    })
+    const first = await createVolume()
+    const firstBody = await first.json() as { data: { id: string } }
+    const second = await createVolume()
+
+    expect(second.status).toBe(201)
+    await expect(second.json()).resolves.toEqual(firstBody)
+    const storyEvents = await db.select().from(domainEvents).where(and(
+      eq(domainEvents.aggregateType, 'StoryStructure'),
+      eq(domainEvents.projectId, projectId),
+    ))
+    expect(storyEvents.map(event => event.eventType)).toEqual(['VolumeCreated'])
   })
 
   it('lists and applies a story-structure template into project acts', async () => {

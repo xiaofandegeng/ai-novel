@@ -8,7 +8,7 @@ export default antfu(
     unocss: {
       files: 'apps/web/uno.config.ts',
     },
-    ignores: ['**/dist', '**/.output', '**/drizzle', 'docs/**/*.md'],
+    ignores: ['**/dist', '**/.output', '**/drizzle', 'docs/**/*.md', '.zcode/**'],
     stylistic: {
       indent: 2,
       quotes: 'single',

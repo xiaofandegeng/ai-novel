@@ -84,7 +84,7 @@ const insideProjectShell = inject('project-shell-active', false)
       </aside>
 
       <!-- Main work area -->
-      <main class="min-w-0 flex-1 overflow-y-auto bg-bg-page lg:min-w-720px">
+      <main class="min-w-0 flex-1 overflow-y-auto bg-bg-page">
         <slot />
       </main>
 

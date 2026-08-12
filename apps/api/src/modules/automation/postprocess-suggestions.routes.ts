@@ -1,7 +1,9 @@
 import type { Hono } from 'hono'
 import type { ApplyResult } from './postprocess-suggestion.service'
+import { httpCommandOptions } from '../../shared/http/command-options'
 import { fail, success } from '../../shared/http/responses'
 import { acceptSuggestion, applyAcceptedSuggestions, applySuggestion, getProjectSuggestions, getSuggestions, rejectSuggestion } from './postprocess-suggestion.service'
+import { CHANGE_POSTPROCESS_SUGGESTION_COMMAND } from './postprocess.eventing'
 import { runGraphInference } from './story-graph-inference.service'
 
 export function registerPostprocessSuggestionRoutes(app: Hono) {
@@ -23,7 +25,7 @@ export function registerPostprocessSuggestionRoutes(app: Hono) {
   app.post('/api/projects/:projectId/suggestions/:id/accept', async (c) => {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
-    const row = await acceptSuggestion(projectId, id)
+    const row = await acceptSuggestion(projectId, id, httpCommandOptions(c, CHANGE_POSTPROCESS_SUGGESTION_COMMAND, projectId, id, 'accept'))
     if (!row)
       return c.json(fail('建议不存在或已处理'), 404)
     return c.json(success(row))
@@ -32,14 +34,14 @@ export function registerPostprocessSuggestionRoutes(app: Hono) {
   app.post('/api/projects/:projectId/suggestions/:id/apply', async (c) => {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
-    const row = await applySuggestion(projectId, id)
+    const row = await applySuggestion(projectId, id, httpCommandOptions(c, CHANGE_POSTPROCESS_SUGGESTION_COMMAND, projectId, id, 'apply'))
     return c.json(success(row))
   })
 
   app.post('/api/projects/:projectId/suggestions/:id/reject', async (c) => {
     const projectId = c.req.param('projectId')
     const id = c.req.param('id')
-    const row = await rejectSuggestion(projectId, id)
+    const row = await rejectSuggestion(projectId, id, httpCommandOptions(c, CHANGE_POSTPROCESS_SUGGESTION_COMMAND, projectId, id, 'reject'))
     if (!row)
       return c.json(fail('建议不存在或已处理'), 404)
     return c.json(success(row))

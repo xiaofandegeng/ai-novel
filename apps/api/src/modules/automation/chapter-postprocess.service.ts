@@ -1,217 +1,51 @@
-import type { ChapterMemory, ChapterPostprocessResult } from '@ai-novel/shared'
+import type { ChapterPostprocessResult } from '@ai-novel/shared'
+import type { ChapterMemorySnapshot } from '../story/chapter-knowledge.eventing'
+import type {
+  StructuredCharacterChange,
+  StructuredEvent,
+  StructuredFact,
+  StructuredForeshadowing,
+  StructuredNewCharacter,
+  StructuredRelationshipUpdate,
+  StructuredStyleNote,
+} from './chapter-postprocess.analysis'
+import type { PostprocessRunSnapshot, StyleFingerprintSnapshot } from './postprocess.eventing'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { chapterMemories, chapterPostprocessRuns, chapters, chapterScenes, chapterStyleFingerprints, characters, conflicts, foreshadowingItems, novelProjects } from '../../db/schema'
+import { chapters, chapterScenes, characters, conflicts, foreshadowingItems, novelProjects } from '../../db/schema'
 import { errorMessage, generateId } from '../../shared/utils'
 import { callAIJSON } from '../ai/ai.service'
 import { getOrCreateEmbedding } from '../ai/embedding.service'
+import { dispatchChapterKnowledgeCommand } from '../story/chapter-knowledge.commands'
+import { RECORD_CHAPTER_MEMORY_COMMAND } from '../story/chapter-knowledge.eventing'
+import { dispatchChapterCommand } from '../story/chapter.commands'
+import { CHANGE_CHAPTER_COMMAND } from '../story/chapter.eventing'
+import {
+  buildStyleFingerprint,
+  extractChapterChanges,
+  inferCharacterRole,
+  isSimilarTitle,
+} from './chapter-postprocess.analysis'
 import { createSuggestion } from './postprocess-suggestion.service'
+import { compactPostprocessPayload, dispatchPostprocessRunCommand, dispatchStyleFingerprintCommand } from './postprocess.commands'
+import {
+  CHANGE_POSTPROCESS_RUN_COMMAND,
+  RECORD_STYLE_FINGERPRINT_COMMAND,
+  REQUEST_POSTPROCESS_RUN_COMMAND,
+} from './postprocess.eventing'
+import { assertWritingJobAuthorized } from './run-authorization.service'
 
-export async function getChapterMemory(projectId: string, chapterId: string): Promise<ChapterMemory | null> {
-  const [row] = await db.select().from(chapterMemories).where(and(
-    eq(chapterMemories.projectId, projectId),
-    eq(chapterMemories.chapterId, chapterId),
-  ))
-  return row || null
-}
+export { extractChapterChanges, type ExtractedChapterChanges } from './chapter-postprocess.analysis'
 
-export async function getProjectMemories(projectId: string): Promise<ChapterMemory[]> {
-  return db.select().from(chapterMemories).where(eq(chapterMemories.projectId, projectId))
-}
-
-export async function getPostprocessRuns(projectId: string, chapterId: string) {
-  return db.select().from(chapterPostprocessRuns).where(
-    and(eq(chapterPostprocessRuns.projectId, projectId), eq(chapterPostprocessRuns.chapterId, chapterId)),
-  )
-}
-
-interface StructuredFact {
-  subjectType: string
-  subjectName: string
-  predicate: string
-  objectType: string
-  objectName: string
-  confidence?: number
-  reason?: string
-}
-
-interface StructuredForeshadowing {
-  title: string
-  description: string
-  importance?: string
-  confidence?: number
-}
-
-interface StructuredCharacterChange {
-  characterName: string
-  change: string
-  confidence?: number
-}
-
-interface StructuredNewCharacter {
-  name: string
-  role?: string
-  personality?: string
-  goal?: string
-  desire?: string
-  fear?: string
-  secret?: string
-  weakness?: string
-  arc?: string
-  confidence?: number
-  reason?: string
-  relations?: Array<{
-    targetName: string
-    type?: string
-    strength?: number
-    status?: string
-    description?: string
-  }>
-}
-
-interface StructuredStyleNote {
-  title: string
-  description: string
-  confidence?: number
-}
-
-interface StructuredRelationshipUpdate {
-  characterAName: string
-  characterBName: string
-  type: string
-  strength: number
-  status: string
-  description: string
-  confidence?: number
-}
-
-interface StructuredEvent {
-  title: string
-  description?: string
-  importance?: string
-}
-
-export interface ExtractedChapterChanges {
-  summary?: string
-  keyEvents?: StructuredEvent[] | string
-  facts?: StructuredFact[]
-  newFacts?: string
-  foreshadowingAdded?: StructuredForeshadowing[]
-  foreshadowingPayoffs?: StructuredForeshadowing[]
-  foreshadowingResolved?: string
-  characterStateChanges?: StructuredCharacterChange[] | string
-  relationshipChanges?: string
-  relationshipUpdates?: StructuredRelationshipUpdate[]
-  conflictProgress?: string
-  conflictUpdates?: Array<{
-    title: string
-    newStatus?: string
-    newIntensity?: number
-    reason?: string
-  }>
-  themeProgress?: string
-  styleNotes?: StructuredStyleNote[] | string
-  newCharacters?: StructuredNewCharacter[]
-  newConflicts?: Array<{
-    title: string
-    type?: string
-    intensity?: number
-    participants?: string
-    description?: string
-  }>
-  presentCharacters?: string[]
-}
-
-function countMatches(content: string, words: string[]) {
-  return words.reduce((sum, word) => sum + content.split(word).length - 1, 0)
-}
-
-function normalizeChineseText(value: string) {
-  return value
-    .trim()
-    .replace(/[《》“”"'：:，,。.!！?？\s]/g, '')
-    .replace(/神秘/g, '')
-    .replace(/来访者/g, '来客')
-    .replace(/之谜$/, '')
-    .replace(/的秘密$/, '')
-}
-
-function isSimilarTitle(a?: string | null, b?: string | null) {
-  if (!a || !b)
-    return false
-  const left = normalizeChineseText(a)
-  const right = normalizeChineseText(b)
-  if (!left || !right)
-    return false
-  return left === right || left.includes(right) || right.includes(left)
-}
-
-function inferCharacterRole(input: {
-  name: string
-  role?: string
-  reason?: string
-  content: string
-  chapter: typeof chapters.$inferSelect
-}) {
-  const role = input.role || 'extra'
-  if (role !== 'extra')
-    return role
-
-  const anchorText = [
-    input.reason || '',
-    input.chapter.title,
-    input.chapter.goals || '',
-    input.chapter.conflicts || '',
-    input.chapter.events || '',
-    input.chapter.outline || '',
-  ].join('\n')
-
-  const nameCount = countMatches(input.content, [input.name])
-  const isPlotAnchor = anchorText.includes(input.name)
-    || /哥哥|姐姐|父亲|母亲|爱人|凶手|证人|反派|导师|主谋|失踪|关键|核心|真相/.test(input.reason || '')
-
-  if (isPlotAnchor || nameCount >= 3)
-    return 'supporting'
-
-  return role
-}
-
-function buildStyleFingerprint(content: string, styleNotes?: string | null) {
-  const normalized = content.trim()
-  const sentences = normalized
-    .split(/[。！？!?；;\n]+/)
-    .map(s => s.trim())
-    .filter(Boolean)
-  const sentenceLengthAvg = sentences.length > 0
-    ? Math.round(sentences.reduce((sum, s) => sum + s.length, 0) / sentences.length)
-    : 0
-
-  const dialogueMarks = countMatches(normalized, ['“', '”', '"'])
-  const dialogueRatio = normalized.length > 0
-    ? Math.min(100, Math.round((dialogueMarks / Math.max(1, normalized.length / 80)) * 10))
-    : 0
-
-  const emotionHits = countMatches(normalized, ['恐惧', '愤怒', '痛苦', '悲伤', '惊讶', '犹豫', '渴望', '绝望', '兴奋', '冷静'])
-  const conflictHits = countMatches(normalized, ['冲突', '对峙', '争执', '威胁', '背叛', '追击', '阻止', '反击', '代价', '危险'])
-  const hookHits = countMatches(normalized, ['秘密', '真相', '线索', '异常', '消失', '名单', '钥匙', '门', '影子', '却'])
-  const densityBase = Math.max(1, normalized.length / 1000)
-
-  return {
-    sentenceLengthAvg,
-    dialogueRatio,
-    emotionDensity: Math.min(100, Math.round((emotionHits / densityBase) * 20)),
-    conflictDensity: Math.min(100, Math.round((conflictHits / densityBase) * 20)),
-    hookDensity: Math.min(100, Math.round((hookHits / densityBase) * 20)),
-    styleSummary: `平均句长 ${sentenceLengthAvg}，对话比例 ${dialogueRatio}%，情绪密度 ${emotionHits}，冲突密度 ${conflictHits}，钩子密度 ${hookHits}${styleNotes ? `；风格备注：${styleNotes}` : ''}`,
-  }
-}
-export async function extractChapterChanges(input: {
+export async function runChapterPostprocess(input: {
   projectId: string
   chapterId: string
   content: string
   trigger: 'manual_save' | 'mark_completed' | 'auto_drive'
-}): Promise<ExtractedChapterChanges> {
-  const { projectId, chapterId, content, trigger } = input
+  autonomousRunId?: string | null
+  writingJobId?: string | null
+}): Promise<ChapterPostprocessResult> {
+  const { autonomousRunId = null, chapterId, content, projectId, trigger, writingJobId = null } = input
 
   const [chapter] = await db.select().from(chapters).where(and(
     eq(chapters.id, chapterId),
@@ -220,78 +54,18 @@ export async function extractChapterChanges(input: {
   if (!chapter)
     throw new Error('章节不存在')
 
-  const [project] = await db.select().from(novelProjects).where(eq(novelProjects.id, projectId))
-
-  const truncatedContent = content.length > 6000
-    ? `${content.substring(0, 6000)}...(内容过长已截断)`
-    : content
-
-  const prompt = `你是一位专业的长篇小说编辑。请分析以下章节正文，提取结构化记忆和待处理建议。
-返回严格 JSON，不要 markdown。
-
-作品：${project?.title}
-当前章节：${chapter.title}
-触发方式：${trigger}
-
-章节正文：
-${truncatedContent}
-
-请返回以下 JSON 格式：
-{
-  "summary": "章节摘要",
-  "keyEvents": [{ "title": "事件名", "description": "事件说明", "importance": "major" }],
-  "facts": [{ "subjectType": "角色/地点/等", "subjectName": "主体名", "predicate": "关系谓词", "objectType": "角色/地点/等", "objectName": "客体名", "confidence": 80, "reason": "正文依据" }],
-  "foreshadowingAdded": [{ "title": "伏笔标题", "description": "说明", "importance": "major", "confidence": 75 }],
-  "foreshadowingPayoffs": [{ "title": "已回收伏笔标题", "description": "回收说明", "confidence": 70 }],
-  "characterStateChanges": [{ "characterName": "角色名", "change": "变化描述", "confidence": 80 }],
-  "relationshipChanges": "人物关系变化描述 (自然语言)",
-  "relationshipUpdates": [
-    { "characterAName": "角色A", "characterBName": "角色B", "type": "ally/enemy/lover/family/mentor/rival/acquaintance", "strength": 1, "status": "当前关系状态", "description": "关系变化依据", "confidence": 80 }
-  ],
-  "conflictProgress": "冲突推进情况 (自然语言)",
-  "conflictUpdates": [
-    { "title": "冲突标题", "newStatus": "active/escalated/stalemate/resolved/abandoned", "newIntensity": 1, "reason": "正文依据", "confidence": 80 }
-  ],
-  "themeProgress": "主题推进情况",
-  "styleNotes": [{ "title": "风格特征", "description": "描述", "confidence": 70 }],
-  "newCharacters": [{ "name": "新角色名", "role": "supporting/extra", "personality": "性格", "confidence": 70, "reason": "依据" }],
-  "newConflicts": [{ "title": "新冲突标题", "type": "internal/external", "intensity": 5, "description": "描述" }],
-  "presentCharacters": ["实际出场角色姓名"]
-}`
-
-  return await callAIJSON<ExtractedChapterChanges>(
-    [{ role: 'user', content: prompt }],
-    { temperature: 30 },
-  )
-}
-
-export async function runChapterPostprocess(input: {
-  projectId: string
-  chapterId: string
-  content: string
-  trigger: 'manual_save' | 'mark_completed' | 'auto_drive'
-}): Promise<ChapterPostprocessResult> {
-  const { projectId, chapterId, content, trigger } = input
-
-  const [chapter] = await db.select().from(chapters).where(eq(chapters.id, chapterId))
-  if (!chapter)
-    throw new Error('章节不存在')
-
   const runId = generateId()
-  const now = new Date().toISOString()
-  await db.insert(chapterPostprocessRuns).values({
-    id: runId,
-    projectId,
+  await dispatchPostprocessRunCommand<PostprocessRunSnapshot>(REQUEST_POSTPROCESS_RUN_COMMAND, projectId, runId, {
     chapterId,
-    status: 'running',
     trigger,
-    startedAt: now,
-  })
+    autonomousRunId,
+    writingJobId,
+  }, { commandId: `RequestPostprocess:${runId}`, correlationId: runId })
 
   try {
     const parsed = await extractChapterChanges({ projectId, chapterId, content, trigger })
-
-    // Handle character associations
+    if (writingJobId)
+      await assertWritingJobAuthorized(projectId, writingJobId)
 
     // Handle character associations
     if (parsed.presentCharacters && Array.isArray(parsed.presentCharacters) && parsed.presentCharacters.length > 0) {
@@ -317,9 +91,16 @@ export async function runChapterPostprocess(input: {
         }
 
         if (presentIds.size > existingIds.length) {
-          await db.update(chapters)
-            .set({ characters: JSON.stringify(Array.from(presentIds)) })
-            .where(eq(chapters.id, chapterId))
+          await dispatchChapterCommand(
+            CHANGE_CHAPTER_COMMAND,
+            projectId,
+            chapterId,
+            { characters: JSON.stringify(Array.from(presentIds)) },
+            {
+              commandId: `PostprocessCharacters:${runId}`,
+              correlationId: runId,
+            },
+          )
         }
       }
       catch (err) {
@@ -569,23 +350,17 @@ export async function runChapterPostprocess(input: {
       warnings.push('检测到新增伏笔，后续章节应注意回收。')
     }
 
-    // Upsert memory
-    const [memory] = await db
-      .insert(chapterMemories)
-      .values({
-        id: generateId(),
-        projectId,
-        chapterId,
-        ...fields,
-      })
-      .onConflictDoUpdate({
-        target: [chapterMemories.projectId, chapterMemories.chapterId],
-        set: {
-          ...fields,
-          updatedAt: new Date().toISOString(),
-        },
-      })
-      .returning()
+    const memory = await dispatchChapterKnowledgeCommand<ChapterMemorySnapshot>(
+      RECORD_CHAPTER_MEMORY_COMMAND,
+      projectId,
+      chapterId,
+      { id: generateId(), ...fields },
+      {
+        commandId: `RecordChapterMemory:${runId}`,
+        correlationId: runId,
+        causationId: runId,
+      },
+    )
 
     // Trigger embedding for chapter memory RAG
     if (memory && memory.summary) {
@@ -598,13 +373,8 @@ export async function runChapterPostprocess(input: {
     }
 
     const styleFingerprint = buildStyleFingerprint(content, styleNotesStr)
-    await db.delete(chapterStyleFingerprints).where(and(
-      eq(chapterStyleFingerprints.projectId, projectId),
-      eq(chapterStyleFingerprints.chapterId, chapterId),
-    ))
-    const [fingerprint] = await db.insert(chapterStyleFingerprints).values({
-      id: generateId(),
-      projectId,
+    const fingerprintId = `chapter:${chapterId}`
+    const fingerprint = await dispatchStyleFingerprintCommand<StyleFingerprintSnapshot>(RECORD_STYLE_FINGERPRINT_COMMAND, projectId, fingerprintId, compactPostprocessPayload({
       chapterId,
       sceneId: null,
       scope: 'chapter',
@@ -614,7 +384,7 @@ export async function runChapterPostprocess(input: {
       conflictDensity: styleFingerprint.conflictDensity,
       hookDensity: styleFingerprint.hookDensity,
       styleSummary: styleFingerprint.styleSummary,
-    }).returning()
+    }), { commandId: `RecordStyleFingerprint:${runId}`, correlationId: runId, causationId: runId })
 
     if (fingerprint) {
       await getOrCreateEmbedding({
@@ -625,19 +395,19 @@ export async function runChapterPostprocess(input: {
       }).catch(err => console.error('Failed to embed style fingerprint:', err))
     }
 
-    await db.update(chapterPostprocessRuns).set({
+    await dispatchPostprocessRunCommand(CHANGE_POSTPROCESS_RUN_COMMAND, projectId, runId, {
       status: 'completed',
       finishedAt: new Date().toISOString(),
-    }).where(eq(chapterPostprocessRuns.id, runId))
+    }, { commandId: `CompletePostprocess:${runId}`, correlationId: runId, causationId: runId })
 
-    return { memory, warnings, conflictUpdates: conflictUpdatesToReturn }
+    return { runId, memory, warnings, conflictUpdates: conflictUpdatesToReturn }
   }
   catch (error: unknown) {
-    await db.update(chapterPostprocessRuns).set({
+    await dispatchPostprocessRunCommand(CHANGE_POSTPROCESS_RUN_COMMAND, projectId, runId, {
       status: 'failed',
       errorMessage: errorMessage(error, 'Unknown error'),
       finishedAt: new Date().toISOString(),
-    }).where(eq(chapterPostprocessRuns.id, runId))
+    }, { commandId: `FailPostprocess:${runId}`, correlationId: runId, causationId: runId })
     throw error
   }
 }
@@ -647,8 +417,10 @@ export async function runScenePostprocess(input: {
   chapterId: string
   sceneId: string
   content: string
-}): Promise<{ suggestionCount: number }> {
-  const { projectId, chapterId, sceneId, content } = input
+  autonomousRunId?: string | null
+  writingJobId?: string | null
+}): Promise<{ runId: string, suggestionCount: number }> {
+  const { autonomousRunId = null, chapterId, content, projectId, sceneId, writingJobId = null } = input
 
   const [scene] = await db.select().from(chapterScenes).where(and(
     eq(chapterScenes.id, sceneId),
@@ -662,11 +434,20 @@ export async function runScenePostprocess(input: {
   if (!project)
     throw new Error('项目不存在')
 
-  const truncatedContent = content.length > 4000
-    ? `${content.substring(0, 4000)}...(内容过长已截断)`
-    : content
+  const runId = generateId()
+  await dispatchPostprocessRunCommand<PostprocessRunSnapshot>(REQUEST_POSTPROCESS_RUN_COMMAND, projectId, runId, {
+    chapterId,
+    trigger: 'auto_drive',
+    autonomousRunId,
+    writingJobId,
+  }, { commandId: `RequestPostprocess:${runId}`, correlationId: runId })
 
-  const prompt = `你是一位专业的长篇小说编辑。请分析以下单个场景正文，提取结构化信息。
+  try {
+    const truncatedContent = content.length > 4000
+      ? `${content.substring(0, 4000)}...(内容过长已截断)`
+      : content
+
+    const prompt = `你是一位专业的长篇小说编辑。请分析以下单个场景正文，提取结构化信息。
 场景级分析只生成待处理建议，不直接写入正式事实库。
 返回严格 JSON，不要 markdown。
 
@@ -721,255 +502,273 @@ ${truncatedContent}
 - 如果某类没有相关内容，返回空数组 []
 - confidence 范围 0-100`
 
-  const parsed = await callAIJSON<{
-    facts: StructuredFact[]
-    foreshadowingAdded: StructuredForeshadowing[]
-    foreshadowingPayoffs: StructuredForeshadowing[]
-    characterStateChanges: StructuredCharacterChange[]
-    relationshipUpdates: StructuredRelationshipUpdate[]
-    newCharacters: StructuredNewCharacter[]
-    presentCharacters: string[]
-    conflictUpdates: Array<{ title: string, newStatus?: string, newIntensity?: number, reason: string }>
-    newConflicts: Array<{ title: string, type: 'internal' | 'external', intensity: number, participants: string, description: string }>
-    events: StructuredEvent[]
-    styleNotes: StructuredStyleNote[]
-  }>([{ role: 'user', content: prompt }], { temperature: 30 })
+    const parsed = await callAIJSON<{
+      facts: StructuredFact[]
+      foreshadowingAdded: StructuredForeshadowing[]
+      foreshadowingPayoffs: StructuredForeshadowing[]
+      characterStateChanges: StructuredCharacterChange[]
+      relationshipUpdates: StructuredRelationshipUpdate[]
+      newCharacters: StructuredNewCharacter[]
+      presentCharacters: string[]
+      conflictUpdates: Array<{ title: string, newStatus?: string, newIntensity?: number, reason: string }>
+      newConflicts: Array<{ title: string, type: 'internal' | 'external', intensity: number, participants: string, description: string }>
+      events: StructuredEvent[]
+      styleNotes: StructuredStyleNote[]
+    }>([{ role: 'user', content: prompt }], {
+      temperature: 30,
+      metadata: { projectId, chapterId, taskType: 'extract_scene_changes' },
+    })
+    if (writingJobId)
+      await assertWritingJobAuthorized(projectId, writingJobId)
 
-  let count = 0
+    let count = 0
 
-  if (parsed.facts?.length) {
-    for (const fact of parsed.facts) {
-      if (!fact.subjectName || !fact.predicate || !fact.objectName)
-        continue
-      await createSuggestion(projectId, chapterId, null, 'fact_triple', {
-        ...fact,
-        scope: 'scene',
-        sceneId,
-      }, fact.confidence || 70, fact.reason)
-      count++
+    if (parsed.facts?.length) {
+      for (const fact of parsed.facts) {
+        if (!fact.subjectName || !fact.predicate || !fact.objectName)
+          continue
+        await createSuggestion(projectId, chapterId, runId, 'fact_triple', {
+          ...fact,
+          scope: 'scene',
+          sceneId,
+        }, fact.confidence || 70, fact.reason)
+        count++
+      }
     }
-  }
 
-  if (parsed.foreshadowingAdded?.length) {
-    for (const fs of parsed.foreshadowingAdded) {
-      if (!fs.title)
-        continue
-      await createSuggestion(projectId, chapterId, null, 'foreshadowing_add', {
-        ...fs,
-        scope: 'scene',
-        sceneId,
-      }, fs.confidence || 70)
-      count++
+    if (parsed.foreshadowingAdded?.length) {
+      for (const fs of parsed.foreshadowingAdded) {
+        if (!fs.title)
+          continue
+        await createSuggestion(projectId, chapterId, runId, 'foreshadowing_add', {
+          ...fs,
+          scope: 'scene',
+          sceneId,
+        }, fs.confidence || 70)
+        count++
+      }
     }
-  }
 
-  if (parsed.foreshadowingPayoffs?.length) {
-    const openForeshadowing = await db.select().from(foreshadowingItems).where(and(
-      eq(foreshadowingItems.projectId, projectId),
-      eq(foreshadowingItems.status, 'open'),
-    ))
+    if (parsed.foreshadowingPayoffs?.length) {
+      const openForeshadowing = await db.select().from(foreshadowingItems).where(and(
+        eq(foreshadowingItems.projectId, projectId),
+        eq(foreshadowingItems.status, 'open'),
+      ))
 
-    for (const fp of parsed.foreshadowingPayoffs) {
-      if (!fp.title)
-        continue
-      const normalizedTitle = fp.title.trim()
-      const matched = openForeshadowing.find(item =>
-        item.title === normalizedTitle
-        || normalizedTitle.includes(item.title)
-        || item.title.includes(normalizedTitle),
-      )
-      await createSuggestion(projectId, chapterId, null, 'foreshadowing_payoff', {
-        foreshadowingId: matched?.id || null,
-        title: fp.title,
-        description: fp.description || '',
-        matchedTitle: matched?.title || null,
-        scope: 'scene',
-        sceneId,
-      }, fp.confidence || 70)
-      count++
+      for (const fp of parsed.foreshadowingPayoffs) {
+        if (!fp.title)
+          continue
+        const normalizedTitle = fp.title.trim()
+        const matched = openForeshadowing.find(item =>
+          item.title === normalizedTitle
+          || normalizedTitle.includes(item.title)
+          || item.title.includes(normalizedTitle),
+        )
+        await createSuggestion(projectId, chapterId, runId, 'foreshadowing_payoff', {
+          foreshadowingId: matched?.id || null,
+          title: fp.title,
+          description: fp.description || '',
+          matchedTitle: matched?.title || null,
+          scope: 'scene',
+          sceneId,
+        }, fp.confidence || 70)
+        count++
+      }
     }
-  }
 
-  if (parsed.characterStateChanges?.length) {
-    for (const cs of parsed.characterStateChanges) {
-      if (!cs.characterName || !cs.change)
-        continue
-      await createSuggestion(projectId, chapterId, null, 'character_state', {
-        ...cs,
-        scope: 'scene',
-        sceneId,
-      }, cs.confidence || 70)
-      count++
+    if (parsed.characterStateChanges?.length) {
+      for (const cs of parsed.characterStateChanges) {
+        if (!cs.characterName || !cs.change)
+          continue
+        await createSuggestion(projectId, chapterId, runId, 'character_state', {
+          ...cs,
+          scope: 'scene',
+          sceneId,
+        }, cs.confidence || 70)
+        count++
+      }
     }
-  }
 
-  if (parsed.presentCharacters?.length) {
-    const allCharacters = await db.select().from(characters).where(eq(characters.projectId, projectId))
+    if (parsed.presentCharacters?.length) {
+      const allCharacters = await db.select().from(characters).where(eq(characters.projectId, projectId))
 
-    for (const name of parsed.presentCharacters) {
-      const found = allCharacters.find(c => c.name === name || name.includes(c.name) || c.name.includes(name))
-      if (!found)
-        continue
+      for (const name of parsed.presentCharacters) {
+        const found = allCharacters.find(c => c.name === name || name.includes(c.name) || c.name.includes(name))
+        if (!found)
+          continue
 
-      await createSuggestion(projectId, chapterId, null, 'chapter_element', {
-        elementType: 'character',
-        elementId: found.id,
-        elementName: found.name,
-        relationType: 'appears',
-        importance: found.role === 'extra' ? 'minor' : 'normal',
-        scope: 'scene',
-        sceneId,
-      }, 60)
-      count++
+        await createSuggestion(projectId, chapterId, runId, 'chapter_element', {
+          elementType: 'character',
+          elementId: found.id,
+          elementName: found.name,
+          relationType: 'appears',
+          importance: found.role === 'extra' ? 'minor' : 'normal',
+          scope: 'scene',
+          sceneId,
+        }, 60)
+        count++
+      }
     }
-  }
 
-  if (parsed.newCharacters?.length) {
-    const existingCharacters = await db.select().from(characters).where(eq(characters.projectId, projectId))
-    for (const character of parsed.newCharacters) {
-      if (!character.name)
-        continue
-      const exists = existingCharacters.some(c =>
-        c.name === character.name
-        || character.name.includes(c.name)
-        || c.name.includes(character.name),
-      )
-      if (exists)
-        continue
-      await createSuggestion(projectId, chapterId, null, 'character_add', {
-        name: character.name,
-        role: character.role || 'extra',
-        personality: character.personality || '',
-        goal: character.goal || '',
-        desire: character.desire || '',
-        fear: character.fear || '',
-        secret: character.secret || '',
-        weakness: character.weakness || '',
-        arc: character.arc || '',
-        relations: character.relations || [],
-        scope: 'scene',
-        sceneId,
-      }, character.confidence || 65, character.reason || '场景正文中出现了角色库未记录的人物')
-      count++
+    if (parsed.newCharacters?.length) {
+      const existingCharacters = await db.select().from(characters).where(eq(characters.projectId, projectId))
+      for (const character of parsed.newCharacters) {
+        if (!character.name)
+          continue
+        const exists = existingCharacters.some(c =>
+          c.name === character.name
+          || character.name.includes(c.name)
+          || c.name.includes(character.name),
+        )
+        if (exists)
+          continue
+        await createSuggestion(projectId, chapterId, runId, 'character_add', {
+          name: character.name,
+          role: character.role || 'extra',
+          personality: character.personality || '',
+          goal: character.goal || '',
+          desire: character.desire || '',
+          fear: character.fear || '',
+          secret: character.secret || '',
+          weakness: character.weakness || '',
+          arc: character.arc || '',
+          relations: character.relations || [],
+          scope: 'scene',
+          sceneId,
+        }, character.confidence || 65, character.reason || '场景正文中出现了角色库未记录的人物')
+        count++
+      }
     }
-  }
 
-  if (parsed.relationshipUpdates?.length) {
-    for (const rel of parsed.relationshipUpdates) {
-      if (!rel.characterAName || !rel.characterBName)
-        continue
-      await createSuggestion(projectId, chapterId, null, 'relationship_update', {
-        characterAName: rel.characterAName,
-        characterBName: rel.characterBName,
-        type: rel.type,
-        strength: rel.strength,
-        status: rel.status,
-        description: rel.description,
-        scope: 'scene',
-        sceneId,
-      }, rel.confidence || 70)
-      count++
+    if (parsed.relationshipUpdates?.length) {
+      for (const rel of parsed.relationshipUpdates) {
+        if (!rel.characterAName || !rel.characterBName)
+          continue
+        await createSuggestion(projectId, chapterId, runId, 'relationship_update', {
+          characterAName: rel.characterAName,
+          characterBName: rel.characterBName,
+          type: rel.type,
+          strength: rel.strength,
+          status: rel.status,
+          description: rel.description,
+          scope: 'scene',
+          sceneId,
+        }, rel.confidence || 70)
+        count++
+      }
     }
-  }
 
-  if (parsed.conflictUpdates?.length) {
-    const projectConflicts = await db.select().from(conflicts).where(eq(conflicts.projectId, projectId))
-    for (const update of parsed.conflictUpdates) {
-      if (!update.title)
-        continue
-      const matched = projectConflicts.find(c =>
-        c.title === update.title
-        || update.title.includes(c.title)
-        || c.title.includes(update.title),
-      )
-      await createSuggestion(projectId, chapterId, null, 'conflict_update', {
-        conflictId: matched?.id || null,
-        title: update.title,
-        newStatus: update.newStatus,
-        newIntensity: update.newIntensity,
-        reason: update.reason,
-        scope: 'scene',
-        sceneId,
-      }, matched ? 80 : 50)
-      count++
+    if (parsed.conflictUpdates?.length) {
+      const projectConflicts = await db.select().from(conflicts).where(eq(conflicts.projectId, projectId))
+      for (const update of parsed.conflictUpdates) {
+        if (!update.title)
+          continue
+        const matched = projectConflicts.find(c =>
+          c.title === update.title
+          || update.title.includes(c.title)
+          || c.title.includes(update.title),
+        )
+        await createSuggestion(projectId, chapterId, runId, 'conflict_update', {
+          conflictId: matched?.id || null,
+          title: update.title,
+          newStatus: update.newStatus,
+          newIntensity: update.newIntensity,
+          reason: update.reason,
+          scope: 'scene',
+          sceneId,
+        }, matched ? 80 : 50)
+        count++
+      }
     }
-  }
 
-  if (parsed.newConflicts?.length) {
-    for (const conflict of parsed.newConflicts) {
-      if (!conflict.title)
-        continue
-      await createSuggestion(projectId, chapterId, null, 'conflict_add', {
-        title: conflict.title,
-        type: conflict.type,
-        intensity: conflict.intensity,
-        participants: conflict.participants,
-        description: conflict.description,
-        scope: 'scene',
-        sceneId,
-      }, 75, `场景推进：${conflict.title}`)
-      count++
+    if (parsed.newConflicts?.length) {
+      for (const conflict of parsed.newConflicts) {
+        if (!conflict.title)
+          continue
+        await createSuggestion(projectId, chapterId, runId, 'conflict_add', {
+          title: conflict.title,
+          type: conflict.type,
+          intensity: conflict.intensity,
+          participants: conflict.participants,
+          description: conflict.description,
+          scope: 'scene',
+          sceneId,
+        }, 75, `场景推进：${conflict.title}`)
+        count++
+      }
     }
-  }
 
-  if (parsed.events?.length) {
-    for (const evt of parsed.events) {
-      if (!evt.title)
-        continue
-      await createSuggestion(projectId, chapterId, null, 'chapter_element', {
-        elementType: 'event',
-        elementName: evt.title,
-        relationType: 'occurs',
-        importance: evt.importance || 'normal',
-        notes: evt.description || '',
-        scope: 'scene',
-        sceneId,
-      }, 60)
-      count++
+    if (parsed.events?.length) {
+      for (const evt of parsed.events) {
+        if (!evt.title)
+          continue
+        await createSuggestion(projectId, chapterId, runId, 'chapter_element', {
+          elementType: 'event',
+          elementName: evt.title,
+          relationType: 'occurs',
+          importance: evt.importance || 'normal',
+          notes: evt.description || '',
+          scope: 'scene',
+          sceneId,
+        }, 60)
+        count++
+      }
     }
-  }
 
-  if (parsed.styleNotes?.length) {
-    for (const sn of parsed.styleNotes) {
-      if (!sn.title)
-        continue
-      await createSuggestion(projectId, chapterId, null, 'style_note', {
-        title: sn.title,
-        description: sn.description || '',
-        scope: 'scene',
-        sceneId,
-      }, sn.confidence || 60)
-      count++
+    if (parsed.styleNotes?.length) {
+      for (const sn of parsed.styleNotes) {
+        if (!sn.title)
+          continue
+        await createSuggestion(projectId, chapterId, runId, 'style_note', {
+          title: sn.title,
+          description: sn.description || '',
+          scope: 'scene',
+          sceneId,
+        }, sn.confidence || 60)
+        count++
+      }
     }
+
+    // 生成场景风格指纹
+    const styleNotesStr = parsed.styleNotes?.length
+      ? parsed.styleNotes.map(s => `${s.title}：${s.description}`).join('；')
+      : null
+    const styleFingerprint = buildStyleFingerprint(content, styleNotesStr)
+    const fingerprintId = `scene:${sceneId}`
+    const fingerprint = await dispatchStyleFingerprintCommand<StyleFingerprintSnapshot>(RECORD_STYLE_FINGERPRINT_COMMAND, projectId, fingerprintId, compactPostprocessPayload({
+      chapterId,
+      sceneId,
+      scope: 'scene',
+      sentenceLengthAvg: styleFingerprint.sentenceLengthAvg,
+      dialogueRatio: styleFingerprint.dialogueRatio,
+      emotionDensity: styleFingerprint.emotionDensity,
+      conflictDensity: styleFingerprint.conflictDensity,
+      hookDensity: styleFingerprint.hookDensity,
+      styleSummary: styleFingerprint.styleSummary,
+    }), { correlationId: sceneId, causationId: sceneId })
+
+    if (fingerprint) {
+      await getOrCreateEmbedding({
+        projectId,
+        text: `场景文风 [${scene.title || `场景 ${scene.sceneNumber}`}]：${fingerprint.styleSummary}`,
+        contentType: 'style_fingerprint',
+        sourceId: fingerprint.id,
+      }).catch(err => console.error('Failed to embed scene style fingerprint:', err))
+    }
+
+    await dispatchPostprocessRunCommand(CHANGE_POSTPROCESS_RUN_COMMAND, projectId, runId, {
+      status: 'completed',
+      finishedAt: new Date().toISOString(),
+    }, { commandId: `CompletePostprocess:${runId}`, correlationId: runId, causationId: runId })
+
+    return { runId, suggestionCount: count }
   }
-
-  // 生成场景风格指纹
-  const styleNotesStr = parsed.styleNotes?.length
-    ? parsed.styleNotes.map(s => `${s.title}：${s.description}`).join('；')
-    : null
-  const styleFingerprint = buildStyleFingerprint(content, styleNotesStr)
-  const [fingerprint] = await db.insert(chapterStyleFingerprints).values({
-    id: generateId(),
-    projectId,
-    chapterId,
-    sceneId,
-    scope: 'scene',
-    sentenceLengthAvg: styleFingerprint.sentenceLengthAvg,
-    dialogueRatio: styleFingerprint.dialogueRatio,
-    emotionDensity: styleFingerprint.emotionDensity,
-    conflictDensity: styleFingerprint.conflictDensity,
-    hookDensity: styleFingerprint.hookDensity,
-    styleSummary: styleFingerprint.styleSummary,
-  }).returning()
-
-  if (fingerprint) {
-    await getOrCreateEmbedding({
-      projectId,
-      text: `场景文风 [${scene.title || `场景 ${scene.sceneNumber}`}]：${fingerprint.styleSummary}`,
-      contentType: 'style_fingerprint',
-      sourceId: fingerprint.id,
-    }).catch(err => console.error('Failed to embed scene style fingerprint:', err))
+  catch (error: unknown) {
+    await dispatchPostprocessRunCommand(CHANGE_POSTPROCESS_RUN_COMMAND, projectId, runId, {
+      status: 'failed',
+      errorMessage: errorMessage(error, 'Unknown error'),
+      finishedAt: new Date().toISOString(),
+    }, { commandId: `FailPostprocess:${runId}`, correlationId: runId, causationId: runId })
+    throw error
   }
-
-  return { suggestionCount: count }
 }

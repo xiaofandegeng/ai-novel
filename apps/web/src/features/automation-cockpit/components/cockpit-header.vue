@@ -206,6 +206,55 @@ const progressPercent = computed(() => {
   margin-top: 0.375rem;
 }
 
+@media (max-width: 767px) {
+  .cockpit-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+
+    .header-left {
+      align-items: flex-start;
+
+      .project-icon {
+        flex-shrink: 0;
+      }
+
+      .project-info {
+        min-width: 0;
+      }
+
+      .project-title {
+        font-size: 1.125rem;
+        overflow-wrap: anywhere;
+      }
+
+      .project-meta {
+        flex-wrap: wrap;
+
+        .meta-tag {
+          line-height: 1.4;
+        }
+      }
+    }
+
+    .header-right {
+      align-items: stretch;
+      gap: 0.75rem;
+
+      .word-progress {
+        flex: 1;
+        width: auto;
+        min-width: 0;
+      }
+
+      .refresh-btn {
+        flex-shrink: 0;
+      }
+    }
+  }
+}
+
 @keyframes pulse {
   0%,
   100% {

@@ -1,16 +1,26 @@
 import type { AIProviderId, UpdateAIProviderSettingsInput } from '@ai-novel/shared'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
+import type { JsonObject } from '../../eventing'
+import type { ProjectAISettingsSnapshot } from './project-settings.eventing'
 import { AI_PROVIDER_PRESETS } from '@ai-novel/shared'
 import { eq } from 'drizzle-orm'
 import OpenAI from 'openai'
 import { getAIEnvironmentConfig } from '../../config/environment'
 import { db } from '../../db'
-import { aiSettings } from '../../db/schema'
-import { errorMessage, now } from '../../shared/utils'
+import { projectAISettings, projectReadModels } from '../../db/schema'
+import { DomainCommandError } from '../../eventing'
+import { commandBus } from '../../eventing-runtime'
+import { CredentialVault } from '../../security/credential-vault'
+import { errorMessage, generateId } from '../../shared/utils'
+import { fakeAIEmbedding, fakeAIJSON, isFakeAIEnabled } from './ai-fake-provider'
 import { AIUsageService } from './ai-usage.service'
+import {
+  CHANGE_PROJECT_AI_SETTINGS_COMMAND,
+  PROJECT_SETTINGS_AGGREGATE_TYPE,
+} from './project-settings.eventing'
 
 interface AIMetadata {
-  projectId?: string
+  projectId: string
   chapterId?: string
   contextSnapshotId?: string
   taskType?: string
@@ -43,11 +53,16 @@ export class AIConfigurationError extends AIError {
   }
 }
 
+export class AIProjectScopeError extends AIError {
+  constructor() {
+    super('AI execution requires an explicit project ID', 'PROJECT_SCOPE_REQUIRED')
+    this.name = 'AIProjectScopeError'
+  }
+}
+
 async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
-
-const GLOBAL_AI_SETTINGS_ID = 'global'
 
 interface EffectiveAISettings {
   provider: AIProviderId | string
@@ -101,41 +116,54 @@ export function sanitizeAISettings(settings: EffectiveAISettings) {
   }
 }
 
-export async function getEffectiveAISettings(): Promise<EffectiveAISettings> {
-  const fallback = defaultAISettings()
-  const [saved] = await db.select().from(aiSettings).where(eq(aiSettings.id, GLOBAL_AI_SETTINGS_ID))
+export async function getEffectiveAISettings(projectId: string): Promise<EffectiveAISettings> {
+  if (!projectId)
+    throw new AIProjectScopeError()
 
+  await assertProjectExists(projectId)
+  const fallback = defaultAISettings()
+  const [saved] = await db.select()
+    .from(projectAISettings)
+    .where(eq(projectAISettings.projectId, projectId))
+    .limit(1)
   if (!saved)
     return fallback
 
-  const provider = saved.provider || fallback.provider
-  const model = saved.model || fallback.model
-  const embeddingProvider = saved.embeddingProvider || fallback.embeddingProvider
+  const vault = saved.credentialRef || saved.embeddingCredentialRef
+    ? CredentialVault.fromEnvironment()
+    : null
+  const apiKey = saved.credentialRef && vault
+    ? await vault.resolve({
+        credentialRef: saved.credentialRef,
+        projectId,
+        kind: 'chat',
+      })
+    : null
+  const embeddingApiKey = saved.embeddingCredentialRef && vault
+    ? await vault.resolve({
+        credentialRef: saved.embeddingCredentialRef,
+        projectId,
+        kind: 'embedding',
+      })
+    : apiKey
 
   return {
-    provider,
-    baseUrl: saved.baseUrl || fallback.baseUrl,
-    model,
-    apiKey: saved.apiKey || fallback.apiKey,
-    temperature: saved.temperature ?? fallback.temperature,
-
-    embeddingProvider,
-    embeddingBaseUrl: saved.embeddingBaseUrl || fallback.embeddingBaseUrl,
-    embeddingModel: normalizeEmbeddingModel({
-      provider,
-      model,
-      embeddingProvider,
-      embeddingModel: saved.embeddingModel || fallback.embeddingModel,
-    }) || fallback.embeddingModel,
-    embeddingApiKey: saved.embeddingApiKey || saved.apiKey || fallback.embeddingApiKey,
-    embeddingEnabled: saved.embeddingEnabled ?? fallback.embeddingEnabled,
-
-    updatedAt: saved.updatedAt ?? undefined,
+    provider: saved.provider,
+    baseUrl: saved.baseUrl,
+    model: saved.model,
+    apiKey,
+    temperature: saved.temperature,
+    embeddingProvider: saved.embeddingProvider,
+    embeddingBaseUrl: saved.embeddingBaseUrl,
+    embeddingModel: saved.embeddingModel,
+    embeddingApiKey,
+    embeddingEnabled: saved.embeddingEnabled,
+    updatedAt: saved.updatedAt,
   }
 }
 
-export async function getAISettings() {
-  return sanitizeAISettings(await getEffectiveAISettings())
+export async function getAISettings(projectId: string) {
+  return sanitizeAISettings(await getEffectiveAISettings(projectId))
 }
 
 export function listAIProviderPresets() {
@@ -188,52 +216,143 @@ function normalizeAISettingsInput(input: UpdateAIProviderSettingsInput, current:
   return { provider, baseUrl, model, embeddingProvider, embeddingBaseUrl, embeddingModel }
 }
 
-export async function updateAISettings(input: UpdateAIProviderSettingsInput) {
-  const current = await getEffectiveAISettings()
-  const timestamp = now()
+export interface AISettingsCommandOptions {
+  commandId?: string
+  correlationId?: string
+}
+
+export async function updateAISettings(
+  projectId: string,
+  input: UpdateAIProviderSettingsInput,
+  options: AISettingsCommandOptions = {},
+) {
+  const [saved] = await db.select()
+    .from(projectAISettings)
+    .where(eq(projectAISettings.projectId, projectId))
+    .limit(1)
+  const current = await getEffectiveAISettings(projectId)
   const normalized = normalizeAISettingsInput(input, current)
-  const next = {
-    id: GLOBAL_AI_SETTINGS_ID,
+  const newCredentials: string[] = []
+  const vaultSecrets = {
+    chat: input.apiKey?.trim() || (!saved && !input.clearApiKey ? current.apiKey : null),
+    embedding: input.embeddingApiKey?.trim()
+      || (!saved && !input.clearEmbeddingApiKey ? current.embeddingApiKey : null),
+  }
+  const vault = vaultSecrets.chat || vaultSecrets.embedding
+    ? CredentialVault.fromEnvironment()
+    : null
+
+  const chatCredential = vaultSecrets.chat && vault
+    ? await vault.store({ projectId, kind: 'chat', secret: vaultSecrets.chat })
+    : null
+  if (chatCredential)
+    newCredentials.push(chatCredential.credentialRef)
+
+  let embeddingCredential
+  try {
+    embeddingCredential = vaultSecrets.embedding && vault
+      ? await vault.store({ projectId, kind: 'embedding', secret: vaultSecrets.embedding })
+      : null
+    if (embeddingCredential)
+      newCredentials.push(embeddingCredential.credentialRef)
+  }
+  catch (error: unknown) {
+    await deleteCredentials(newCredentials, projectId)
+    throw error
+  }
+
+  const next: JsonObject = {
     provider: normalized.provider,
     baseUrl: normalized.baseUrl,
     model: normalized.model,
-    apiKey: input.clearApiKey ? null : input.apiKey?.trim() || current.apiKey || null,
     temperature: typeof input.temperature === 'number'
       ? Math.min(100, Math.max(0, Math.round(input.temperature)))
       : current.temperature,
-
+    credentialRef: input.clearApiKey
+      ? null
+      : chatCredential?.credentialRef ?? saved?.credentialRef ?? null,
+    credentialSuffix: input.clearApiKey
+      ? null
+      : chatCredential?.maskedSuffix ?? saved?.credentialSuffix ?? null,
     embeddingProvider: normalized.embeddingProvider,
     embeddingBaseUrl: normalized.embeddingBaseUrl,
     embeddingModel: normalized.embeddingModel,
-    embeddingApiKey: input.clearEmbeddingApiKey ? null : input.embeddingApiKey?.trim() || current.embeddingApiKey || null,
+    embeddingCredentialRef: input.clearEmbeddingApiKey
+      ? null
+      : embeddingCredential?.credentialRef ?? saved?.embeddingCredentialRef ?? null,
+    embeddingCredentialSuffix: input.clearEmbeddingApiKey
+      ? null
+      : embeddingCredential?.maskedSuffix ?? saved?.embeddingCredentialSuffix ?? null,
     embeddingEnabled: typeof input.embeddingEnabled === 'boolean' ? input.embeddingEnabled : current.embeddingEnabled,
-
-    createdAt: timestamp,
-    updatedAt: timestamp,
   }
 
-  const [row] = await db
-    .insert(aiSettings)
-    .values(next)
-    .onConflictDoUpdate({
-      target: aiSettings.id,
-      set: {
-        provider: next.provider,
-        baseUrl: next.baseUrl,
-        model: next.model,
-        apiKey: next.apiKey,
-        temperature: next.temperature,
-        embeddingProvider: next.embeddingProvider,
-        embeddingBaseUrl: next.embeddingBaseUrl,
-        embeddingModel: next.embeddingModel,
-        embeddingApiKey: next.embeddingApiKey,
-        embeddingEnabled: next.embeddingEnabled,
-        updatedAt: timestamp,
-      },
+  let result: ProjectAISettingsSnapshot
+  try {
+    const commandId = options.commandId ?? generateId()
+    result = await commandBus.dispatch<ProjectAISettingsSnapshot>({
+      commandId,
+      commandType: CHANGE_PROJECT_AI_SETTINGS_COMMAND,
+      aggregateType: PROJECT_SETTINGS_AGGREGATE_TYPE,
+      aggregateId: projectId,
+      projectId,
+      correlationId: options.correlationId ?? commandId,
+      payload: next,
     })
-    .returning()
+  }
+  catch (error: unknown) {
+    await deleteCredentials(newCredentials, projectId)
+    throw error
+  }
 
-  return sanitizeAISettings(row)
+  await deleteUnusedCredentials({
+    projectId,
+    saved,
+    result,
+    newCredentials,
+  })
+
+  return getAISettings(projectId)
+}
+
+async function assertProjectExists(projectId: string): Promise<void> {
+  const [project] = await db.select({ id: projectReadModels.id })
+    .from(projectReadModels)
+    .where(eq(projectReadModels.id, projectId))
+    .limit(1)
+  if (!project)
+    throw new DomainCommandError('PROJECT_NOT_FOUND', 'Project not found')
+}
+
+async function deleteCredentials(credentialRefs: string[], projectId: string): Promise<void> {
+  if (!credentialRefs.length)
+    return
+  const vault = CredentialVault.fromEnvironment()
+  await Promise.all(credentialRefs.map(ref => vault.delete(ref, projectId)))
+}
+
+async function deleteUnusedCredentials(input: {
+  projectId: string
+  saved: typeof projectAISettings.$inferSelect | undefined
+  result: ProjectAISettingsSnapshot
+  newCredentials: string[]
+}): Promise<void> {
+  const referenced = new Set([
+    input.result.credentialRef,
+    input.result.embeddingCredentialRef,
+  ].filter((value): value is string => Boolean(value)))
+  const obsolete = new Set(
+    input.newCredentials.filter(ref => !referenced.has(ref)),
+  )
+  if (input.saved?.credentialRef && input.saved.credentialRef !== input.result.credentialRef)
+    obsolete.add(input.saved.credentialRef)
+  if (
+    input.saved?.embeddingCredentialRef
+    && input.saved.embeddingCredentialRef !== input.result.embeddingCredentialRef
+  ) {
+    obsolete.add(input.saved.embeddingCredentialRef)
+  }
+
+  await deleteCredentials([...obsolete], input.projectId)
 }
 
 export function createOpenAIClient(settings: { apiKey?: string | null, baseUrl: string }) {
@@ -243,8 +362,8 @@ export function createOpenAIClient(settings: { apiKey?: string | null, baseUrl: 
   })
 }
 
-export async function testAIConnection(input?: UpdateAIProviderSettingsInput) {
-  const saved = await getEffectiveAISettings()
+export async function testAIConnection(projectId: string, input?: UpdateAIProviderSettingsInput) {
+  const saved = await getEffectiveAISettings(projectId)
   const normalized = input ? normalizeAISettingsInput(input, saved) : saved
   const settings = {
     provider: normalized.provider,
@@ -279,8 +398,8 @@ export async function testAIConnection(input?: UpdateAIProviderSettingsInput) {
   }
 }
 
-export async function testEmbeddingConnection(input?: UpdateAIProviderSettingsInput) {
-  const saved = await getEffectiveAISettings()
+export async function testEmbeddingConnection(projectId: string, input?: UpdateAIProviderSettingsInput) {
+  const saved = await getEffectiveAISettings(projectId)
   const normalized = input ? normalizeAISettingsInput(input, saved) : saved
   const settings = {
     provider: normalized.embeddingProvider,
@@ -313,8 +432,8 @@ export async function testEmbeddingConnection(input?: UpdateAIProviderSettingsIn
   }
 }
 
-export async function assertAIConfigured() {
-  const settings = await getEffectiveAISettings()
+export async function assertAIConfigured(projectId: string) {
+  const settings = await getEffectiveAISettings(projectId)
   if (!settings.apiKey) {
     throw new AIConfigurationError('AI 服务未配置，请先到项目设置完成配置检测')
   }
@@ -332,19 +451,24 @@ function cleanJSONString(str: string): string {
 
 export async function callAIJSON<T = Record<string, unknown>>(
   messages: ChatCompletionMessageParam[],
-  options?: {
+  options: {
     model?: string
     temperature?: number
     responseFormat?: { type: 'json_object' }
     maxRetries?: number
-    metadata?: AIMetadata
+    metadata: AIMetadata
   },
 ): Promise<T> {
-  const settings = await assertAIConfigured()
+  const projectId = options.metadata?.projectId
+  if (!projectId)
+    throw new AIProjectScopeError()
+  if (isFakeAIEnabled())
+    return fakeAIJSON(options.metadata.taskType || 'unknown') as T
+  const settings = await assertAIConfigured(projectId)
   const client = createOpenAIClient(settings)
-  const maxRetries = options?.maxRetries ?? 2
-  const model = options?.model || settings.model
-  const taskType = options?.metadata?.taskType || 'unknown'
+  const maxRetries = options.maxRetries ?? 2
+  const model = options.model || settings.model
+  const taskType = options.metadata.taskType || 'unknown'
   const startedAt = Date.now()
   let lastError: unknown
 
@@ -353,16 +477,16 @@ export async function callAIJSON<T = Record<string, unknown>>(
       const response = await client.chat.completions.create({
         model,
         messages,
-        temperature: (options?.temperature ?? settings.temperature) / 100,
-        response_format: options?.responseFormat || { type: 'json_object' },
+        temperature: (options.temperature ?? settings.temperature) / 100,
+        response_format: options.responseFormat || { type: 'json_object' },
       })
 
       const latencyMs = Date.now() - startedAt
       const usage = response.usage
 
-      if (options?.metadata?.projectId) {
+      if (options.metadata.projectId) {
         await AIUsageService.recordUsage({
-          projectId: options.metadata.projectId,
+          projectId,
           chapterId: options.metadata.chapterId,
           contextSnapshotId: options.metadata.contextSnapshotId,
           provider: settings.provider,
@@ -399,9 +523,9 @@ export async function callAIJSON<T = Record<string, unknown>>(
         console.warn(`AI call failed, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries}):`, errorMessage(error))
         await sleep(delay)
       }
-      else if (options?.metadata?.projectId) {
+      else if (options.metadata.projectId) {
         await AIUsageService.recordUsage({
-          projectId: options.metadata.projectId,
+          projectId,
           chapterId: options.metadata.chapterId,
           contextSnapshotId: options.metadata.contextSnapshotId,
           provider: settings.provider,
@@ -423,17 +547,17 @@ export async function callAIJSON<T = Record<string, unknown>>(
 
 export async function* streamChat(
   messages: ChatCompletionMessageParam[],
-  options?: {
+  options: {
+    projectId: string
     context?: string
     model?: string
-    personaPrompt?: string | null
   },
 ) {
   if (!messages || !messages.length) {
     throw new Error('Messages are required')
   }
 
-  const settings = await assertAIConfigured()
+  const settings = await assertAIConfigured(options.projectId)
   const openai = createOpenAIClient(settings)
 
   const systemMessages: ChatCompletionMessageParam[] = [
@@ -442,15 +566,11 @@ export async function* streamChat(
       content: '你是专业的长篇小说自动写作引擎。必须优先遵守项目上下文、故事设定、人物动机、章节目标、场景约束、伏笔台账、事实图谱和写作人格。输出必须可被系统自动检查、修复、结构化抽取与写回，不得复刻参考作品原文、专名、桥段或连续表达。',
     },
   ]
-  if (options?.context) {
+  if (options.context) {
     systemMessages.push({ role: 'system', content: `Context: ${options.context}` })
   }
-  if (options?.personaPrompt) {
-    systemMessages.push({ role: 'system', content: `写作人格约束：\n${options.personaPrompt}` })
-  }
-
   const response = await openai.chat.completions.create({
-    model: options?.model || settings.model,
+    model: options.model || settings.model,
     messages: [...systemMessages, ...messages],
     stream: true,
     temperature: settings.temperature / 100,
@@ -463,13 +583,18 @@ export async function* streamChat(
     }
   }
 }
-export async function callAIEmbedding(text: string, options?: { model?: string }): Promise<number[]> {
-  const settings = await getEffectiveAISettings()
+export async function callAIEmbedding(
+  text: string,
+  options: { projectId: string, model?: string },
+): Promise<number[]> {
+  if (isFakeAIEnabled())
+    return fakeAIEmbedding()
+  const settings = await getEffectiveAISettings(options.projectId)
   if (settings.embeddingEnabled === false) {
     throw new Error('当前项目已禁用向量化（Embedding）功能，请在设置中开启。')
   }
 
-  const model = options?.model || settings.embeddingModel || 'text-embedding-3-small'
+  const model = options.model || settings.embeddingModel || 'text-embedding-3-small'
   const client = createOpenAIClient({
     apiKey: settings.embeddingApiKey || settings.apiKey,
     baseUrl: settings.embeddingBaseUrl || settings.baseUrl,

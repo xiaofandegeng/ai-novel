@@ -1,9 +1,12 @@
 import type { CreateAICandidateInput } from '@ai-novel/shared'
+import type { AIOperationCommandOptions } from './ai-operations.commands'
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { aiGenerationCandidates } from '../../db/schema'
-import { assertOptionalChapterBelongsToProject } from '../../shared/ownership'
-import { generateId, now } from '../../shared/utils'
+import { commandBus } from '../../eventing-runtime'
+import { generateId } from '../../shared/utils'
+import { compactAIOperationPayload, dispatchAIOperationCommand } from './ai-operations.commands'
+import { CHANGE_AI_OPERATION_COMMAND, RECORD_AI_OPERATION_COMMAND } from './ai-operations.eventing'
 
 export class AICandidateService {
   static async getCandidates(projectId: string, filters?: { chapterId?: string, taskType?: string }) {
@@ -19,7 +22,7 @@ export class AICandidateService {
     return db.select().from(aiGenerationCandidates).where(and(...conditions)).orderBy(desc(aiGenerationCandidates.createdAt))
   }
 
-  static async selectCandidate(projectId: string, candidateId: string) {
+  static async selectCandidate(projectId: string, candidateId: string, options: AIOperationCommandOptions = {}) {
     // First clear any existing selection for this project/chapter scope
     const [candidate] = await db.select().from(aiGenerationCandidates).where(
       and(eq(aiGenerationCandidates.id, candidateId), eq(aiGenerationCandidates.projectId, projectId)),
@@ -28,47 +31,30 @@ export class AICandidateService {
       return null
 
     // Clear previous selections for the same chapter and task type
-    await db.update(aiGenerationCandidates)
-      .set({ userSelected: 0, updatedAt: now() })
-      .where(
-        and(
-          eq(aiGenerationCandidates.projectId, projectId),
-          candidate.chapterId
-            ? eq(aiGenerationCandidates.chapterId, candidate.chapterId)
-            : isNull(aiGenerationCandidates.chapterId),
-          eq(aiGenerationCandidates.taskType, candidate.taskType),
-          eq(aiGenerationCandidates.userSelected, 1),
-        ),
-      )
-
-    // Mark this candidate as selected
-    const [updated] = await db.update(aiGenerationCandidates)
-      .set({ userSelected: 1, updatedAt: now() })
-      .where(eq(aiGenerationCandidates.id, candidateId))
-      .returning()
-
-    return updated ?? null
+    const selected = await db.select().from(aiGenerationCandidates).where(and(
+      eq(aiGenerationCandidates.projectId, projectId),
+      candidate.chapterId ? eq(aiGenerationCandidates.chapterId, candidate.chapterId) : isNull(aiGenerationCandidates.chapterId),
+      eq(aiGenerationCandidates.taskType, candidate.taskType),
+      eq(aiGenerationCandidates.userSelected, 1),
+    ))
+    return commandBus.runAtomically(async () => {
+      for (const current of selected.filter(row => row.id !== candidateId)) {
+        await dispatchAIOperationCommand(CHANGE_AI_OPERATION_COMMAND, projectId, current.id, { kind: 'candidate', data: { userSelected: 0 } }, options.commandId ? { ...options, commandId: `${options.commandId}:clear:${current.id}` } : {})
+      }
+      return dispatchAIOperationCommand(CHANGE_AI_OPERATION_COMMAND, projectId, candidateId, { kind: 'candidate', data: { userSelected: 1 } }, options)
+    })
   }
 
-  static async rateCandidate(projectId: string, candidateId: string, rating: number) {
-    const [updated] = await db.update(aiGenerationCandidates)
-      .set({ userRating: rating, updatedAt: now() })
-      .where(
-        and(eq(aiGenerationCandidates.id, candidateId), eq(aiGenerationCandidates.projectId, projectId)),
-      )
-      .returning()
-
-    return updated ?? null
+  static async rateCandidate(projectId: string, candidateId: string, rating: number, options: AIOperationCommandOptions = {}) {
+    const [candidate] = await db.select({ id: aiGenerationCandidates.id }).from(aiGenerationCandidates).where(and(eq(aiGenerationCandidates.id, candidateId), eq(aiGenerationCandidates.projectId, projectId)))
+    if (!candidate)
+      return null
+    return dispatchAIOperationCommand(CHANGE_AI_OPERATION_COMMAND, projectId, candidateId, { kind: 'candidate', data: { userRating: rating } }, options)
   }
 
-  static async createCandidate(projectId: string, data: CreateAICandidateInput) {
-    await assertOptionalChapterBelongsToProject(projectId, data.chapterId)
-
+  static async createCandidate(projectId: string, data: CreateAICandidateInput, options: AIOperationCommandOptions = {}) {
     const id = generateId()
-    const timestamp = now()
-    const [row] = await db.insert(aiGenerationCandidates).values({
-      id,
-      projectId,
+    return dispatchAIOperationCommand(RECORD_AI_OPERATION_COMMAND, projectId, id, compactAIOperationPayload({ kind: 'candidate', data: {
       chapterId: data.chapterId ?? null,
       contextSnapshotId: data.contextSnapshotId ?? null,
       provider: data.provider,
@@ -78,10 +64,6 @@ export class AICandidateService {
       qualityScore: data.qualityScore ?? null,
       userSelected: 0,
       userRating: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    }).returning()
-
-    return row
+    } }), options)
   }
 }

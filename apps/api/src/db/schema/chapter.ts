@@ -6,7 +6,7 @@ import { volumes } from './structure'
 export const chapters = pgTable('chapters', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  volumeId: text('volume_id').references(() => volumes.id, { onDelete: 'cascade' }),
+  volumeId: text('volume_id').references(() => volumes.id, { onDelete: 'set null' }),
   title: text('title').notNull(),
   chapterNumber: integer('chapter_number').notNull(),
   outline: text('outline'),
@@ -36,7 +36,7 @@ export const chapterVersions = pgTable('chapter_versions', {
 export const chapterMemories = pgTable('chapter_memories', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull(),
   summary: text('summary'),
   keyEvents: text('key_events'),
   newFacts: text('new_facts'),
@@ -83,7 +83,9 @@ export const chapterScenes = pgTable('chapter_scenes', {
 export const chapterPostprocessRuns = pgTable('chapter_postprocess_runs', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => novelProjects.id, { onDelete: 'cascade' }),
-  chapterId: text('chapter_id').notNull().references(() => chapters.id, { onDelete: 'cascade' }),
+  chapterId: text('chapter_id').notNull(),
+  autonomousRunId: text('autonomous_run_id'),
+  writingJobId: text('writing_job_id'),
   status: text('status').$type<'pending' | 'running' | 'completed' | 'failed'>().notNull().default('pending'),
   trigger: text('trigger').notNull(),
   errorMessage: text('error_message'),

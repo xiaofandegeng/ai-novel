@@ -47,6 +47,7 @@ const cockpit: AutomationCockpitPayload = {
     changeSetId: 'change-set-1',
     createdAt: timestamp,
   }],
+  exceptions: [],
 }
 
 describe('pinia stores through the fetch boundary', () => {

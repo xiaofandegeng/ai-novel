@@ -4,7 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import { toErrorMessage } from '../../../shared/utils/error-message'
 import * as settingsApi from '../api/settings.api'
 
-export function useAIProviderSettings(_projectId: string) {
+export function useAIProviderSettings(projectId: string) {
   const toast = useToast()
 
   const loading = ref(true)
@@ -93,7 +93,7 @@ export function useAIProviderSettings(_projectId: string) {
     loading.value = true
     try {
       const [aiSettings, providers] = await Promise.all([
-        settingsApi.fetchAISettings(),
+        settingsApi.fetchAISettings(projectId),
         settingsApi.fetchAIProviderPresets(),
       ])
       aiProviderPresets.value = providers
@@ -167,7 +167,7 @@ export function useAIProviderSettings(_projectId: string) {
     aiTestMessage.value = ''
     embeddingTestMessage.value = ''
     try {
-      const settings = await settingsApi.updateAISettings(buildAISettingsPayload())
+      const settings = await settingsApi.updateAISettings(projectId, buildAISettingsPayload())
       aiForm.value.apiKey = ''
       aiForm.value.embeddingApiKey = ''
       aiForm.value.hasApiKey = settings.hasApiKey
@@ -187,7 +187,7 @@ export function useAIProviderSettings(_projectId: string) {
     testing.value = true
     aiTestMessage.value = ''
     try {
-      const result = await settingsApi.testAISettings(buildAISettingsPayload())
+      const result = await settingsApi.testAISettings(projectId, buildAISettingsPayload())
       aiTestMessage.value = result.latencyMs
         ? `${result.message}，耗时 ${result.latencyMs}ms`
         : result.message
@@ -206,7 +206,7 @@ export function useAIProviderSettings(_projectId: string) {
     embeddingTesting.value = true
     embeddingTestMessage.value = ''
     try {
-      const result = await settingsApi.testEmbeddingSettings(buildAISettingsPayload())
+      const result = await settingsApi.testEmbeddingSettings(projectId, buildAISettingsPayload())
       embeddingTestMessage.value = result.dimensions
         ? `${result.message}，维度: ${result.dimensions}`
         : result.message

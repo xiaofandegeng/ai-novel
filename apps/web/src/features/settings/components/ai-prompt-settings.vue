@@ -36,9 +36,8 @@ async function loadData() {
     templates.value = t
     overrides.value = o
     structures.value = s
-    if (t.length > 0) {
-      selectedTemplateKey.value = t[0].key
-    }
+    if (t.length > 0)
+      selectTemplate(t[0].key)
   }
   catch (error: unknown) {
     toast.add(`加载失败: ${toErrorMessage(error)}`, 'error')
@@ -114,16 +113,16 @@ onMounted(loadData)
 
 <template>
   <div class="space-y-6">
-    <div class="flex border-b border-border-light">
+    <div class="max-w-full flex overflow-x-auto border-b border-border-light">
       <button
-        class="border-b-2 px-6 py-3 text-sm font-medium transition-colors"
+        class="shrink-0 border-b-2 px-3 py-3 text-sm font-medium transition-colors sm:px-6"
         :class="activeTab === 'prompts' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-primary'"
         @click="activeTab = 'prompts'"
       >
         AI 提示词管理
       </button>
       <button
-        class="border-b-2 px-6 py-3 text-sm font-medium transition-colors"
+        class="shrink-0 border-b-2 px-3 py-3 text-sm font-medium transition-colors sm:px-6"
         :class="activeTab === 'structure' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-primary'"
         @click="activeTab = 'structure'"
       >
@@ -138,9 +137,9 @@ onMounted(loadData)
       </p>
     </div>
 
-    <div v-else-if="activeTab === 'prompts'" class="grid grid-cols-12 gap-6">
+    <div v-else-if="activeTab === 'prompts'" class="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
       <!-- Template List -->
-      <div class="col-span-4 space-y-2">
+      <div class="grid col-span-1 grid-cols-1 gap-2 lg:col-span-4 sm:grid-cols-2 lg:block lg:space-y-2">
         <div
           v-for="t in templates"
           :key="t.id"
@@ -161,10 +160,10 @@ onMounted(loadData)
       </div>
 
       <!-- Editor -->
-      <div class="col-span-8 space-y-4">
-        <NPanel v-if="selectedTemplateKey" class="p-6 space-y-6">
-          <div class="flex items-center justify-between">
-            <h3 class="flex items-center gap-2 text-text-primary font-bold">
+      <div class="col-span-1 min-w-0 lg:col-span-8 space-y-4">
+        <NPanel v-if="selectedTemplateKey" class="p-4 space-y-6 sm:p-6">
+          <div class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h3 class="min-w-0 flex items-center gap-2 text-text-primary font-bold">
               <Terminal :size="18" class="text-primary" />
               {{ templates.find(t => t.key === selectedTemplateKey)?.name }} - 提示词覆盖
             </h3>
@@ -230,7 +229,7 @@ onMounted(loadData)
     </div>
 
     <div v-else-if="activeTab === 'structure'" class="space-y-6">
-      <div class="grid grid-cols-2 gap-6">
+      <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
         <NPanel
           v-for="s in structures"
           :key="s.id"

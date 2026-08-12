@@ -1,21 +1,9 @@
+import type { StoryStructureCommandOptions } from './story-structure.commands'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { acts, chapters, storyStructureTemplates, volumes } from '../../db/schema'
-import { generateId } from '../../shared/utils'
-
-export interface ActDef {
-  title: string
-  description: string
-  theme: string
-  targetChapterCount: number
-  keyEvents: string[]
-}
-
-export interface BeatDef {
-  name: string
-  description: string
-  requirement?: string
-}
+import { acts, chapters, storyStructureTemplates } from '../../db/schema'
+import { dispatchStoryStructureCommand } from './story-structure.commands'
+import { APPLY_STRUCTURE_TEMPLATE_COMMAND } from './story-structure.eventing'
 
 export class StoryStructureService {
   static async listTemplates(genre?: string) {
@@ -24,46 +12,18 @@ export class StoryStructureService {
     return db.select().from(storyStructureTemplates)
   }
 
-  static async applyTemplate(projectId: string, templateId: string) {
-    const [tpl] = await db.select().from(storyStructureTemplates).where(eq(storyStructureTemplates.id, templateId))
-    if (!tpl)
-      throw new Error('模板不存在')
-
-    const actDefs: ActDef[] = tpl.actsJson ? JSON.parse(tpl.actsJson) : []
-
-    // Ensure a default volume exists
-    const existingVolumes = await db.select().from(volumes).where(eq(volumes.projectId, projectId))
-    let volumeId = existingVolumes[0]?.id
-    if (!volumeId) {
-      const volId = generateId()
-      await db.insert(volumes).values({
-        id: volId,
-        projectId,
-        title: '第一卷',
-        orderIndex: 1,
-      })
-      volumeId = volId
-    }
-
-    const created = []
-    for (let i = 0; i < actDefs.length; i++) {
-      const actDef = actDefs[i]
-      const actId = generateId()
-      await db.insert(acts).values({
-        id: actId,
-        projectId,
-        volumeId,
-        title: actDef.title,
-        description: actDef.description,
-        theme: actDef.theme,
-        keyEvents: typeof actDef.keyEvents === 'string' ? actDef.keyEvents : JSON.stringify(actDef.keyEvents),
-        targetChapterCount: actDef.targetChapterCount,
-        orderIndex: i + 1,
-      })
-      created.push(actId)
-    }
-
-    return created
+  static async applyTemplate(
+    projectId: string,
+    templateId: string,
+    options: StoryStructureCommandOptions = {},
+  ) {
+    const result = await dispatchStoryStructureCommand<{ actIds: string[] }>(
+      APPLY_STRUCTURE_TEMPLATE_COMMAND,
+      projectId,
+      { templateId },
+      options,
+    )
+    return result.actIds
   }
 
   /**
