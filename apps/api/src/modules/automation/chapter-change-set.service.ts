@@ -28,6 +28,7 @@ import {
   DRAFT_CHANGE_SET_COMMAND,
 } from './chapter-change-set.eventing'
 import { applyOneSuggestion } from './postprocess-suggestion.service'
+import { assertWritingJobAuthorized, RunAuthorizationRevokedError } from './run-authorization.service'
 import { dispatchWritingJobCommand } from './writing-job.commands'
 import { CHANGE_WRITING_JOB_STEP_COMMAND } from './writing-job.eventing'
 
@@ -421,6 +422,9 @@ export async function applyChangeSet(
 
   try {
     return await commandBus.runAtomically(async (tx) => {
+      if (fullChangeSet.writingJobId)
+        await assertWritingJobAuthorized(projectId, fullChangeSet.writingJobId)
+
       // 1. Get current content for before snapshot
       // P1-5: 章节查询增加 projectId 限制
       const [chapter] = await tx.select({ draft: chapters.draft })
@@ -589,6 +593,9 @@ export async function applyChangeSet(
     })
   }
   catch (error: unknown) {
+    if (error instanceof RunAuthorizationRevokedError)
+      throw error
+
     console.error(`Failed to apply change set ${changeSetId}:`, error)
 
     // P1-3: 失败时记录在 applyReportJson 并标记失败

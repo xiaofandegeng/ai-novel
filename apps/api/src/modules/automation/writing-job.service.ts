@@ -30,6 +30,7 @@ import { changeAutonomousRun, changeAutonomousRunJob, recordAutonomousException 
 import { applyChangeSet as applyChangeSetSvc, approveChangeSet as approveChangeSetSvc, createChapterChangeSet, rejectChangeSet as rejectChangeSetSvc } from './chapter-change-set.service'
 import { extractChapterChanges, runChapterPostprocess, runScenePostprocess } from './chapter-postprocess.service'
 import { applyAutoSuggestions, getSuggestions } from './postprocess-suggestion.service'
+import { assertWritingJobAuthorized, RunAuthorizationRevokedError } from './run-authorization.service'
 import { runGraphInference } from './story-graph-inference.service'
 import { compactWritingJobPayload, dispatchWritingJobCommand } from './writing-job.commands'
 import {
@@ -1243,6 +1244,8 @@ async function executeStep(
 ): Promise<boolean> {
   // Returns true if execution should continue, false if the automation isolated a blocking issue
 
+  await assertWritingJobAuthorized(projectId, job.id)
+
   const timestamp = now()
   await updateStep(step.id, { status: 'running', startedAt: timestamp, error: null })
 
@@ -1494,9 +1497,18 @@ async function collectStepOutputs(jobId: string): Promise<Map<string, string>> {
 async function runNextSteps(projectId: string, jobId: string): Promise<void> {
   const { chapter, scene, job } = await getJobAndChapter(jobId, projectId)
 
+  await assertWritingJobAuthorized(projectId, jobId)
   await updateJobStatus(jobId, 'running', null)
 
   while (true) {
+    try {
+      await assertWritingJobAuthorized(projectId, jobId)
+    }
+    catch (error: unknown) {
+      if (error instanceof RunAuthorizationRevokedError)
+        return
+      throw error
+    }
     const allSteps = await getJobSteps(jobId)
     const previousOutputs = await collectStepOutputs(jobId)
 

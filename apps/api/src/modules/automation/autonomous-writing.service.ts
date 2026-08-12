@@ -651,9 +651,24 @@ export async function pauseAutonomousRun(projectId: string, runId: string, reaso
   if (run.status !== 'running')
     throw new Error('只有正在运行的任务才能暂停')
 
-  await changeRun(projectId, runId, {
-    status: 'paused',
-    pausedReason: reason || 'Manual pause',
+  await commandBus.runAtomically(async (tx) => {
+    await changeRun(projectId, runId, {
+      status: 'paused',
+      pausedReason: reason || 'Manual pause',
+    }, `PauseRun:${runId}:run`)
+    const activeJobs = await tx.select({ id: writingJobs.id }).from(writingJobs).where(and(
+      eq(writingJobs.autonomousRunId, runId),
+      eq(writingJobs.status, 'running'),
+    ))
+    for (const job of activeJobs) {
+      await dispatchWritingJobCommand(
+        CHANGE_WRITING_JOB_COMMAND,
+        projectId,
+        job.id,
+        { status: 'paused', autoStopReason: reason || 'Manual pause' },
+        { commandId: `PauseRun:${runId}:job:${job.id}`, correlationId: runId, causationId: runId },
+      )
+    }
   })
 }
 
@@ -669,12 +684,33 @@ export async function resumeAutonomousRun(projectId: string, runId: string): Pro
   if (run.status !== 'paused')
     throw new Error('只有暂停状态的任务才能继续推进')
 
-  await changeRun(projectId, runId, {
-    status: 'running',
-    pausedReason: null,
+  const pausedJobs = await db.select({ id: writingJobs.id }).from(writingJobs).where(and(
+    eq(writingJobs.autonomousRunId, runId),
+    eq(writingJobs.status, 'paused'),
+  ))
+  await commandBus.runAtomically(async () => {
+    await changeRun(projectId, runId, {
+      status: 'running',
+      pausedReason: null,
+    }, `ResumeRun:${runId}:run`)
+    for (const job of pausedJobs) {
+      await dispatchWritingJobCommand(
+        CHANGE_WRITING_JOB_COMMAND,
+        projectId,
+        job.id,
+        { status: 'running', autoStopReason: null },
+        { commandId: `ResumeRun:${runId}:job:${job.id}`, correlationId: runId, causationId: runId },
+      )
+    }
   })
 
-  await runNextAutonomousStep(projectId, runId)
+  if (pausedJobs[0]) {
+    const { startJob } = await import('./writing-job.service')
+    await startJob(projectId, pausedJobs[0].id)
+  }
+  else {
+    await runNextAutonomousStep(projectId, runId)
+  }
 }
 
 export async function abandonAutonomousRun(projectId: string, runId: string): Promise<void> {
@@ -688,25 +724,40 @@ export async function abandonAutonomousRun(projectId: string, runId: string): Pr
   if (!['idle', 'running', 'paused'].includes(run.status))
     throw new Error('只能放弃进行中或暂停的任务')
 
-  const unfinishedJobs = await db.select().from(autonomousRunJobs).where(and(
-    eq(autonomousRunJobs.runId, runId),
-    sql`${autonomousRunJobs.status} NOT IN ('completed', 'skipped', 'isolated')`,
-  ))
-  for (const unfinishedJob of unfinishedJobs)
-    await changeAutonomousRunJob(projectId, runId, unfinishedJob.id, { status: 'skipped' })
+  await commandBus.runAtomically(async (tx) => {
+    const unfinishedJobs = await tx.select().from(autonomousRunJobs).where(and(
+      eq(autonomousRunJobs.runId, runId),
+      sql`${autonomousRunJobs.status} NOT IN ('completed', 'skipped', 'isolated')`,
+    ))
+    for (const unfinishedJob of unfinishedJobs) {
+      await changeAutonomousRunJob(
+        projectId,
+        runId,
+        unfinishedJob.id,
+        { status: 'skipped' },
+        `AbandonRun:${runId}:run-job:${unfinishedJob.id}`,
+      )
+      await dispatchWritingJobCommand(
+        CHANGE_WRITING_JOB_COMMAND,
+        projectId,
+        unfinishedJob.writingJobId,
+        { status: 'paused', autoStopReason: 'Run abandoned' },
+        { commandId: `AbandonRun:${runId}:job:${unfinishedJob.writingJobId}`, correlationId: runId, causationId: runId },
+      )
+    }
 
-  // Mark all open exceptions of this run as ignored on abandon
-  const openExceptions = await db.select().from(autonomousRunExceptions).where(and(
-    eq(autonomousRunExceptions.runId, runId),
-    eq(autonomousRunExceptions.status, 'open'),
-  ))
-  for (const exception of openExceptions)
-    await changeException(projectId, runId, exception.id, { status: 'ignored' })
+    const openExceptions = await tx.select().from(autonomousRunExceptions).where(and(
+      eq(autonomousRunExceptions.runId, runId),
+      eq(autonomousRunExceptions.status, 'open'),
+    ))
+    for (const exception of openExceptions)
+      await changeException(projectId, runId, exception.id, { status: 'ignored' }, `AbandonRun:${runId}:exception:${exception.id}`)
 
-  await changeRun(projectId, runId, {
-    status: 'abandoned',
-    pausedReason: '用户放弃本轮自动驾驶',
-    finishedAt: now(),
+    await changeRun(projectId, runId, {
+      status: 'abandoned',
+      pausedReason: '用户放弃本轮自动驾驶',
+      finishedAt: now(),
+    }, `AbandonRun:${runId}:run`)
   })
 }
 
@@ -722,7 +773,7 @@ export async function handleAutonomousJobCompletion(
 
   const runId = job.autonomousRunId
   const [run] = await db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, runId))
-  if (!run)
+  if (!run || run.projectId !== projectId || run.status !== 'running')
     return
 
   if (status === 'completed') {

@@ -1,11 +1,19 @@
 import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../../db'
-import { autonomousRunJobs, autonomousWritingRuns, chapters, domainEvents, writingJobs } from '../../db/schema'
+import { autonomousRunExceptions, autonomousRunJobs, autonomousWritingRuns, chapters, domainEvents, writingJobs } from '../../db/schema'
 import { commandBus } from '../../eventing-runtime'
 import { resetTestDatabase } from '../../test/database'
 import { CREATE_PROJECT_COMMAND } from '../project/project.eventing'
-import { createAutonomousRun } from './autonomous-writing.service'
+import {
+  abandonAutonomousRun,
+  changeAutonomousRun,
+  changeAutonomousRunJob,
+  createAutonomousRun,
+  handleAutonomousJobCompletion,
+  pauseAutonomousRun,
+  recordAutonomousException,
+} from './autonomous-writing.service'
 
 afterAll(() => sql.end())
 
@@ -57,6 +65,54 @@ describe('autonomous writing service', () => {
 
     await expect(db.select().from(chapters).where(eq(chapters.projectId, projectId))).resolves.toHaveLength(0)
     await expect(db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.projectId, projectId))).resolves.toHaveLength(0)
+  })
+
+  it('revokes late completion updates after a run is paused', async () => {
+    const projectId = 'paused-project'
+    await createProject(projectId, '暂停项目')
+    const run = await createAutonomousRun(projectId, {
+      scopeType: 'next_n_chapters',
+      strategy: 'balanced',
+      targetChapterCount: 1,
+    })
+    const [runJob] = await db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.runId, run.id))
+    await changeAutonomousRun(projectId, run.id, { status: 'running' }, 'start-paused-run')
+    await changeAutonomousRunJob(projectId, run.id, runJob.id, { status: 'running' }, 'start-paused-run-job')
+
+    await pauseAutonomousRun(projectId, run.id, '用户暂停')
+    await handleAutonomousJobCompletion(projectId, runJob.writingJobId, 'completed')
+
+    await expect(db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, run.id))).resolves.toMatchObject([
+      { status: 'paused', completedChapterCount: 0 },
+    ])
+    await expect(db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.id, runJob.id))).resolves.toMatchObject([
+      { status: 'running' },
+    ])
+  })
+
+  it('abandons the run, unfinished jobs, and open exceptions atomically', async () => {
+    const projectId = 'abandoned-project'
+    await createProject(projectId, '终止项目')
+    const run = await createAutonomousRun(projectId, {
+      scopeType: 'next_n_chapters',
+      strategy: 'balanced',
+      targetChapterCount: 1,
+    })
+    await changeAutonomousRun(projectId, run.id, { status: 'running' }, 'start-abandoned-run')
+    await recordAutonomousException(projectId, run.id, {
+      exceptionType: 'operator_override_required',
+      severity: 'high',
+      title: '等待作者',
+    }, 'open-abandoned-exception')
+
+    await abandonAutonomousRun(projectId, run.id)
+
+    await expect(db.select().from(autonomousWritingRuns).where(eq(autonomousWritingRuns.id, run.id))).resolves.toMatchObject([{ status: 'abandoned' }])
+    await expect(db.select().from(autonomousRunJobs).where(eq(autonomousRunJobs.runId, run.id))).resolves.toMatchObject([{ status: 'skipped' }])
+    await expect(db.select().from(autonomousRunExceptions).where(eq(autonomousRunExceptions.runId, run.id))).resolves.toMatchObject([{ status: 'ignored' }])
+
+    const correlationIds = await db.select({ correlationId: domainEvents.correlationId }).from(domainEvents).where(eq(domainEvents.aggregateId, run.id)).orderBy(domainEvents.globalPosition)
+    expect(correlationIds.slice(-3).map(row => row.correlationId)).toEqual([run.id, run.id, run.id])
   })
 })
 
