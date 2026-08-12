@@ -1,3 +1,4 @@
+import type { JsonObject } from './event-types'
 import { describe, expect, it } from 'vitest'
 import {
   DuplicateEventTypeError,
@@ -23,6 +24,31 @@ describe('eventRegistry', () => {
     })
 
     expect(registry.decode('KernelTestCreated', 1, { value: 'ok' })).toEqual({ value: 'ok' })
+  })
+
+  it('reports the registered payload protection classification', () => {
+    const registry = new EventRegistry()
+    registry.register({
+      eventType: 'SecretChanged',
+      currentSchemaVersion: 1,
+      payloadProtection: 'project-content',
+      upcasters: {},
+      validate: payload => payload as JsonObject,
+    })
+
+    expect(registry.protectionFor('SecretChanged')).toBe('project-content')
+  })
+
+  it('defaults legacy registrations to unprotected payloads', () => {
+    const registry = new EventRegistry()
+    registry.register({
+      eventType: 'PublicLifecycleAdvanced',
+      currentSchemaVersion: 1,
+      upcasters: {},
+      validate: payload => payload as JsonObject,
+    })
+
+    expect(registry.protectionFor('PublicLifecycleAdvanced')).toBe('none')
   })
 
   it('applies every upcaster before validating the current payload', () => {

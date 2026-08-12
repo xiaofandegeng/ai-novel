@@ -1,5 +1,7 @@
 export type JsonObject = Record<string, unknown>
 
+export type EventPayloadProtection = 'none' | 'project-content'
+
 export interface StreamRef {
   aggregateType: string
   aggregateId: string
@@ -46,6 +48,20 @@ export interface CommandEnvelope<TPayload extends JsonObject = JsonObject> {
   correlationId: string
   causationId?: string
   payload: TPayload
+}
+
+export interface CommandReceiptRecord {
+  commandId: string
+  commandType: string
+  aggregateType: string
+  aggregateId: string
+  projectId?: string | null
+  status: 'completed' | 'failed'
+  result: JsonObject | null
+  errorCode?: string | null
+  errorMessage?: string | null
+  createdAt: string
+  finishedAt: string
 }
 
 export interface OutboxIntent {

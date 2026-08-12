@@ -1,4 +1,9 @@
-import type { JsonObject, PendingEvent, StoredEvent } from './event-types'
+import type {
+  EventPayloadProtection,
+  JsonObject,
+  PendingEvent,
+  StoredEvent,
+} from './event-types'
 import {
   DuplicateEventTypeError,
   InvalidEventPayloadError,
@@ -10,6 +15,7 @@ import {
 export interface EventDefinition<TPayload extends JsonObject> {
   eventType: string
   currentSchemaVersion: number
+  payloadProtection?: EventPayloadProtection
   validate: (payload: unknown) => TPayload
   upcasters: Record<number, (payload: unknown) => unknown>
 }
@@ -17,6 +23,7 @@ export interface EventDefinition<TPayload extends JsonObject> {
 interface RegisteredEventDefinition {
   eventType: string
   currentSchemaVersion: number
+  payloadProtection: EventPayloadProtection
   validate: (payload: unknown) => JsonObject
   upcasters: Record<number, (payload: unknown) => unknown>
 }
@@ -37,12 +44,20 @@ export class EventRegistry {
 
     this.definitions.set(definition.eventType, {
       ...definition,
+      payloadProtection: definition.payloadProtection ?? 'none',
       validate: payload => definition.validate(payload),
     })
   }
 
   has(eventType: string): boolean {
     return this.definitions.has(eventType)
+  }
+
+  protectionFor(eventType: string): EventPayloadProtection {
+    const definition = this.definitions.get(eventType)
+    if (!definition)
+      throw new UnknownEventTypeError(eventType)
+    return definition.payloadProtection
   }
 
   normalizePending(event: PendingEvent): PendingEvent {
