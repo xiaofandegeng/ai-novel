@@ -1,3 +1,4 @@
+import type { Buffer } from 'node:buffer'
 import { existsSync } from 'node:fs'
 import { userInfo } from 'node:os'
 import { resolve } from 'node:path'
