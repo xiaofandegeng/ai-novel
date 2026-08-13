@@ -1,18 +1,15 @@
 # 开发记忆
 
 更新日期：2026-08-13
-当前阶段：项目内容加密与密码学删除基线完成，等待执行 Worker 可靠性与 Provider 协议计划
+当前阶段：事件加密生产加固已合并 main、本地数据库已重建对齐，等待执行 Worker 可靠性与 Provider 协议计划
 
 ## 本轮目标与结论
 
-第一份生产加固计划“项目内容加密与删除”Task 1–8 已完成实现与阶段验证：
+第一份生产加固计划“项目内容加密与删除”Task 1–8 已完成实现、阶段验证，并已 fast-forward 合并 `main` 推送远端。本轮额外完成：
 
-1. 每项目 AES-256-GCM 数据密钥保护事件、快照和项目命令成功回执。
-2. 独立主密钥只包装项目数据密钥；删除项目时销毁包装密钥，内容不可恢复。
-3. Replay 先发现删除 tombstone，再跳过已删除项目；安全扫描只输出记录 ID 和类别。
-4. 开发 seed 全部项目写入经领域 service、Command Bus 和受保护 Event Store，固定 identity 保持重复执行幂等。
-5. 项目 backup export 以显式业务 DTO 白名单输出，不暴露 envelope、数据密钥或 AI credential refs。
-6. Task 8 Review Fix Round 1 增加完整 seed fingerprint、真实非空快照证据、脱敏测试断言，以及解码后的主密钥分离门禁。
+1. 将 `codex/production-hardening-book-setup` 的 22 个提交（含未提交的 seed 深度严格校验）fast-forward 合入 `main`，`pnpm check` 334 测试全绿，已推送 `origin/main`，并清理 worktree 与 4 个 `worktree-agent-*` 垃圾分支。
+2. 本地 `ai_novel` 数据库 destructive rebuild：drop → 装 pgvector → `pnpm db:migrate`（45 迁移）→ `pnpm db:seed`。发现并修复 rebuild 前置依赖——必须先 `CREATE EXTENSION vector` 否则 `0012_legal_reavers` 因缺 `vector` 类型失败；`.env` 必须配置 `PROJECT_CONTENT_MASTER_KEY` + `AI_CREDENTIAL_MASTER_KEY` 两个独立 32 字节 base64 主密钥。
+3. 补写 migration `0045_drop_writing_jobs_legacy_column.sql`，DROP `writing_jobs.auto_approval_level` 孤儿列（`0020` 添加，后续 schema 重构删除代码定义时漏写 DROP COLUMN）。DB 与代码 schema 100% 对齐：53 表、14 张旧表全清、46 迁移记录。
 
 长期设计依据：[`生产加固与新书规划流程设计`](../superpowers/specs/2026-08-12-production-hardening-and-book-setup-design.md)。
 
@@ -28,7 +25,8 @@
 
 ## migration 与运行配置
 
-- 已加入 migration `apps/api/drizzle/0044_real_sugar_man.sql`，创建 `project_data_keys` 活跃密钥/销毁 tombstone 约束。
+- migration 链 `0000`–`0045`：`0044_real_sugar_man.sql` 创建 `project_data_keys`；`0045_drop_writing_jobs_legacy_column.sql` 清除 `writing_jobs.auto_approval_level` 孤儿列。`0042_purple_rictor.sql` 批量 DROP 了 14 张重构前旧表（`ai_settings`/`reference_*`/`writing_personas` 等）。
+- 重建数据库的强制顺序：`dropdb` → `createdb` → `CREATE EXTENSION vector`（pgvector，`0012` 依赖）→ `pnpm db:migrate` → `pnpm db:seed`。缺 pgvector 或主密钥时 migrate 启动即失败。
 - 本地生成主密钥：`openssl rand -base64 32`，分别配置 `PROJECT_CONTENT_MASTER_KEY` 与 `AI_CREDENTIAL_MASTER_KEY`，不得复用。
 - 内容保护检查：`pnpm db:verify-encryption`，可用 `-- --project <project-id>` 限定项目。
 
@@ -63,7 +61,7 @@
 
 ## 下一步与剩余计划
 
-下一计划：[`Worker 可靠性与 Provider 协议`](../superpowers/plans/2026-08-12-workflow-runtime-and-provider.md)。本分支尚未合并 `main`。总路线中的后续三份计划均未开始：
+下一计划：[`Worker 可靠性与 Provider 协议`](../superpowers/plans/2026-08-12-workflow-runtime-and-provider.md)。生产加固已合并 `main`，本地数据库已重建对齐。总路线中的后续三份计划均未开始：
 
 1. `2026-08-12-workflow-runtime-and-provider.md`
 2. `2026-08-12-book-setup-backend.md`

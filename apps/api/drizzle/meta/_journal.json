@@ -316,6 +316,13 @@
       "when": 1786542331957,
       "tag": "0044_real_sugar_man",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1786628400000,
+      "tag": "0045_drop_writing_jobs_legacy_column",
+      "breakpoints": true
     }
   ]
 }

@@ -1,15 +1,15 @@
 # 开发交接
 
 更新日期：2026-08-13
-工作目录：`/Users/lhw/code/ai-novel/.worktrees/production-hardening-book-setup`
-分支：`codex/production-hardening-book-setup`
-进入生产加固前基线：`59c3d9f`（`main`）
+工作目录：`/Users/lhw/code/ai-novel`
+分支：`main`（`codex/production-hardening-book-setup` 已 fast-forward 合并并删除）
+最新提交：`HEAD`（包含事件加密生产加固 22 提交 + 库重建对齐）
 
 ## 当前状态
 
-“项目内容加密与删除”计划 Task 1–8 及 Review Fix Round 1 已完成实现与验证，分支尚未合并 `main`。migration `0044_real_sugar_man.sql`、每项目内容加密、命令回执保护、密码学删除、tombstone-aware Replay、安全扫描、完整 fingerprint 保护的可重复 seed、非空快照证据、脱敏测试失败输出，以及 export DTO 白名单均已落地。
+“项目内容加密与删除”计划 Task 1–8 及 Review Fix Round 1 已合并 `main` 并推送远端。`codex/production-hardening-book-setup` 分支以 fast-forward 方式合入 `main`（22 个提交，75 文件，+12,107 行），`pnpm check` 通过（334 测试全绿），已推送 `origin/main`。
 
-Task 1–7 的准确提交哈希和加固提交见 [`开发记忆`](development-memory.md#task-18-提交证据)。Task 8 基线为 `9d4aa5f`；Review Fix Round 1 提交名为 `fix(security): harden seed verification boundaries`，本轮提交完成后的当前 HEAD 即其最终哈希。
+事件溯源产品工作流已全量落地：migration `0000`–`0045`、每项目内容加密、命令回执保护、密码学删除、tombstone-aware Replay、安全扫描、完整 fingerprint 保护的可重复 seed、非空快照证据、脱敏测试失败输出，以及 export DTO 白名单均已落地。本地 `ai_novel` 数据库已按最新 schema 重建（drop + pgvector + migrate + seed），DB 与代码 schema 完全对齐。
 
 ## 运行前提
 
@@ -66,7 +66,8 @@ pnpm db:verify-encryption
 
 ## 未决事项
 
-- 本分支尚未合并 `main`。
-- migration `0045`、`0046` 尚未创建。
-- 本 Task 没有执行本地数据库清空；允许清空时仍使用 no-conversion reset path。
+- 本分支已合并 `main` 并推送远端，`codex/production-hardening-book-setup` worktree 与分支已清理。
+- migration `0045_drop_writing_jobs_legacy_column.sql` 已创建并应用，清除 `writing_jobs.auto_approval_level` 孤儿列，DB 与 schema 完全对齐（53 表、46 迁移记录）。
+- 本地 `ai_novel` 数据库已完成 destructive rebuild（drop → pgvector → migrate → seed），事件溯源写链路验证通过（21 事件、14 流、19 命令回执、1 项目、3 章节、3 人物）。
+- `.env` 已补齐 `AI_CREDENTIAL_MASTER_KEY` 与 `PROJECT_CONTENT_MASTER_KEY`（两个独立 32 字节 base64 值）；重建数据库时必须先装 pgvector 扩展否则 `0012` migration 失败。
 - 真实 Provider smoke 是否执行取决于环境是否提供有效凭据与网络，未配置时必须记录“未执行”，不能伪造通过。

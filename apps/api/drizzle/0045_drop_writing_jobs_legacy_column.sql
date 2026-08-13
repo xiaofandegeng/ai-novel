@@ -1,0 +1,1 @@
+ALTER TABLE "writing_jobs" DROP COLUMN "auto_approval_level";
