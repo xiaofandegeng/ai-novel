@@ -1,5 +1,6 @@
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 import { eq } from 'drizzle-orm'
 import { db, sql } from '../db'
 import {
@@ -217,76 +218,357 @@ async function readCompleteDevelopmentSeed(): Promise<{ projectId: string, runId
   const conflict = singleRow(conflictRows)
   const foreshadowing = singleRow(foreshadowingRows)
   const run = singleRow(runRows)
-  const lin = characterRows.find(row => row.name === '林岚')
-  const gu = characterRows.find(row => row.name === '顾临川')
-  const chapterOne = chapterRows.find(row => row.chapterNumber === 1)
-  const chapterThree = chapterRows.find(row => row.chapterNumber === 3)
-  const writingJobIds = new Set(writingJobRows.map(row => row.id))
-  const targetChapterIds = new Set(chapterRows
-    .filter(row => row.chapterNumber === 1 || row.chapterNumber === 2)
-    .map(row => row.id))
+  if (!volume || !act || !bible || !relationship || !conflict || !foreshadowing || !run)
+    throw new Error(INCOMPLETE_SEED_MESSAGE)
 
-  const complete = project.title === '测试小说《镜中城回声》'
-    && project.description === '用于验证事件溯源创作全链路的悬疑奇幻样例。'
-    && project.status === 'writing'
-    && project.targetWords === 200000
-    && projectReadModel.title === project.title
-    && projectReadModel.description === project.description
-    && projectReadModel.status === project.status
-    && projectReadModel.targetWords === project.targetWords
-    && bible?.worldview === '镜中城只在雨夜出现，并收藏现实中被遗忘的人与记忆。'
-    && volume?.title === '第一卷：雨夜来信'
-    && volume.orderIndex === 0
-    && act?.title === '异常入口'
-    && act.volumeId === volume.id
-    && hasExactValues(chapterRows, row => `${row.chapterNumber}:${row.title}`, [
-      '1:空白信',
-      '2:雨夜入口',
-      '3:失踪者名单',
+  const volumeTitleById = new Map(volumeRows.map(row => [row.id, row.title]))
+  const chapterNumberById = new Map(chapterRows.map(row => [row.id, row.chapterNumber]))
+  const characterNameById = new Map(characterRows.map(row => [row.id, row.name]))
+  const writingJobById = new Map(writingJobRows.map(row => [row.id, row]))
+
+  const complete = (
+    isDeepStrictEqual({
+      id: project.id,
+      title: project.title,
+      description: project.description,
+      genre: project.genre,
+      theme: project.theme,
+      targetWords: project.targetWords,
+      targetAudience: project.targetAudience,
+      styleProfile: project.styleProfile,
+      status: project.status,
+    }, {
+      id: SEED_PROJECT_ID,
+      title: '测试小说《镜中城回声》',
+      description: '用于验证事件溯源创作全链路的悬疑奇幻样例。',
+      genre: '悬疑奇幻',
+      theme: '记忆、身份与选择的代价',
+      targetWords: 200000,
+      targetAudience: '喜欢都市悬疑和长线伏笔的成年读者',
+      styleProfile: '冷静克制，节奏偏快；每章以未解问题收束。',
+      status: 'writing',
+    })
+    && isDeepStrictEqual({
+      id: projectReadModel.id,
+      title: projectReadModel.title,
+      description: projectReadModel.description,
+      genre: projectReadModel.genre,
+      theme: projectReadModel.theme,
+      targetWords: projectReadModel.targetWords,
+      targetAudience: projectReadModel.targetAudience,
+      styleProfile: projectReadModel.styleProfile,
+      status: projectReadModel.status,
+    }, {
+      id: SEED_PROJECT_ID,
+      title: '测试小说《镜中城回声》',
+      description: '用于验证事件溯源创作全链路的悬疑奇幻样例。',
+      genre: '悬疑奇幻',
+      theme: '记忆、身份与选择的代价',
+      targetWords: 200000,
+      targetAudience: '喜欢都市悬疑和长线伏笔的成年读者',
+      styleProfile: '冷静克制，节奏偏快；每章以未解问题收束。',
+      status: 'writing',
+    })
+    && isDeepStrictEqual({
+      projectId: bible.projectId,
+      worldview: bible.worldview,
+      mainConflict: bible.mainConflict,
+      theme: bible.theme,
+      rules: bible.rules,
+      timeline: bible.timeline,
+    }, {
+      projectId: SEED_PROJECT_ID,
+      worldview: '镜中城只在雨夜出现，并收藏现实中被遗忘的人与记忆。',
+      mainConflict: '林岚必须找回失踪哥哥，但每接近真相都会失去一段身份证明。',
+      theme: '人是否必须记得一切，才算真实地活过。',
+      rules: '镜中城不能创造记忆；任何关键真相都必须付出代价。',
+      timeline: '七年前林澈失踪；现在林岚收到哥哥寄来的空白信。',
+    })
+    && isDeepStrictEqual({
+      projectId: volume.projectId,
+      title: volume.title,
+      summary: volume.summary,
+      orderIndex: volume.orderIndex,
+    }, {
+      projectId: SEED_PROJECT_ID,
+      title: '第一卷：雨夜来信',
+      summary: '林岚追随空白信进入镜中城，并发现现实开始遗忘她。',
+      orderIndex: 0,
+    })
+    && isDeepStrictEqual({
+      projectId: act.projectId,
+      volumeTitle: act.volumeId ? volumeTitleById.get(act.volumeId) ?? null : null,
+      title: act.title,
+      description: act.description,
+      theme: act.theme,
+      keyEvents: act.keyEvents,
+      targetChapterCount: act.targetChapterCount,
+      orderIndex: act.orderIndex,
+    }, {
+      projectId: SEED_PROJECT_ID,
+      volumeTitle: '第一卷：雨夜来信',
+      title: '异常入口',
+      description: '异常来信打破日常，主角进入镜中城。',
+      theme: '相信证据还是相信记忆',
+      keyEvents: '空白信、雨夜入口、失踪者名单',
+      targetChapterCount: 3,
+      orderIndex: 0,
+    })
+    && isDeepStrictEqual(chapterRows.map(row => ({
+      projectId: row.projectId,
+      volumeTitle: row.volumeId ? volumeTitleById.get(row.volumeId) ?? null : null,
+      title: row.title,
+      chapterNumber: row.chapterNumber,
+      outline: row.outline,
+      summary: row.summary,
+      characters: row.characters,
+      goals: row.goals,
+      conflicts: row.conflicts,
+      events: row.events,
+      emotionalArc: row.emotionalArc,
+      foreshadowing: row.foreshadowing,
+      endingHook: row.endingHook,
+      draft: row.draft,
+      status: row.status,
+    })).sort((left, right) => left.chapterNumber - right.chapterNumber), [
+      {
+        projectId: SEED_PROJECT_ID,
+        volumeTitle: '第一卷：雨夜来信',
+        title: '空白信',
+        chapterNumber: 1,
+        outline: '林岚收到没有文字的来信，却在雨水中看到哥哥的笔迹。',
+        summary: null,
+        characters: null,
+        goals: null,
+        conflicts: null,
+        events: null,
+        emotionalArc: null,
+        foreshadowing: null,
+        endingHook: null,
+        draft: null,
+        status: 'writing',
+      },
+      {
+        projectId: SEED_PROJECT_ID,
+        volumeTitle: '第一卷：雨夜来信',
+        title: '雨夜入口',
+        chapterNumber: 2,
+        outline: '顾临川带林岚穿过旧照相馆的镜面入口。',
+        summary: null,
+        characters: null,
+        goals: null,
+        conflicts: null,
+        events: null,
+        emotionalArc: null,
+        foreshadowing: null,
+        endingHook: null,
+        draft: null,
+        status: 'not_started',
+      },
+      {
+        projectId: SEED_PROJECT_ID,
+        volumeTitle: '第一卷：雨夜来信',
+        title: '失踪者名单',
+        chapterNumber: 3,
+        outline: '林岚在档案馆名单上看见自己的名字。',
+        summary: null,
+        characters: null,
+        goals: null,
+        conflicts: null,
+        events: null,
+        emotionalArc: null,
+        foreshadowing: null,
+        endingHook: null,
+        draft: null,
+        status: 'not_started',
+      },
     ])
-    && chapterRows.every(row => row.volumeId === volume.id)
-    && hasExactValues(characterRows, row => `${row.name}:${row.role}`, [
-      '林岚:protagonist',
-      '顾临川:ally',
-      '沈雾:antagonist',
+    && isDeepStrictEqual(characterRows.map(row => ({
+      projectId: row.projectId,
+      name: row.name,
+      role: row.role,
+      goal: row.goal,
+      fear: row.fear,
+      secret: row.secret,
+      desire: row.desire,
+      weakness: row.weakness,
+      personality: row.personality,
+      arc: row.arc,
+    })).sort((left, right) => left.name.localeCompare(right.name)), [
+      {
+        projectId: SEED_PROJECT_ID,
+        name: '林岚',
+        role: 'protagonist',
+        goal: '找到哥哥并证明他真实存在。',
+        fear: '所有人都忘记哥哥和她的寻找。',
+        secret: '她曾主动要求删除一段关于哥哥的记忆。',
+        desire: null,
+        weakness: null,
+        personality: '冷静克制，遇到亲情议题时会失控。',
+        arc: '从依赖外部证据，到承认自己也参与塑造真相。',
+      },
+      {
+        projectId: SEED_PROJECT_ID,
+        name: '顾临川',
+        role: 'ally',
+        goal: '帮助林岚进入镜中城，同时阻止她触碰第零层。',
+        fear: null,
+        secret: '他保留着林澈最后一段记忆。',
+        desire: null,
+        weakness: null,
+        personality: '温和谨慎，关键时刻倾向隐瞒。',
+        arc: null,
+      },
+      {
+        projectId: SEED_PROJECT_ID,
+        name: '沈雾',
+        role: 'antagonist',
+        goal: '维持镜中城秩序。',
+        fear: '城市失去记忆来源后崩塌。',
+        secret: null,
+        desire: null,
+        weakness: null,
+        personality: '优雅冷酷，把控制误认为拯救。',
+        arc: null,
+      },
+    ].sort((left, right) => left.name.localeCompare(right.name)))
+    && isDeepStrictEqual({
+      projectId: relationship.projectId,
+      characters: normalizePair(
+        characterNameById.get(relationship.characterAId),
+        characterNameById.get(relationship.characterBId),
+      ),
+      type: relationship.type,
+      strength: relationship.strength,
+      status: relationship.status,
+      description: relationship.description,
+    }, {
+      projectId: SEED_PROJECT_ID,
+      characters: ['林岚', '顾临川'].sort(),
+      type: '互相试探的同盟',
+      strength: 6,
+      status: '信任尚未建立',
+      description: '顾临川既是引路人，也是林岚最怀疑的人。',
+    })
+    && isDeepStrictEqual({
+      projectId: conflict.projectId,
+      title: conflict.title,
+      type: conflict.type,
+      intensity: conflict.intensity,
+      status: conflict.status,
+      participants: conflict.participants,
+      participantNames: normalizeIdSet(conflict.participantIds, characterNameById),
+      description: conflict.description,
+      resolution: conflict.resolution,
+    }, {
+      projectId: SEED_PROJECT_ID,
+      title: '身份证明危机',
+      type: 'internal',
+      intensity: 8,
+      status: 'escalating',
+      participants: '林岚、顾临川、沈雾',
+      participantNames: ['林岚', '顾临川', '沈雾'].sort(),
+      description: '林岚越接近真相，现实世界越不承认她的记忆。',
+      resolution: null,
+    })
+    && isDeepStrictEqual({
+      projectId: foreshadowing.projectId,
+      title: foreshadowing.title,
+      description: foreshadowing.description,
+      setupChapterNumber: normalizeChapterNumber(foreshadowing.setupChapterId, chapterNumberById),
+      expectedPayoffChapterNumber: normalizeChapterNumber(foreshadowing.expectedPayoffChapterId, chapterNumberById),
+      payoffChapterNumber: normalizeChapterNumber(foreshadowing.payoffChapterId, chapterNumberById),
+      status: foreshadowing.status,
+      importance: foreshadowing.importance,
+      relatedCharacters: foreshadowing.relatedCharacters,
+      characterNames: normalizeIdSet(foreshadowing.characterIds, characterNameById),
+      relatedEvents: foreshadowing.relatedEvents,
+      notes: foreshadowing.notes,
+    }, {
+      projectId: SEED_PROJECT_ID,
+      title: '空白信的真正寄件人',
+      description: '信件笔迹属于林澈，但寄件人另有其人。',
+      setupChapterNumber: 1,
+      expectedPayoffChapterNumber: 3,
+      payoffChapterNumber: null,
+      status: 'progressing',
+      importance: 'major',
+      relatedCharacters: '林岚、顾临川',
+      characterNames: ['林岚', '顾临川'].sort(),
+      relatedEvents: null,
+      notes: null,
+    })
+    && isDeepStrictEqual({
+      projectId: run.projectId,
+      status: run.status,
+      strategy: run.strategy,
+      scopeType: run.scopeType,
+      volumeTitle: run.volumeId ? volumeTitleById.get(run.volumeId) ?? null : null,
+      startChapterNumber: normalizeChapterNumber(run.startChapterId, chapterNumberById),
+      endChapterNumber: normalizeChapterNumber(run.endChapterId, chapterNumberById),
+      targetChapterCount: run.targetChapterCount,
+      targetWordsPerChapter: run.targetWordsPerChapter,
+      currentChapterNumber: normalizeChapterNumber(run.currentChapterId, chapterNumberById),
+      completedChapterCount: run.completedChapterCount,
+      failedChapterCount: run.failedChapterCount,
+      pausedReason: run.pausedReason,
+      lastError: run.lastError,
+      startedAt: run.startedAt,
+      finishedAt: run.finishedAt,
+    }, {
+      projectId: SEED_PROJECT_ID,
+      status: 'idle',
+      strategy: 'balanced',
+      scopeType: 'next_n_chapters',
+      volumeTitle: null,
+      startChapterNumber: null,
+      endChapterNumber: null,
+      targetChapterCount: 2,
+      targetWordsPerChapter: 3000,
+      currentChapterNumber: null,
+      completedChapterCount: 0,
+      failedChapterCount: 0,
+      pausedReason: null,
+      lastError: null,
+      startedAt: null,
+      finishedAt: null,
+    })
+    && isDeepStrictEqual(writingJobRows.map(row => ({
+      projectId: row.projectId,
+      chapterNumber: normalizeChapterNumber(row.currentChapterId, chapterNumberById),
+      sceneId: row.sceneId,
+      mode: row.mode,
+      status: row.status,
+      executionMode: row.executionMode,
+      autoStopReason: row.autoStopReason,
+      autoApprovedSteps: row.autoApprovedSteps,
+      targetWords: row.targetWords,
+      lastError: row.lastError,
+      belongsToRun: row.autonomousRunId === run.id,
+    })).sort(compareNormalizedJobs), [
+      expectedWritingJob(1),
+      expectedWritingJob(2),
     ])
-    && relationship !== undefined
-    && lin !== undefined
-    && gu !== undefined
-    && samePair(
-      [relationship.characterAId, relationship.characterBId],
-      [lin.id, gu.id],
-    )
-    && relationship.type === '互相试探的同盟'
-    && conflict?.title === '身份证明危机'
-    && conflict.status === 'escalating'
-    && foreshadowing?.title === '空白信的真正寄件人'
-    && foreshadowing.setupChapterId === chapterOne?.id
-    && foreshadowing.expectedPayoffChapterId === chapterThree?.id
-    && run?.projectId === SEED_PROJECT_ID
-    && run.status === 'idle'
-    && run.strategy === 'balanced'
-    && run.scopeType === 'next_n_chapters'
-    && run.targetChapterCount === 2
-    && run.targetWordsPerChapter === 3000
-    && runJobRows.length === 2
-    && runJobRows.every(row => (
-      row.runId === run.id
-      && row.projectId === SEED_PROJECT_ID
-      && row.status === 'pending'
-      && writingJobIds.has(row.writingJobId)
-      && row.chapterId !== null
-      && targetChapterIds.has(row.chapterId)
-    ))
-    && writingJobRows.length === 2
-    && writingJobRows.every(row => (
-      row.projectId === SEED_PROJECT_ID
-      && row.autonomousRunId === run.id
-      && row.status === 'idle'
-      && row.mode === 'outline_then_draft'
-      && row.currentChapterId !== null
-      && targetChapterIds.has(row.currentChapterId)
-    ))
+    && isDeepStrictEqual(runJobRows.map((row) => {
+      const writingJob = writingJobById.get(row.writingJobId)
+      return {
+        projectId: row.projectId,
+        belongsToRun: row.runId === run.id,
+        chapterNumber: normalizeChapterNumber(row.chapterId, chapterNumberById),
+        writingChapterNumber: normalizeChapterNumber(writingJob?.currentChapterId, chapterNumberById),
+        writingJobProjectId: writingJob?.projectId ?? null,
+        writingJobBelongsToRun: writingJob?.autonomousRunId === run.id,
+        sceneId: row.sceneId,
+        status: row.status,
+        orderIndex: row.orderIndex,
+        isolationReason: row.isolationReason,
+        isolationReport: row.isolationReport,
+      }
+    }).sort(compareNormalizedJobs), [
+      expectedRunJob(1, 0),
+      expectedRunJob(2, 1),
+    ])
+  )
 
   if (!complete)
     throw new Error(INCOMPLETE_SEED_MESSAGE)
@@ -297,19 +579,71 @@ function singleRow<TRow>(rows: readonly TRow[]): TRow | undefined {
   return rows.length === 1 ? rows[0] : undefined
 }
 
-function hasExactValues<TRow>(
-  rows: readonly TRow[],
-  value: (row: TRow) => string,
-  expected: readonly string[],
-): boolean {
-  if (rows.length !== expected.length)
-    return false
-  const actual = new Set(rows.map(value))
-  return expected.every(item => actual.has(item))
+function normalizePair(left: string | undefined, right: string | undefined): Array<string | null> {
+  return [left ?? null, right ?? null].sort()
 }
 
-function samePair(left: readonly [string, string], right: readonly [string, string]): boolean {
-  return left.includes(right[0]) && left.includes(right[1])
+function normalizeIdSet(value: string | null, lookup: ReadonlyMap<string, string>): string[] | null {
+  if (value === null)
+    return null
+  try {
+    const ids: unknown = JSON.parse(value)
+    if (!Array.isArray(ids) || !ids.every(id => typeof id === 'string'))
+      return null
+    const names = ids.map(id => lookup.get(id))
+    if (names.includes(undefined))
+      return null
+    return names.map(name => name!).sort()
+  }
+  catch {
+    return null
+  }
+}
+
+function normalizeChapterNumber(
+  chapterId: string | null | undefined,
+  chapterNumberById: ReadonlyMap<string, number>,
+): number | null {
+  return chapterId ? chapterNumberById.get(chapterId) ?? null : null
+}
+
+function compareNormalizedJobs(
+  left: { chapterNumber: number | null },
+  right: { chapterNumber: number | null },
+): number {
+  return (left.chapterNumber ?? Number.MAX_SAFE_INTEGER) - (right.chapterNumber ?? Number.MAX_SAFE_INTEGER)
+}
+
+function expectedWritingJob(chapterNumber: number) {
+  return {
+    projectId: SEED_PROJECT_ID,
+    chapterNumber,
+    sceneId: null,
+    mode: 'outline_then_draft',
+    status: 'idle',
+    executionMode: 'auto',
+    autoStopReason: null,
+    autoApprovedSteps: 0,
+    targetWords: 3000,
+    lastError: null,
+    belongsToRun: true,
+  }
+}
+
+function expectedRunJob(chapterNumber: number, orderIndex: number) {
+  return {
+    projectId: SEED_PROJECT_ID,
+    belongsToRun: true,
+    chapterNumber,
+    writingChapterNumber: chapterNumber,
+    writingJobProjectId: SEED_PROJECT_ID,
+    writingJobBelongsToRun: true,
+    sceneId: null,
+    status: 'pending',
+    orderIndex,
+    isolationReason: null,
+    isolationReport: null,
+  }
 }
 
 async function seedStaticCatalogs() {

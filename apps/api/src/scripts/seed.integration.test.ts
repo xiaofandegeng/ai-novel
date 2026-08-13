@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { db, sql } from '../db'
 import {
@@ -33,6 +33,7 @@ const KNOWN_SEED_PLAINTEXTS = [
   '镜中城只在雨夜出现，并收藏现实中被遗忘的人与记忆。',
   '林岚收到没有文字的来信，却在雨水中看到哥哥的笔迹。',
 ] as const
+const INCOMPLETE_SEED_MESSAGE = 'Development seed is incomplete; run pnpm db:rebuild before reseeding'
 
 afterAll(() => sql.end())
 
@@ -146,9 +147,91 @@ describe('event-sourced development seed', () => {
     const result = await seedDevelopmentData()
     await db.delete(projectReadModels).where(eq(projectReadModels.id, result.projectId))
 
-    await expect(seedDevelopmentData()).rejects.toThrow(
-      'Development seed is incomplete; run pnpm db:rebuild before reseeding',
-    )
+    await expect(seedDevelopmentData()).rejects.toThrow(INCOMPLETE_SEED_MESSAGE)
+  })
+
+  it.each([
+    ['chapter outline', async (projectId: string) => {
+      await db.update(chapters)
+        .set({ outline: '损坏的章节大纲' })
+        .where(and(eq(chapters.projectId, projectId), eq(chapters.chapterNumber, 1)))
+    }],
+    ['chapter status', async (projectId: string) => {
+      await db.update(chapters)
+        .set({ status: 'completed' })
+        .where(and(eq(chapters.projectId, projectId), eq(chapters.chapterNumber, 1)))
+    }],
+    ['character content', async (projectId: string) => {
+      await db.update(characters)
+        .set({ goal: '损坏的人物目标' })
+        .where(and(eq(characters.projectId, projectId), eq(characters.name, '林岚')))
+    }],
+    ['relationship status', async (projectId: string) => {
+      await db.update(characterRelationships)
+        .set({ status: '损坏的关系状态' })
+        .where(eq(characterRelationships.projectId, projectId))
+    }],
+    ['conflict participants', async (projectId: string) => {
+      await db.update(conflicts)
+        .set({ participantIds: '[]' })
+        .where(eq(conflicts.projectId, projectId))
+    }],
+    ['foreshadowing characters', async (projectId: string) => {
+      await db.update(foreshadowingItems)
+        .set({ characterIds: '[]' })
+        .where(eq(foreshadowingItems.projectId, projectId))
+    }],
+    ['foreshadowing status', async (projectId: string) => {
+      await db.update(foreshadowingItems)
+        .set({ status: 'open' })
+        .where(eq(foreshadowingItems.projectId, projectId))
+    }],
+  ] as const)('fails closed when stable %s is damaged', async (_field, damageProjection) => {
+    const result = await seedDevelopmentData()
+    await damageProjection(result.projectId)
+
+    await expect(seedDevelopmentData()).rejects.toThrow(INCOMPLETE_SEED_MESSAGE)
+  })
+
+  it('fails closed when both job pairs cover the first chapter and omit the second', async () => {
+    const result = await seedDevelopmentData()
+    const chapterRows = await db.select().from(chapters).where(eq(chapters.projectId, result.projectId))
+    const chapterOne = chapterRows.find(row => row.chapterNumber === 1)!
+    const chapterTwo = chapterRows.find(row => row.chapterNumber === 2)!
+    const [secondRunJob] = await db.select().from(autonomousRunJobs).where(and(
+      eq(autonomousRunJobs.projectId, result.projectId),
+      eq(autonomousRunJobs.chapterId, chapterTwo.id),
+    ))
+
+    await db.update(autonomousRunJobs)
+      .set({ chapterId: chapterOne.id })
+      .where(eq(autonomousRunJobs.id, secondRunJob.id))
+    await db.update(writingJobs)
+      .set({ currentChapterId: chapterOne.id })
+      .where(eq(writingJobs.id, secondRunJob.writingJobId))
+
+    await expect(seedDevelopmentData()).rejects.toThrow(INCOMPLETE_SEED_MESSAGE)
+  })
+
+  it('fails closed when a run job points at the writing job for another chapter', async () => {
+    const result = await seedDevelopmentData()
+    const chapterRows = await db.select().from(chapters).where(eq(chapters.projectId, result.projectId))
+    const chapterOne = chapterRows.find(row => row.chapterNumber === 1)!
+    const chapterTwo = chapterRows.find(row => row.chapterNumber === 2)!
+    const [firstRunJob] = await db.select().from(autonomousRunJobs).where(and(
+      eq(autonomousRunJobs.projectId, result.projectId),
+      eq(autonomousRunJobs.chapterId, chapterOne.id),
+    ))
+    const [secondRunJob] = await db.select().from(autonomousRunJobs).where(and(
+      eq(autonomousRunJobs.projectId, result.projectId),
+      eq(autonomousRunJobs.chapterId, chapterTwo.id),
+    ))
+
+    await db.update(autonomousRunJobs)
+      .set({ writingJobId: secondRunJob.writingJobId })
+      .where(eq(autonomousRunJobs.id, firstRunJob.id))
+
+    await expect(seedDevelopmentData()).rejects.toThrow(INCOMPLETE_SEED_MESSAGE)
   })
 })
 
